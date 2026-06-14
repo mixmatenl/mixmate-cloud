@@ -22,7 +22,8 @@ async function req(method, path, body) {
 
 export const api = {
   // Auth
-  loginShopify: (access_token) => req('POST', '/api/auth/shopify', { access_token }),
+  login:          (email, password) => req('POST', '/api/auth/login', { email, password }),
+  changePassword: (current_password, new_password) => req('POST', '/api/auth/change-password', { current_password, new_password }),
 
   // Machines
   getMachines:   ()              => req('GET',    '/api/machines'),

@@ -2,7 +2,7 @@
 MIXMATE Cloud Server
 - WebSocket bridge tussen machines en klantportaal
 - REST API voor portaal
-- Shopify klantaccount authenticatie
+- Eigen e-mail + wachtwoord authenticatie
 """
 
 import asyncio
@@ -10,8 +10,6 @@ import json
 import os
 import secrets
 import hashlib
-import hmac
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -19,7 +17,7 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Field, Session, SQLModel, create_engine, select, Relationship
 import httpx
@@ -31,20 +29,23 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./mixmate_cloud.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+)
 
 class Customer(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    shopify_customer_id: str = Field(index=True, unique=True)
-    email: str
+    email: str = Field(index=True, unique=True)
     name: str = ""
+    password_hash: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
     machines: list["Machine"] = Relationship(back_populates="customer")
 
 class Machine(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    machine_id: str = Field(index=True, unique=True)   # unieke ID van de Pi
-    pair_code: str = Field(index=True)                 # 6-cijferige koppelcode
+    machine_id: str = Field(index=True, unique=True)
+    pair_code: str = Field(index=True)
     pair_code_expires: datetime
     paired: bool = False
     name: str = "Mijn Machine"
@@ -61,11 +62,24 @@ def get_session():
     with Session(engine) as session:
         yield session
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+# ── Wachtwoord hashing ────────────────────────────────────────────────────────
 
-JWT_SECRET  = os.getenv("JWT_SECRET", secrets.token_hex(32))
-SHOPIFY_DOMAIN = os.getenv("SHOPIFY_DOMAIN", "")          # bijv. jouwshop.myshopify.com
-SHOPIFY_STOREFRONT_TOKEN = os.getenv("SHOPIFY_STOREFRONT_TOKEN", "")
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    h = hashlib.sha256((salt + password).encode()).hexdigest()
+    return f"{salt}:{h}"
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        salt, h = password_hash.split(":", 1)
+        return hashlib.sha256((salt + password).encode()).hexdigest() == h
+    except Exception:
+        return False
+
+# ── JWT Auth ──────────────────────────────────────────────────────────────────
+
+JWT_SECRET   = os.getenv("JWT_SECRET", secrets.token_hex(32))
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")   # geheim wachtwoord voor admin endpoints
 
 security = HTTPBearer(auto_error=False)
 
@@ -81,6 +95,12 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
         return int(payload["sub"])
     except Exception:
         raise HTTPException(status_code=401, detail="Sessie verlopen — log opnieuw in")
+
+def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not credentials or not ADMIN_SECRET:
+        raise HTTPException(status_code=401, detail="Admin niet geconfigureerd")
+    if credentials.credentials != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Ongeldig admin wachtwoord")
 
 # ── WebSocket machine verbindingen ────────────────────────────────────────────
 
@@ -110,7 +130,6 @@ class MachineConnection:
             self.pending[req_id].set_result(data)
             del self.pending[req_id]
 
-# machine_id → MachineConnection
 connected_machines: dict[str, MachineConnection] = {}
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -127,6 +146,23 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     create_tables()
+    _create_admin_if_needed()
+
+def _create_admin_if_needed():
+    """Maak een standaard admin-account aan als er nog geen klanten zijn."""
+    with Session(engine) as db:
+        if db.exec(select(Customer)).first():
+            return
+        admin_email = os.getenv("ADMIN_EMAIL", "")
+        admin_pass  = os.getenv("ADMIN_PASSWORD", "")
+        if admin_email and admin_pass:
+            customer = Customer(
+                email=admin_email,
+                name="Admin",
+                password_hash=hash_password(admin_pass),
+            )
+            db.add(customer)
+            db.commit()
 
 # ── Machine WebSocket ─────────────────────────────────────────────────────────
 
@@ -136,10 +172,9 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
     conn = MachineConnection(machine_id, websocket)
     connected_machines[machine_id] = conn
 
-    # Zorg dat machine in DB bestaat
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
-        pair_code = str(secrets.randbelow(900000) + 100000)  # 6 cijfers
+        pair_code = str(secrets.randbelow(900000) + 100000)
         machine = Machine(
             machine_id=machine_id,
             pair_code=pair_code,
@@ -149,7 +184,6 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
         db.commit()
         db.refresh(machine)
 
-    # Stuur koppelcode naar machine zodat hij hem kan tonen
     await websocket.send_json({
         "type": "pair_code",
         "code": machine.pair_code,
@@ -163,10 +197,8 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
 
             if msg_type == "heartbeat":
                 machine.last_seen = datetime.utcnow()
-                if "version" in data:
-                    machine.version = data["version"]
-                if "model" in data:
-                    machine.model = data["model"]
+                if "version" in data: machine.version = data["version"]
+                if "model"   in data: machine.model   = data["model"]
                 db.add(machine)
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
@@ -179,64 +211,63 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
     finally:
         connected_machines.pop(machine_id, None)
 
-# ── Shopify auth ──────────────────────────────────────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────────────────────
 
-@app.post("/api/auth/shopify")
-async def shopify_login(body: dict, db: Session = Depends(get_session)):
-    """
-    Wissel een Shopify customer access token in voor een MIXMATE JWT.
-    De frontend logt in via Shopify Storefront API en stuurt het token hierheen.
-    """
-    access_token = body.get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=400, detail="access_token ontbreekt")
+@app.post("/api/auth/login")
+def login(body: dict, db: Session = Depends(get_session)):
+    email    = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
 
-    if not SHOPIFY_DOMAIN or not SHOPIFY_STOREFRONT_TOKEN:
-        raise HTTPException(status_code=503, detail="Shopify niet geconfigureerd op server")
+    customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    if not customer or not verify_password(password, customer.password_hash):
+        raise HTTPException(status_code=401, detail="Onjuist e-mailadres of wachtwoord")
 
-    # Haal klantgegevens op via Shopify Storefront API
-    query = """
-    query {
-      customer(customerAccessToken: "%s") {
-        id
-        email
-        firstName
-        lastName
-      }
-    }
-    """ % access_token
+    return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"https://{SHOPIFY_DOMAIN}/api/2024-01/graphql.json",
-            json={"query": query},
-            headers={"X-Shopify-Storefront-Access-Token": SHOPIFY_STOREFRONT_TOKEN},
-        )
+@app.post("/api/auth/change-password")
+def change_password(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    current  = body.get("current_password") or ""
+    new_pass = body.get("new_password") or ""
+    if len(new_pass) < 8:
+        raise HTTPException(status_code=400, detail="Wachtwoord moet minimaal 8 tekens zijn")
+    customer = db.get(Customer, customer_id)
+    if not verify_password(current, customer.password_hash):
+        raise HTTPException(status_code=401, detail="Huidig wachtwoord klopt niet")
+    customer.password_hash = hash_password(new_pass)
+    db.add(customer)
+    db.commit()
+    return {"ok": True}
 
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Shopify verificatie mislukt")
+# ── Admin (alleen voor jou) ───────────────────────────────────────────────────
 
-    data = resp.json()
-    shopify_customer = data.get("data", {}).get("customer")
-    if not shopify_customer:
-        raise HTTPException(status_code=401, detail="Ongeldig Shopify token")
+@app.get("/api/admin/customers")
+def admin_list_customers(_=Depends(verify_admin), db: Session = Depends(get_session)):
+    customers = db.exec(select(Customer)).all()
+    return [{"id": c.id, "email": c.email, "name": c.name, "created_at": c.created_at} for c in customers]
 
-    shopify_id = shopify_customer["id"]
-    email      = shopify_customer.get("email", "")
-    name       = f"{shopify_customer.get('firstName', '')} {shopify_customer.get('lastName', '')}".strip()
+@app.post("/api/admin/customers")
+def admin_create_customer(body: dict, _=Depends(verify_admin), db: Session = Depends(get_session)):
+    email    = (body.get("email") or "").strip().lower()
+    name     = body.get("name") or ""
+    password = body.get("password") or secrets.token_urlsafe(12)
 
-    customer = db.exec(select(Customer).where(Customer.shopify_customer_id == shopify_id)).first()
-    if not customer:
-        customer = Customer(shopify_customer_id=shopify_id, email=email, name=name)
-        db.add(customer)
-    else:
-        customer.email = email
-        customer.name  = name
-        db.add(customer)
+    if db.exec(select(Customer).where(Customer.email == email)).first():
+        raise HTTPException(status_code=409, detail="E-mailadres al in gebruik")
+
+    customer = Customer(email=email, name=name, password_hash=hash_password(password))
+    db.add(customer)
     db.commit()
     db.refresh(customer)
+    return {"id": customer.id, "email": customer.email, "name": customer.name, "password": password}
 
-    return {"token": create_token(customer.id), "name": name, "email": email}
+@app.delete("/api/admin/customers/{customer_id}")
+def admin_delete_customer(customer_id: int, _=Depends(verify_admin), db: Session = Depends(get_session)):
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    db.delete(customer)
+    db.commit()
+    return {"ok": True}
 
 # ── Machines API ──────────────────────────────────────────────────────────────
 
@@ -247,49 +278,55 @@ def list_machines(customer_id: int = Depends(verify_token), db: Session = Depend
 
 @app.post("/api/machines/pair")
 def pair_machine(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    code = str(body.get("code", "")).strip()
+    code    = str(body.get("code", "")).strip()
     machine = db.exec(select(Machine).where(Machine.pair_code == code)).first()
 
     if not machine:
         raise HTTPException(status_code=404, detail="Koppelcode niet gevonden")
     if machine.paired and machine.customer_id != customer_id:
-        raise HTTPException(status_code=409, detail="Deze machine is al gekoppeld aan een ander account")
+        raise HTTPException(status_code=409, detail="Machine al gekoppeld aan een ander account")
     if datetime.utcnow() > machine.pair_code_expires:
         raise HTTPException(status_code=410, detail="Koppelcode verlopen — herstart de machine")
 
-    machine.paired = True
+    machine.paired      = True
     machine.customer_id = customer_id
-    # Vernieuw koppelcode zodat hij niet hergebruikt kan worden
-    machine.pair_code = str(secrets.randbelow(900000) + 100000)
+    machine.pair_code   = str(secrets.randbelow(900000) + 100000)
     machine.pair_code_expires = datetime.utcnow() + timedelta(hours=24)
     db.add(machine)
     db.commit()
     db.refresh(machine)
 
-    # Vertel de machine dat hij gekoppeld is
     conn = connected_machines.get(machine.machine_id)
     if conn:
         asyncio.create_task(conn.send({"type": "paired", "customer_id": customer_id}))
 
     return _machine_dict(machine)
 
+@app.patch("/api/machines/{machine_id}")
+def rename_machine(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id, Machine.customer_id == customer_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    if "name" in body:
+        machine.name = body["name"]
+    db.add(machine)
+    db.commit()
+    return _machine_dict(machine)
+
 @app.delete("/api/machines/{machine_id}")
 def unpair_machine(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    machine = db.exec(select(Machine).where(
-        Machine.machine_id == machine_id,
-        Machine.customer_id == customer_id,
-    )).first()
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id, Machine.customer_id == customer_id)).first()
     if not machine:
-        raise HTTPException(status_code=404, detail="Machine niet gevonden")
-    machine.paired = False
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    machine.paired      = False
     machine.customer_id = None
     db.add(machine)
     db.commit()
     return {"ok": True}
 
-# ── Machine doorstuur-API (portaal → machine) ─────────────────────────────────
+# ── Doorstuur-API (portaal → machine) ────────────────────────────────────────
 
-def _get_machine_conn(machine_id: str, customer_id: int, db: Session) -> MachineConnection:
+def _get_conn(machine_id: str, customer_id: int, db: Session) -> MachineConnection:
     machine = db.exec(select(Machine).where(
         Machine.machine_id == machine_id,
         Machine.customer_id == customer_id,
@@ -308,40 +345,35 @@ def machine_status(machine_id: str, customer_id: int = Depends(verify_token), db
         Machine.customer_id == customer_id,
     )).first()
     if not machine:
-        raise HTTPException(status_code=404, detail="Machine niet gevonden")
-    online = machine_id in connected_machines
-    return {**_machine_dict(machine), "online": online}
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    return {**_machine_dict(machine), "online": machine_id in connected_machines}
 
 @app.get("/api/machines/{machine_id}/recipes")
 async def get_recipes(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    conn = _get_machine_conn(machine_id, customer_id, db)
-    return await conn.request({"type": "get_recipes"})
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_recipes"})
 
 @app.get("/api/machines/{machine_id}/pumps")
 async def get_pumps(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    conn = _get_machine_conn(machine_id, customer_id, db)
-    return await conn.request({"type": "get_pumps"})
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_pumps"})
 
 @app.get("/api/machines/{machine_id}/settings")
 async def get_settings(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    conn = _get_machine_conn(machine_id, customer_id, db)
-    return await conn.request({"type": "get_settings"})
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_settings"})
 
 @app.post("/api/machines/{machine_id}/settings")
 async def update_settings(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    conn = _get_machine_conn(machine_id, customer_id, db)
-    return await conn.request({"type": "update_settings", "data": body})
+    return await _get_conn(machine_id, customer_id, db).request({"type": "update_settings", "data": body})
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _machine_dict(m: Machine) -> dict:
     return {
         "machine_id": m.machine_id,
-        "name": m.name,
-        "model": m.model,
-        "version": m.version,
-        "paired": m.paired,
-        "last_seen": m.last_seen.isoformat() if m.last_seen else None,
+        "name":       m.name,
+        "model":      m.model,
+        "version":    m.version,
+        "paired":     m.paired,
+        "last_seen":  m.last_seen.isoformat() if m.last_seen else None,
     }
 
 # ── Statische frontend serveren ───────────────────────────────────────────────
@@ -351,7 +383,7 @@ if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str, request: Request):
+    async def serve_spa(full_path: str):
         file = FRONTEND_DIST / full_path
         if file.exists() and file.is_file():
             return FileResponse(str(file))

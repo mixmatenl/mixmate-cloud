@@ -1,9 +1,6 @@
 import React, { useState } from 'react'
 import { api } from '../api.js'
 
-const SHOPIFY_DOMAIN   = import.meta.env.VITE_SHOPIFY_DOMAIN || ''
-const SHOPIFY_SF_TOKEN = import.meta.env.VITE_SHOPIFY_STOREFRONT_TOKEN || ''
-
 export default function Login({ onLogin }) {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -15,38 +12,7 @@ export default function Login({ onLogin }) {
     setLoading(true)
     setError(null)
     try {
-      // Stap 1: Shopify klanttoken ophalen
-      const sfResp = await fetch(
-        `https://${SHOPIFY_DOMAIN}/api/2024-01/graphql.json`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Storefront-Access-Token': SHOPIFY_SF_TOKEN,
-          },
-          body: JSON.stringify({
-            query: `
-              mutation {
-                customerAccessTokenCreate(input: {
-                  email: "${email.replace(/"/g, '')}",
-                  password: "${password.replace(/"/g, '')}"
-                }) {
-                  customerAccessToken { accessToken }
-                  userErrors { message }
-                }
-              }
-            `,
-          }),
-        }
-      )
-      const sfData = await sfResp.json()
-      const errors = sfData?.data?.customerAccessTokenCreate?.userErrors
-      if (errors?.length) throw new Error(errors[0].message)
-      const accessToken = sfData?.data?.customerAccessTokenCreate?.customerAccessToken?.accessToken
-      if (!accessToken) throw new Error('Inloggen mislukt')
-
-      // Stap 2: Wissel Shopify token in voor MIXMATE token
-      const result = await api.loginShopify(accessToken)
+      const result = await api.login(email, password)
       onLogin(result.token, { name: result.name, email: result.email })
     } catch (err) {
       setError(err.message)
@@ -71,6 +37,7 @@ export default function Login({ onLogin }) {
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
+              autoComplete="email"
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
               placeholder="jouw@email.nl"
             />
@@ -82,6 +49,7 @@ export default function Login({ onLogin }) {
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
+              autoComplete="current-password"
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
               placeholder="••••••••"
             />
@@ -96,14 +64,14 @@ export default function Login({ onLogin }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#111] text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50"
+            className="w-full bg-[#111] text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50 hover:bg-black/80 transition-colors"
           >
-            {loading ? 'Inloggen...' : 'Inloggen met shop account'}
+            {loading ? 'Inloggen...' : 'Inloggen'}
           </button>
         </form>
 
         <p className="text-center text-xs text-gray-400 mt-4">
-          Log in met hetzelfde account als op de MIXMATE webshop
+          Geen account? Neem contact op met MIXMATE.
         </p>
       </div>
     </div>
