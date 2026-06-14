@@ -16,5 +16,8 @@ RUN cd frontend && npm run build
 # Backend code
 COPY backend/ backend/
 
+COPY start.sh start.sh
+RUN chmod +x start.sh
+
 EXPOSE 8000
-CMD ["/bin/sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["./start.sh"]
