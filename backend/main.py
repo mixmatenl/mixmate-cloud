@@ -334,13 +334,18 @@ def rename_machine(machine_id: str, body: dict, customer_id: int = Depends(verif
     return _machine_dict(machine)
 
 @app.delete("/api/machines/{machine_id}")
-def unpair_machine(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+def delete_machine(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id, Machine.customer_id == customer_id)).first()
     if not machine:
         raise HTTPException(status_code=404, detail="Niet gevonden")
-    machine.paired      = False
-    machine.customer_id = None
-    db.add(machine)
+    # Verbreek actieve WebSocket-verbinding als de machine online is
+    conn = connected_machines.pop(machine_id, None)
+    if conn:
+        try:
+            asyncio.create_task(conn.ws.close())
+        except Exception:
+            pass
+    db.delete(machine)
     db.commit()
     return {"ok": True}
 

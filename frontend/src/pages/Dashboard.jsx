@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 
 export default function Dashboard({ user, onLogout }) {
-  const [machines, setMachines] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [pairCode, setPairCode] = useState('')
-  const [pairing,  setPairing]  = useState(false)
-  const [pairErr,  setPairErr]  = useState(null)
-  const [showPair, setShowPair] = useState(false)
+  const [machines,   setMachines]   = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [pairCode,   setPairCode]   = useState('')
+  const [pairing,    setPairing]    = useState(false)
+  const [pairErr,    setPairErr]    = useState(null)
+  const [showPair,   setShowPair]   = useState(false)
+  const [confirmDel, setConfirmDel] = useState(null) // machine object
+  const [deleting,   setDeleting]   = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => { load() }, [])
@@ -21,6 +23,20 @@ export default function Dashboard({ user, onLogout }) {
       onLogout()
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirmDel) return
+    setDeleting(true)
+    try {
+      await api.unpairMachine(confirmDel.machine_id)
+      setMachines(prev => prev.filter(m => m.machine_id !== confirmDel.machine_id))
+      setConfirmDel(null)
+    } catch (err) {
+      alert('Fout: ' + err.message)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -118,30 +134,68 @@ export default function Dashboard({ user, onLogout }) {
         ) : (
           <div className="space-y-3">
             {machines.map(m => (
-              <button
-                key={m.machine_id}
-                onClick={() => navigate(`/machine/${m.machine_id}`)}
-                className="w-full bg-white rounded-2xl border border-gray-200 p-5 flex items-center justify-between hover:border-gray-300 transition-colors text-left"
-              >
-                <div>
-                  <div className="font-medium">{m.name}</div>
-                  <div className="text-sm text-gray-500 mt-0.5">{m.model || 'MIXMATE'} · v{m.version || '—'}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                    m.last_seen ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    {m.last_seen ? 'Online' : 'Offline'}
-                  </span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
-                    <path d="M9 18l6-6-6-6"/>
+              <div key={m.machine_id} className="bg-white rounded-2xl border border-gray-200 flex items-center hover:border-gray-300 transition-colors">
+                <button
+                  onClick={() => navigate(`/machine/${m.machine_id}`)}
+                  className="flex-1 p-5 flex items-center justify-between text-left"
+                >
+                  <div>
+                    <div className="font-medium">{m.name}</div>
+                    <div className="text-sm text-gray-500 mt-0.5">{m.model || 'MIXMATE'} · v{m.version || '—'}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                      m.last_seen ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {m.last_seen ? 'Online' : 'Offline'}
+                    </span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                      <path d="M9 18l6-6-6-6"/>
+                    </svg>
+                  </div>
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setConfirmDel(m) }}
+                  className="px-4 py-5 text-gray-300 hover:text-red-400 transition-colors border-l border-gray-100"
+                  title="Machine verwijderen"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                    <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
                   </svg>
-                </div>
-              </button>
+                </button>
+              </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Bevestigingsdialog verwijderen */}
+      {confirmDel && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h2 className="font-semibold text-lg mb-1">Machine verwijderen?</h2>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              <span className="font-medium text-gray-800">{confirmDel.name}</span> wordt permanent verwijderd uit je account. De machine zelf blijft werken maar moet opnieuw gekoppeld worden.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {deleting ? 'Verwijderen...' : 'Verwijderen'}
+              </button>
+              <button
+                onClick={() => setConfirmDel(null)}
+                className="w-full bg-gray-100 text-gray-700 font-medium py-3 rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                Annuleren
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
