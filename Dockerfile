@@ -13,11 +13,9 @@ RUN cd frontend && npm install
 COPY frontend/ frontend/
 RUN cd frontend && npm run build
 
-# Backend code
+# Backend + startscript
 COPY backend/ backend/
-
-COPY start.sh start.sh
-RUN chmod +x start.sh
+COPY run.py run.py
 
 EXPOSE 8000
-CMD ["./start.sh"]
+CMD ["python3", "run.py"]
