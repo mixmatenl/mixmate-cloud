@@ -344,6 +344,18 @@ def unpair_machine(machine_id: str, customer_id: int = Depends(verify_token), db
     db.commit()
     return {"ok": True}
 
+@app.post("/api/machines/{machine_id}/unpair")
+def machine_self_unpair(machine_id: str, db: Session = Depends(get_session)):
+    """Machine kan zichzelf ontkoppelen zonder klant-token."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    machine.paired      = False
+    machine.customer_id = None
+    db.add(machine)
+    db.commit()
+    return {"ok": True}
+
 # ── Doorstuur-API (portaal → machine) ────────────────────────────────────────
 
 def _get_conn(machine_id: str, customer_id: int, db: Session) -> MachineConnection:
