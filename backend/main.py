@@ -277,7 +277,7 @@ def list_machines(customer_id: int = Depends(verify_token), db: Session = Depend
     return [_machine_dict(m) for m in machines]
 
 @app.post("/api/machines/pair")
-def pair_machine(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+async def pair_machine(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     code    = str(body.get("code", "")).strip()
     machine = db.exec(select(Machine).where(Machine.pair_code == code)).first()
 
