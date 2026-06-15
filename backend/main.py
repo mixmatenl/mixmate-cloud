@@ -113,17 +113,20 @@ class MachineConnection:
     async def send(self, msg: dict):
         await self.ws.send_json(msg)
 
-    async def request(self, msg: dict, timeout: float = 10.0) -> dict:
+    async def request(self, msg: dict, timeout: float = 30.0) -> dict:
         req_id = secrets.token_hex(8)
         msg["req_id"] = req_id
-        fut: asyncio.Future = asyncio.get_event_loop().create_future()
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending[req_id] = fut
-        await self.ws.send_json(msg)
         try:
-            return await asyncio.wait_for(fut, timeout=timeout)
+            await self.ws.send_json(msg)
+            return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
         except asyncio.TimeoutError:
             self.pending.pop(req_id, None)
-            raise HTTPException(status_code=504, detail="Machine reageert niet")
+            raise HTTPException(status_code=504, detail="Machine reageert niet — probeer opnieuw")
+        except Exception:
+            self.pending.pop(req_id, None)
+            raise HTTPException(status_code=503, detail="Verbinding met machine verbroken")
 
     def resolve(self, req_id: str, data: dict):
         if req_id in self.pending:
