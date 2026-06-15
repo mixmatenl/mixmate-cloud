@@ -224,6 +224,23 @@ def login(body: dict, db: Session = Depends(get_session)):
 
     return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
 
+@app.post("/api/auth/register")
+def register(body: dict, db: Session = Depends(get_session)):
+    email    = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    name     = (body.get("name") or "").strip()
+    if not email or not password or not name:
+        raise HTTPException(status_code=400, detail="Naam, e-mail en wachtwoord zijn verplicht")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Wachtwoord moet minimaal 8 tekens zijn")
+    if db.exec(select(Customer).where(Customer.email == email)).first():
+        raise HTTPException(status_code=409, detail="Dit e-mailadres is al in gebruik")
+    customer = Customer(email=email, name=name, password_hash=hash_password(password))
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
+
 @app.post("/api/auth/change-password")
 def change_password(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     current  = body.get("current_password") or ""
