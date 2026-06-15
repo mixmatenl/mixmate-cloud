@@ -1,21 +1,26 @@
-FROM python:3.11-slim
+# Stage 1: Frontend bouwen met Node 20
+FROM node:20-slim AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
 
+# Stage 2: Python backend
+FROM python:3.11-slim
 WORKDIR /app
 
-# Python dependencies
-COPY backend/requirements.txt backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+# Python packages
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Node + frontend build
-RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
-COPY frontend/package.json frontend/package.json
-RUN cd frontend && npm install
-COPY frontend/ frontend/
-RUN cd frontend && npm run build
+# Backend code
+COPY backend/ ./backend/
 
-# Backend + startscript
-COPY backend/ backend/
-COPY run.py run.py
+# Frontend dist van stage 1
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-EXPOSE 8000
+# Startscript
+COPY run.py ./
+
 CMD ["python3", "run.py"]
