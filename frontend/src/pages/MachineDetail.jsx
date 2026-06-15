@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 
-const TABS = ['Overzicht', 'Recepten', 'Ingrediënten', 'Glazen', 'Categorieën', 'Pompen', 'Instellingen']
+const TABS = ['Overzicht', 'Recepten', 'Ingrediënten', 'Glazen', 'Categorieën', 'Pompen', 'Instellingen', 'Info']
 
 export default function MachineDetail({ onLogout }) {
   const { machineId } = useParams()
@@ -64,6 +64,7 @@ export default function MachineDetail({ onLogout }) {
         {tab === 'Categorieën'  && status?.online && <Categorieen  machineId={machineId} />}
         {tab === 'Pompen'       && status?.online && <Pompen       machineId={machineId} />}
         {tab === 'Instellingen' && status?.online && <Instellingen machineId={machineId} />}
+        {tab === 'Info'         && <MachineInfoTab machineId={machineId} status={status} online={status?.online} />}
       </div>
     </div>
   )
@@ -505,5 +506,78 @@ function Instellingen({ machineId }) {
         {saved ? 'Opgeslagen' : saving ? 'Opslaan...' : 'Opslaan'}
       </button>
     </form>
+  )
+}
+
+// ── Info tab ──────────────────────────────────────────────────────────────────
+
+function InfoField({ label, value, mono = false }) {
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+      <span className="text-sm text-gray-600">{label}</span>
+      <span className={`text-sm font-medium text-gray-900 ${mono ? 'font-mono' : ''}`}>{value || '—'}</span>
+    </div>
+  )
+}
+
+function MachineInfoTab({ machineId, status, online }) {
+  const [info, setInfo] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!online) { setLoading(false); return }
+    api.getMachineInfo(machineId)
+      .then(setInfo)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [machineId, online])
+
+  const serial = info?.machine_id?.startsWith('pi-')
+    ? info.machine_id.replace('pi-', '').toUpperCase()
+    : info?.machine_id
+
+  return (
+    <div className="space-y-4">
+      {/* Altijd tonen: portaal-zijde info */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Portaal</h3>
+        <InfoField label="Machine ID" value={machineId} mono />
+        <InfoField label="Naam"       value={status?.name} />
+        <InfoField label="Model"      value={status?.model || 'MIXMATE'} />
+        <InfoField label="Softwareversie" value={status?.version ? `v${status.version}` : null} />
+        {status?.last_seen && (
+          <InfoField label="Laatste contact" value={new Date(status.last_seen).toLocaleString('nl-NL')} />
+        )}
+      </div>
+
+      {/* Live info van de machine zelf */}
+      {!online ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-sm">
+          Machine is offline — live info niet beschikbaar.
+        </div>
+      ) : loading ? (
+        <div className="bg-white rounded-xl border border-gray-200 h-40 animate-pulse" />
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error}</div>
+      ) : (
+        <>
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Identificatie</h3>
+            <InfoField label="Serienummer" value={serial} mono />
+            <InfoField label="Hostnaam"    value={info?.hostname} mono />
+            <InfoField label="IP-adres"    value={info?.ip_address} mono />
+            <InfoField label="MAC-adres"   value={info?.mac_address} mono />
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Hardware</h3>
+            <InfoField label="Uptime"       value={info?.uptime} />
+            <InfoField label="CPU-temp."    value={info?.cpu_temp != null ? `${info.cpu_temp} °C` : null} />
+            <InfoField label="RAM gebruikt" value={info?.ram_used && info?.ram_total ? `${info.ram_used} / ${info.ram_total}` : null} />
+            <InfoField label="Opslag"       value={info?.disk_used ? `${info.disk_used} / ${info.disk_total} (${info.disk_pct})` : null} />
+          </div>
+        </>
+      )}
+    </div>
   )
 }

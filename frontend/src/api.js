@@ -57,4 +57,6 @@ export const api = {
 
   getSettings:      (mid)           => req('GET',    `/api/machines/${mid}/settings`),
   updateSettings:   (mid, data)     => req('POST',   `/api/machines/${mid}/settings`, data),
+
+  getMachineInfo:   (mid)           => req('GET',    `/api/machines/${mid}/info`),
 }

@@ -401,6 +401,10 @@ async def get_settings(machine_id: str, customer_id: int = Depends(verify_token)
 async def update_settings(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     return await _get_conn(machine_id, customer_id, db).request({"type": "update_settings", "data": body})
 
+@app.get("/api/machines/{machine_id}/info")
+async def get_machine_info(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_info"})
+
 # ── Recepten relay ────────────────────────────────────────────────────────────
 
 @app.post("/api/machines/{machine_id}/recipes")
