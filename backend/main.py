@@ -187,11 +187,14 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
         db.commit()
         db.refresh(machine)
 
-    await websocket.send_json({
-        "type": "pair_code",
-        "code": machine.pair_code,
-        "paired": machine.paired,
-    })
+    # Stuur koppelstatus — inclusief accountinfo als al gekoppeld
+    pair_msg: dict = {"type": "pair_code", "code": machine.pair_code, "paired": machine.paired}
+    if machine.paired and machine.customer_id:
+        customer = db.get(Customer, machine.customer_id)
+        if customer:
+            pair_msg["account_name"]  = customer.name
+            pair_msg["account_email"] = customer.email
+    await websocket.send_json(pair_msg)
 
     try:
         while True:
@@ -318,7 +321,13 @@ async def pair_machine(body: dict, customer_id: int = Depends(verify_token), db:
 
     conn = connected_machines.get(machine.machine_id)
     if conn:
-        asyncio.create_task(conn.send({"type": "paired", "customer_id": customer_id}))
+        customer = db.get(Customer, customer_id)
+        asyncio.create_task(conn.send({
+            "type":          "paired",
+            "customer_id":   customer_id,
+            "account_name":  customer.name  if customer else "",
+            "account_email": customer.email if customer else "",
+        }))
 
     return _machine_dict(machine)
 
