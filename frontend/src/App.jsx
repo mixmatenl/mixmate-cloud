@@ -5,7 +5,20 @@ import Dashboard from './pages/Dashboard.jsx'
 import MachineDetail from './pages/MachineDetail.jsx'
 
 export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem('mm_token'))
+  const [token, setToken] = useState(() => {
+    // Accepteer token uit URL (bijv. doorgestuurd vanuit Shopify)
+    const params = new URLSearchParams(window.location.search)
+    const urlToken = params.get('token')
+    if (urlToken) {
+      localStorage.setItem('mm_token', urlToken)
+      const name  = params.get('name')  || ''
+      const email = params.get('email') || ''
+      if (name || email) localStorage.setItem('mm_user', JSON.stringify({ name, email }))
+      window.history.replaceState({}, '', window.location.pathname)
+      return urlToken
+    }
+    return localStorage.getItem('mm_token')
+  })
   const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem('mm_user') || 'null') } catch { return null }
   })
