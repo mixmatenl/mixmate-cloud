@@ -261,6 +261,61 @@ def change_password(body: dict, customer_id: int = Depends(verify_token), db: Se
     db.commit()
     return {"ok": True}
 
+# ── Wachtwoord vergeten via machine ──────────────────────────────────────────
+
+# { customer_id: {"code": "123456", "expires": datetime} }
+_password_reset_codes: dict[int, dict] = {}
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(body: dict, db: Session = Depends(get_session)):
+    email = (body.get("email") or "").strip().lower()
+    customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    # Altijd 200 teruggeven zodat je niet kunt raden welke e-mails bestaan
+    if not customer:
+        return {"ok": True}
+
+    machine = db.exec(select(Machine).where(Machine.customer_id == customer.id, Machine.paired == True)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Geen gekoppelde machine gevonden voor dit account. Neem contact op met de beheerder.")
+
+    conn = connected_machines.get(machine.machine_id)
+    if not conn:
+        raise HTTPException(status_code=503, detail="De machine is op dit moment offline. Zet de machine aan en probeer opnieuw.")
+
+    code = str(secrets.randbelow(900000) + 100000)
+    _password_reset_codes[customer.id] = {
+        "code": code,
+        "expires": datetime.utcnow() + timedelta(minutes=10),
+    }
+
+    await conn.send({"type": "reset_code", "code": code, "email": email})
+    return {"ok": True}
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(body: dict, db: Session = Depends(get_session)):
+    email    = (body.get("email") or "").strip().lower()
+    code     = (body.get("code") or "").strip()
+    new_pass = body.get("password") or ""
+
+    customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    if not customer:
+        raise HTTPException(status_code=400, detail="Onbekend e-mailadres")
+
+    entry = _password_reset_codes.get(customer.id)
+    if not entry or entry["code"] != code or datetime.utcnow() > entry["expires"]:
+        raise HTTPException(status_code=400, detail="Ongeldige of verlopen code")
+
+    if len(new_pass) < 8:
+        raise HTTPException(status_code=400, detail="Wachtwoord moet minimaal 8 tekens zijn")
+
+    customer.password_hash = hash_password(new_pass)
+    db.add(customer)
+    db.commit()
+    _password_reset_codes.pop(customer.id, None)
+    return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
+
+
 # ── Admin (alleen voor jou) ───────────────────────────────────────────────────
 
 @app.get("/api/admin/customers")

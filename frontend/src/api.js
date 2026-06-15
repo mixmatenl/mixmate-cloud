@@ -24,7 +24,9 @@ export const api = {
   // Auth
   login:          (email, password)              => req('POST', '/api/auth/login',           { email, password }),
   register:       (name, email, password)        => req('POST', '/api/auth/register',        { name, email, password }),
-  changePassword: (current_password, new_password) => req('POST', '/api/auth/change-password', { current_password, new_password }),
+  changePassword:  (current_password, new_password) => req('POST', '/api/auth/change-password',  { current_password, new_password }),
+  forgotPassword:  (email)                          => req('POST', '/api/auth/forgot-password',  { email }),
+  resetPassword:   (email, code, password)          => req('POST', '/api/auth/reset-password',   { email, code, password }),
 
   // Machines
   getMachines:   ()              => req('GET',    '/api/machines'),
