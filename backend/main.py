@@ -364,6 +364,76 @@ async def get_settings(machine_id: str, customer_id: int = Depends(verify_token)
 async def update_settings(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     return await _get_conn(machine_id, customer_id, db).request({"type": "update_settings", "data": body})
 
+# ── Recepten relay ────────────────────────────────────────────────────────────
+
+@app.post("/api/machines/{machine_id}/recipes")
+async def create_recipe(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "create_recipe", "data": body})
+
+@app.patch("/api/machines/{machine_id}/recipes/{recipe_id}")
+async def update_recipe(machine_id: str, recipe_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "update_recipe", "id": recipe_id, "data": body})
+
+@app.delete("/api/machines/{machine_id}/recipes/{recipe_id}")
+async def delete_recipe(machine_id: str, recipe_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "delete_recipe", "id": recipe_id})
+
+# ── Ingrediënten relay ────────────────────────────────────────────────────────
+
+@app.get("/api/machines/{machine_id}/ingredients")
+async def get_ingredients(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_ingredients"})
+
+@app.post("/api/machines/{machine_id}/ingredients")
+async def create_ingredient(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "create_ingredient", "data": body})
+
+@app.delete("/api/machines/{machine_id}/ingredients/{ingredient_id}")
+async def delete_ingredient(machine_id: str, ingredient_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "delete_ingredient", "id": ingredient_id})
+
+# ── Glazen relay ──────────────────────────────────────────────────────────────
+
+@app.get("/api/machines/{machine_id}/glasses")
+async def get_glasses(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_glasses"})
+
+@app.post("/api/machines/{machine_id}/glasses")
+async def create_glass(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "create_glass", "data": body})
+
+@app.patch("/api/machines/{machine_id}/glasses/{glass_id}")
+async def update_glass(machine_id: str, glass_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "update_glass", "id": glass_id, "data": body})
+
+@app.delete("/api/machines/{machine_id}/glasses/{glass_id}")
+async def delete_glass(machine_id: str, glass_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "delete_glass", "id": glass_id})
+
+# ── Categorieën relay ─────────────────────────────────────────────────────────
+
+@app.get("/api/machines/{machine_id}/categories")
+async def get_categories(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_categories"})
+
+@app.post("/api/machines/{machine_id}/categories")
+async def create_category(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "create_category", "data": body})
+
+@app.patch("/api/machines/{machine_id}/categories/{cat_id}")
+async def update_category(machine_id: str, cat_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "update_category", "id": cat_id, "data": body})
+
+@app.delete("/api/machines/{machine_id}/categories/{cat_id}")
+async def delete_category(machine_id: str, cat_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "delete_category", "id": cat_id})
+
+# ── Pompen relay ──────────────────────────────────────────────────────────────
+
+@app.patch("/api/machines/{machine_id}/pumps/{pump_id}")
+async def update_pump(machine_id: str, pump_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "update_pump", "id": pump_id, "data": body})
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _machine_dict(m: Machine) -> dict:

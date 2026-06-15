@@ -32,8 +32,28 @@ export const api = {
   machineStatus: (machine_id)    => req('GET',    `/api/machines/${machine_id}/status`),
 
   // Machine data (doorgestuurd naar Pi)
-  getRecipes:      (machine_id)        => req('GET',  `/api/machines/${machine_id}/recipes`),
-  getPumps:        (machine_id)        => req('GET',  `/api/machines/${machine_id}/pumps`),
-  getSettings:     (machine_id)        => req('GET',  `/api/machines/${machine_id}/settings`),
-  updateSettings:  (machine_id, data)  => req('POST', `/api/machines/${machine_id}/settings`, data),
+  getRecipes:       (mid)           => req('GET',    `/api/machines/${mid}/recipes`),
+  createRecipe:     (mid, data)     => req('POST',   `/api/machines/${mid}/recipes`, data),
+  updateRecipe:     (mid, id, data) => req('PATCH',  `/api/machines/${mid}/recipes/${id}`, data),
+  deleteRecipe:     (mid, id)       => req('DELETE', `/api/machines/${mid}/recipes/${id}`),
+
+  getIngredients:   (mid)           => req('GET',    `/api/machines/${mid}/ingredients`),
+  createIngredient: (mid, data)     => req('POST',   `/api/machines/${mid}/ingredients`, data),
+  deleteIngredient: (mid, id)       => req('DELETE', `/api/machines/${mid}/ingredients/${id}`),
+
+  getGlasses:       (mid)           => req('GET',    `/api/machines/${mid}/glasses`),
+  createGlass:      (mid, data)     => req('POST',   `/api/machines/${mid}/glasses`, data),
+  updateGlass:      (mid, id, data) => req('PATCH',  `/api/machines/${mid}/glasses/${id}`, data),
+  deleteGlass:      (mid, id)       => req('DELETE', `/api/machines/${mid}/glasses/${id}`),
+
+  getCategories:    (mid)           => req('GET',    `/api/machines/${mid}/categories`),
+  createCategory:   (mid, data)     => req('POST',   `/api/machines/${mid}/categories`, data),
+  updateCategory:   (mid, id, data) => req('PATCH',  `/api/machines/${mid}/categories/${id}`, data),
+  deleteCategory:   (mid, id)       => req('DELETE', `/api/machines/${mid}/categories/${id}`),
+
+  getPumps:         (mid)           => req('GET',    `/api/machines/${mid}/pumps`),
+  updatePump:       (mid, id, data) => req('PATCH',  `/api/machines/${mid}/pumps/${id}`, data),
+
+  getSettings:      (mid)           => req('GET',    `/api/machines/${mid}/settings`),
+  updateSettings:   (mid, data)     => req('POST',   `/api/machines/${mid}/settings`, data),
 }
