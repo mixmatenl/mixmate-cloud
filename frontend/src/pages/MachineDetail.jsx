@@ -25,30 +25,34 @@ export default function MachineDetail({ onLogout }) {
   )
 
   return (
-    <div className="min-h-screen bg-[#f2f2f2]">
-      <div className="bg-[#111] text-white px-6 py-4 flex items-center gap-4">
-        <button onClick={() => navigate('/')} className="text-white/50 hover:text-white transition-colors">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <span className="font-bold tracking-tight text-lg flex-1">{status?.name || 'Machine'}</span>
-        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-          status?.online ? 'bg-green-500/20 text-green-300' : 'bg-white/10 text-white/40'
-        }`}>{status?.online ? 'Online' : 'Offline'}</span>
-      </div>
-
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex gap-6 text-sm text-gray-500">
-        <span>{status?.model || 'MIXMATE'}</span>
-        <span>v{status?.version || '—'}</span>
-        {status?.last_seen && <span>Laatste contact: {new Date(status.last_seen).toLocaleString('nl-NL')}</span>}
-      </div>
-
-      <div className="bg-white border-b border-gray-200 px-6 flex gap-1 overflow-x-auto">
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-              tab === t ? 'border-[#111] text-[#111]' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}>{t}</button>
-        ))}
+    <div className="min-h-screen" style={{ background: '#f5f5f7', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      {/* Header */}
+      <div style={{ background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,.08)', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div style={{ maxWidth: 720, margin: '0 auto', padding: '0 24px' }}>
+          <div style={{ height: 56, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#007aff', display: 'flex', alignItems: 'center', gap: 4, fontSize: 15, padding: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+              Machines
+            </button>
+            <span style={{ color: '#c7c7cc' }}>/</span>
+            <span style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status?.name || 'Machine'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 4, background: status?.online ? '#30d158' : '#c7c7cc', boxShadow: status?.online ? '0 0 0 3px rgba(48,209,88,.2)' : 'none' }} />
+              <span style={{ fontSize: 12, color: status?.online ? '#30d158' : '#aeaeb2', fontWeight: 500 }}>{status?.online ? 'Online' : 'Offline'}</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 2, overflowX: 'auto', paddingBottom: 1 }}>
+            {TABS.map(t => (
+              <button key={t} onClick={() => setTab(t)} style={{
+                padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 13, fontWeight: tab === t ? 600 : 400,
+                color: tab === t ? '#1d1d1f' : '#6e6e73',
+                borderBottom: `2px solid ${tab === t ? '#1d1d1f' : 'transparent'}`,
+                whiteSpace: 'nowrap', transition: 'color .15s',
+              }}>{t}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
