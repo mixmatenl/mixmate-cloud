@@ -312,9 +312,11 @@ async def _send_reset_email(to_email: str, to_name: str, code: str):
 @app.post("/api/auth/forgot-password")
 async def forgot_password(body: dict, db: Session = Depends(get_session)):
     email = (body.get("email") or "").strip().lower()
+    print(f"[forgot-password] email={email!r} resend_key_set={bool(RESEND_API_KEY)}", flush=True)
     customer = db.exec(select(Customer).where(Customer.email == email)).first()
     # Altijd 200 teruggeven zodat je niet kunt raden welke e-mails bestaan
     if not customer:
+        print(f"[forgot-password] geen account gevonden voor {email!r}", flush=True)
         return {"ok": True}
 
     code = str(secrets.randbelow(900000) + 100000)
