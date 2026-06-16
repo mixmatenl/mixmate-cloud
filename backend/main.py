@@ -55,6 +55,26 @@ class Machine(SQLModel, table=True):
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     customer: Optional[Customer] = Relationship(back_populates="machines")
 
+class MachineMember(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    customer_id: int = Field(foreign_key="customer.id")
+    role: str = "staff"   # "manager" | "staff"
+    added_at: datetime = Field(default_factory=datetime.utcnow)
+
+class FlushLog(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    flushed_at: datetime = Field(default_factory=datetime.utcnow)
+    pump_slots: str = "[]"        # JSON: [1, 2, 4]
+    durations_json: str = "{}"    # JSON: {"1": 14, "2": 8}
+    flushed_by: Optional[int] = Field(default=None, foreign_key="customer.id")
+
+class RecipeLock(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    recipe_id: int
+
 def create_tables():
     SQLModel.metadata.create_all(engine)
 
@@ -403,6 +423,115 @@ async def trigger_update(machine_id: str, customer_id: int = Depends(verify_toke
     return {"ok": True}
 
 
+# ── Spoelroutine ──────────────────────────────────────────────────────────────
+
+@app.post("/api/machines/{machine_id}/flush")
+async def flush_machine(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    conn = _get_conn(machine_id, customer_id, db)
+    pumps = body.get("pumps", [])   # [{"slot": 1, "duration": 14}, ...]
+    if not pumps:
+        raise HTTPException(status_code=400, detail="Geen leidingen geselecteerd")
+    await conn.request({"type": "flush_pumps", "pumps": pumps}, timeout=180)
+    slots = [p["slot"] for p in pumps]
+    durations = {str(p["slot"]): p["duration"] for p in pumps}
+    db.add(FlushLog(
+        machine_id=machine_id,
+        pump_slots=json.dumps(slots),
+        durations_json=json.dumps(durations),
+        flushed_by=customer_id,
+    ))
+    db.commit()
+    return {"ok": True}
+
+@app.get("/api/machines/{machine_id}/flush-log")
+def get_flush_log(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db)
+    logs = db.exec(
+        select(FlushLog).where(FlushLog.machine_id == machine_id)
+        .order_by(FlushLog.flushed_at.desc()).limit(25)
+    ).all()
+    return [{"id": l.id, "flushed_at": l.flushed_at.isoformat(),
+             "pump_slots": json.loads(l.pump_slots or "[]"),
+             "durations": json.loads(l.durations_json or "{}")} for l in logs]
+
+# ── Team beheer ───────────────────────────────────────────────────────────────
+
+@app.get("/api/machines/{machine_id}/members")
+def get_members(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db, owner_only=True)
+    members = db.exec(select(MachineMember).where(MachineMember.machine_id == machine_id)).all()
+    result = []
+    for m in members:
+        c = db.get(Customer, m.customer_id)
+        result.append({"id": m.id, "name": c.name if c else "?", "email": c.email if c else "?",
+                       "role": m.role, "added_at": m.added_at.isoformat()})
+    return result
+
+@app.post("/api/machines/{machine_id}/members")
+def add_member(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db, owner_only=True)
+    email = (body.get("email") or "").strip().lower()
+    role  = body.get("role", "staff")
+    new_customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    if not new_customer:
+        raise HTTPException(status_code=404, detail="Geen account gevonden met dit e-mailadres")
+    if new_customer.id == customer_id:
+        raise HTTPException(status_code=400, detail="Je kunt jezelf niet toevoegen")
+    if db.exec(select(MachineMember).where(MachineMember.machine_id == machine_id, MachineMember.customer_id == new_customer.id)).first():
+        raise HTTPException(status_code=409, detail="Deze persoon heeft al toegang")
+    member = MachineMember(machine_id=machine_id, customer_id=new_customer.id, role=role)
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return {"id": member.id, "name": new_customer.name, "email": new_customer.email,
+            "role": member.role, "added_at": member.added_at.isoformat()}
+
+@app.patch("/api/machines/{machine_id}/members/{member_id}")
+def update_member_role(machine_id: str, member_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db, owner_only=True)
+    member = db.exec(select(MachineMember).where(MachineMember.id == member_id, MachineMember.machine_id == machine_id)).first()
+    if not member:
+        raise HTTPException(status_code=404)
+    member.role = body.get("role", member.role)
+    db.add(member)
+    db.commit()
+    return {"ok": True}
+
+@app.delete("/api/machines/{machine_id}/members/{member_id}")
+def remove_member(machine_id: str, member_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db, owner_only=True)
+    member = db.exec(select(MachineMember).where(MachineMember.id == member_id, MachineMember.machine_id == machine_id)).first()
+    if not member:
+        raise HTTPException(status_code=404)
+    db.delete(member)
+    db.commit()
+    return {"ok": True}
+
+# ── Receptvergrendeling ───────────────────────────────────────────────────────
+
+@app.get("/api/machines/{machine_id}/locks")
+def get_locks(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db)
+    locks = db.exec(select(RecipeLock).where(RecipeLock.machine_id == machine_id)).all()
+    return [l.recipe_id for l in locks]
+
+@app.post("/api/machines/{machine_id}/recipes/{recipe_id}/lock")
+def lock_recipe(machine_id: str, recipe_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db, owner_only=True)
+    if not db.exec(select(RecipeLock).where(RecipeLock.machine_id == machine_id, RecipeLock.recipe_id == recipe_id)).first():
+        db.add(RecipeLock(machine_id=machine_id, recipe_id=recipe_id))
+        db.commit()
+    return {"locked": True}
+
+@app.delete("/api/machines/{machine_id}/recipes/{recipe_id}/lock")
+def unlock_recipe(machine_id: str, recipe_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db, owner_only=True)
+    lock = db.exec(select(RecipeLock).where(RecipeLock.machine_id == machine_id, RecipeLock.recipe_id == recipe_id)).first()
+    if lock:
+        db.delete(lock)
+        db.commit()
+    return {"locked": False}
+
 # ── Admin (alleen voor jou) ───────────────────────────────────────────────────
 
 @app.get("/api/admin/customers")
@@ -438,8 +567,12 @@ def admin_delete_customer(customer_id: int, _=Depends(verify_admin), db: Session
 
 @app.get("/api/machines")
 def list_machines(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    machines = db.exec(select(Machine).where(Machine.customer_id == customer_id)).all()
-    return [_machine_dict(m) for m in machines]
+    owned = db.exec(select(Machine).where(Machine.customer_id == customer_id)).all()
+    memberships = db.exec(select(MachineMember).where(MachineMember.customer_id == customer_id)).all()
+    member_ids = [m.machine_id for m in memberships]
+    shared = db.exec(select(Machine).where(Machine.machine_id.in_(member_ids))).all() if member_ids else []
+    all_machines = {m.machine_id: m for m in owned + shared}
+    return [_machine_dict(m) for m in all_machines.values()]
 
 @app.post("/api/machines/pair")
 async def pair_machine(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
@@ -514,13 +647,24 @@ def machine_self_unpair(machine_id: str, db: Session = Depends(get_session)):
 
 # ── Doorstuur-API (portaal → machine) ────────────────────────────────────────
 
-def _get_conn(machine_id: str, customer_id: int, db: Session) -> MachineConnection:
-    machine = db.exec(select(Machine).where(
-        Machine.machine_id == machine_id,
-        Machine.customer_id == customer_id,
-    )).first()
+def _check_machine_access(machine_id: str, customer_id: int, db: Session, owner_only: bool = False) -> Machine:
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    is_owner = machine.customer_id == customer_id
+    if owner_only and not is_owner:
+        raise HTTPException(status_code=403, detail="Alleen de eigenaar kan dit uitvoeren")
+    if not is_owner:
+        member = db.exec(select(MachineMember).where(
+            MachineMember.machine_id == machine_id,
+            MachineMember.customer_id == customer_id,
+        )).first()
+        if not member:
+            raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    return machine
+
+def _get_conn(machine_id: str, customer_id: int, db: Session) -> MachineConnection:
+    _check_machine_access(machine_id, customer_id, db)
     conn = connected_machines.get(machine_id)
     if not conn:
         raise HTTPException(status_code=503, detail="Machine is offline")
@@ -564,10 +708,14 @@ async def create_recipe(machine_id: str, body: dict, customer_id: int = Depends(
 
 @app.patch("/api/machines/{machine_id}/recipes/{recipe_id}")
 async def update_recipe(machine_id: str, recipe_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    if db.exec(select(RecipeLock).where(RecipeLock.machine_id == machine_id, RecipeLock.recipe_id == recipe_id)).first():
+        raise HTTPException(status_code=423, detail="Dit recept is vergrendeld door de eigenaar")
     return await _get_conn(machine_id, customer_id, db).request({"type": "update_recipe", "id": recipe_id, "data": body})
 
 @app.delete("/api/machines/{machine_id}/recipes/{recipe_id}")
 async def delete_recipe(machine_id: str, recipe_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    if db.exec(select(RecipeLock).where(RecipeLock.machine_id == machine_id, RecipeLock.recipe_id == recipe_id)).first():
+        raise HTTPException(status_code=423, detail="Dit recept is vergrendeld door de eigenaar")
     return await _get_conn(machine_id, customer_id, db).request({"type": "delete_recipe", "id": recipe_id})
 
 # ── Ingrediënten relay ────────────────────────────────────────────────────────

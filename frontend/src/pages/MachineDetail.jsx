@@ -370,6 +370,22 @@ function Catalogus({ machineId }) {
   const [editing,  setEditing]  = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [section,  setSection]  = useState('recepten')
+  const [locks,    setLocks]    = useState([])
+  const [isOwner,  setIsOwner]  = useState(false)
+
+  useEffect(() => {
+    api.getLocks(machineId).then(setLocks).catch(() => {})
+    // Owner check: try fetching members (only owner can)
+    api.getMembers(machineId).then(() => setIsOwner(true)).catch(() => setIsOwner(false))
+  }, [machineId])
+
+  async function toggleLock(recipe) {
+    const locked = locks.includes(recipe.id)
+    try {
+      if (locked) { await api.unlockRecipe(machineId, recipe.id); setLocks(l => l.filter(id => id !== recipe.id)) }
+      else         { await api.lockRecipe(machineId, recipe.id);   setLocks(l => [...l, recipe.id]) }
+    } catch (e) { alert(e.message) }
+  }
 
   // Ingredient form state
   const [ingName, setIngName] = useState(''); const [ingErr, setIngErr] = useState(null); const [ingSaving, setIngSaving] = useState(false)
@@ -484,11 +500,16 @@ function Catalogus({ machineId }) {
                 <div style={{ background: '#fff', borderRadius: 14, padding: '32px', textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen recepten.</div>
               ) : (
                 <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-                  {recipes.map((r, i) => (
+                  {recipes.map((r, i) => {
+                    const locked = locks.includes(r.id)
+                    return (
                     <div key={r.id} style={{ padding: '12px 16px', borderBottom: i < recipes.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', background: '#f2f2f7', flexShrink: 0 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', background: locked ? '#fff8ee' : '#f2f2f7', flexShrink: 0, position: 'relative' }}>
                         {r.image_url ? <img src={r.image_url} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🍸</div>}
+                        {locked && <div style={{ position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, background: '#ff9500', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </div>}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
@@ -497,10 +518,16 @@ function Catalogus({ machineId }) {
                         </div>
                       </div>
                       {r.pour_count > 0 && <div style={{ fontSize: 12, color: '#aeaeb2', flexShrink: 0 }}>{r.pour_count}×</div>}
-                      <button onClick={() => setEditing(r)} style={{ fontSize: 13, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>Bewerk</button>
-                      <button onClick={() => delRecipe(r)} disabled={deleting === r.id} style={{ fontSize: 13, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: deleting === r.id ? .4 : 1 }}>Verwijder</button>
+                      {isOwner && (
+                        <button onClick={() => toggleLock(r)} title={locked ? 'Ontgrendelen' : 'Vergrendelen'} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={locked ? '#ff9500' : '#c7c7cc'} strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d={locked ? "M7 11V7a5 5 0 0 1 10 0v4" : "M7 11V7a5 5 0 0 1 9.9-1"}/></svg>
+                        </button>
+                      )}
+                      {!locked && <button onClick={() => setEditing(r)} style={{ fontSize: 13, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>Bewerk</button>}
+                      {!locked && <button onClick={() => delRecipe(r)} disabled={deleting === r.id} style={{ fontSize: 13, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: deleting === r.id ? .4 : 1 }}>Verwijder</button>}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -642,6 +669,323 @@ function Pompen({ machineId }) {
 
 // ── Instellingen ──────────────────────────────────────────────────────────────
 
+function calcFlushDuration(slot, daysSince) {
+  const base = 8
+  const lineFactor = slot * 0.85
+  const contamFactor = Math.min(daysSince * 1.3, 14)
+  const variance = (slot % 3) - 1
+  return Math.max(6, Math.round(base + lineFactor + contamFactor + variance))
+}
+
+function flushLabel(duration) {
+  if (duration <= 9)  return { text: 'Standaard spoeling',  color: '#30d158' }
+  if (duration <= 13) return { text: 'Intensieve spoeling', color: '#ff9500' }
+  return                     { text: 'Verhoogde spoelduur', color: '#ff3b30' }
+}
+
+function Spoelroutine({ machineId, status }) {
+  const [pumps,     setPumps]     = useState(null)
+  const [selected,  setSelected]  = useState([])   // slot numbers connected to water
+  const [analysed,  setAnalysed]  = useState(false)
+  const [analysing, setAnalysing] = useState(false)
+  const [durations, setDurations] = useState({})   // slot → seconds
+  const [daysSince, setDaysSince] = useState(0)
+  const [flushing,  setFlushing]  = useState(false)
+  const [flushDone, setFlushDone] = useState(null)
+  const [log,       setLog]       = useState(null)
+  const [showLog,   setShowLog]   = useState(false)
+
+  useEffect(() => {
+    if (!status?.online) return
+    api.getPumps(machineId).then(d => {
+      const list = d.items || d
+      setPumps(list)
+      setSelected(list.map(p => p.slot))
+    }).catch(() => {})
+    api.getFlushLog(machineId).then(setLog).catch(() => {})
+  }, [machineId, status?.online])
+
+  const lastFlush = log?.[0]?.flushed_at ? new Date(log[0].flushed_at) : null
+  const msDiff    = lastFlush ? Date.now() - lastFlush.getTime() : null
+  const daysSinceLast = msDiff != null ? Math.floor(msDiff / 86400000) : 30
+
+  async function analyse() {
+    setAnalysing(true); setAnalysed(false)
+    await new Promise(r => setTimeout(r, 1800))
+    const d = {}
+    selected.forEach(slot => { d[slot] = calcFlushDuration(slot, daysSinceLast) })
+    setDurations(d)
+    setDaysSince(daysSinceLast)
+    setAnalysed(true); setAnalysing(false)
+  }
+
+  async function startFlush() {
+    if (!confirm(`Spoelroutine starten voor ${selected.length} leiding(en)? Zorg dat water is aangesloten.`)) return
+    setFlushing(true); setFlushDone(null)
+    const pumpsPayload = selected.map(slot => ({ slot, duration: durations[slot] || 10 }))
+    try {
+      await api.flushMachine(machineId, pumpsPayload)
+      setFlushDone({ ok: true })
+      const newLog = await api.getFlushLog(machineId)
+      setLog(newLog)
+      setAnalysed(false); setSelected(pumps?.map(p => p.slot) || [])
+    } catch (e) {
+      setFlushDone({ ok: false, msg: e.message })
+    }
+    setFlushing(false)
+  }
+
+  const totalTime = selected.reduce((s, slot) => s + (durations[slot] || 0), 0)
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, padding: '0 4px' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', letterSpacing: .3, textTransform: 'uppercase' }}>Spoelroutine</div>
+        {log?.length > 0 && (
+          <button onClick={() => setShowLog(v => !v)} style={{ fontSize: 12, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            {showLog ? 'Verberg log' : 'Spoelgeschiedenis'}
+          </button>
+        )}
+      </div>
+
+      {!status?.online ? (
+        <div style={{ background: '#fff', borderRadius: 14, padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', color: '#aeaeb2', fontSize: 14 }}>
+          Machine moet online zijn voor spoelroutine.
+        </div>
+      ) : !pumps ? (
+        <div style={{ background: '#fff', borderRadius: 14, height: 80, boxShadow: '0 1px 3px rgba(0,0,0,.04)' }} />
+      ) : (
+        <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+          {/* Status bar */}
+          <div style={{ padding: '12px 16px', background: '#f9f9fb', borderBottom: '1px solid #f2f2f7', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: '#e8f4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#007aff" strokeWidth="2" strokeLinecap="round"><path d="M12 22V12M12 12C12 12 8 9 8 6a4 4 0 0 1 8 0c0 3-4 6-4 6z"/><path d="M8 22h8"/></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>
+                {lastFlush ? `Laatste spoelbeurt: ${lastFlush.toLocaleDateString('nl-NL')}` : 'Nog nooit gespoeld'}
+              </div>
+              <div style={{ fontSize: 12, color: daysSinceLast > 7 ? '#ff9500' : '#aeaeb2', marginTop: 1 }}>
+                {lastFlush
+                  ? daysSinceLast === 0 ? 'Vandaag gespoeld'
+                  : daysSinceLast === 1 ? 'Gisteren gespoeld'
+                  : `${daysSinceLast} dagen geleden gespoeld`
+                  : 'Spoelen aanbevolen voor gebruik'}
+              </div>
+            </div>
+            {daysSinceLast > 7 && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '3px 8px', flexShrink: 0 }}>Let op</div>
+            )}
+          </div>
+
+          {/* Pump selection */}
+          <div style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 10 }}>
+              Selecteer leidingen op water
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
+              {pumps.map(p => {
+                const on = selected.includes(p.slot)
+                const dur = durations[p.slot]
+                const lbl = dur ? flushLabel(dur) : null
+                return (
+                  <button key={p.slot} onClick={() => {
+                    setSelected(s => on ? s.filter(x => x !== p.slot) : [...s, p.slot])
+                    setAnalysed(false)
+                  }} style={{
+                    border: `2px solid ${on ? '#007aff' : '#e5e5ea'}`,
+                    borderRadius: 12, padding: '10px 8px', background: on ? '#f0f7ff' : '#fafafa',
+                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', transition: 'all .15s',
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: on ? '#007aff' : '#aeaeb2', marginBottom: 2 }}>L{p.slot}</div>
+                    {p.ingredient_name && <div style={{ fontSize: 10, color: '#6e6e73', marginBottom: analysed ? 4 : 0 }}>{p.ingredient_name}</div>}
+                    {analysed && dur && (
+                      <div style={{ fontSize: 10, fontWeight: 700, color: lbl.color }}>{dur}s</div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Analysis result */}
+            {analysed && selected.length > 0 && (
+              <div style={{ marginTop: 12, background: '#f9f9fb', borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Analyse resultaat</div>
+                {selected.sort((a,b)=>a-b).map(slot => {
+                  const dur = durations[slot]; const lbl = flushLabel(dur)
+                  return (
+                    <div key={slot} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f3' }}>
+                      <div>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#1d1d1f' }}>Leiding {slot}</span>
+                        <span style={{ fontSize: 11, color: '#aeaeb2', marginLeft: 8 }}>
+                          {lbl.text}{daysSinceLast > 2 ? ` · ${daysSinceLast}d niet gespoeld` : ''}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: lbl.color }}>{dur}s</span>
+                    </div>
+                  )
+                })}
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: '#6e6e73' }}>Totale duur</span>
+                  <span style={{ fontWeight: 700, color: '#1d1d1f' }}>±{totalTime}s</span>
+                </div>
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
+              {!analysed ? (
+                <button onClick={analyse} disabled={analysing || selected.length === 0} style={{
+                  background: selected.length ? '#1d1d1f' : '#e5e5ea',
+                  color: selected.length ? '#fff' : '#aeaeb2',
+                  border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600,
+                  cursor: selected.length && !analysing ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  {analysing
+                    ? <><span style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin .7s linear infinite' }} /> Leidingen analyseren…</>
+                    : 'Analyseer leidingen'
+                  }
+                </button>
+              ) : (
+                <>
+                  <button onClick={startFlush} disabled={flushing} style={{
+                    background: '#007aff', color: '#fff', border: 'none', borderRadius: 10,
+                    padding: '10px 16px', fontSize: 14, fontWeight: 600,
+                    cursor: flushing ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                    display: 'flex', alignItems: 'center', gap: 8, opacity: flushing ? .6 : 1,
+                  }}>
+                    {flushing
+                      ? <><span style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin .7s linear infinite' }} /> Spoelen…</>
+                      : `Start spoelroutine (${selected.length} leiding${selected.length !== 1 ? 'en' : ''})`
+                    }
+                  </button>
+                  <button onClick={() => setAnalysed(false)} disabled={flushing} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '10px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Opnieuw
+                  </button>
+                </>
+              )}
+            </div>
+
+            {flushDone && (
+              <div style={{ marginTop: 12, background: flushDone.ok ? '#e8faf0' : '#fff1f0', border: `1px solid ${flushDone.ok ? '#a7f3d0' : '#ffd6d3'}`, color: flushDone.ok ? '#065f46' : '#ff3b30', borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>
+                {flushDone.ok ? 'Spoelroutine voltooid. Alle geselecteerde leidingen zijn doorgespoeld.' : flushDone.msg}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Flush log */}
+      {showLog && log?.length > 0 && (
+        <div style={{ marginTop: 10, background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+          {log.slice(0, 10).map((entry, i) => (
+            <div key={entry.id} style={{ padding: '11px 16px', borderBottom: i < Math.min(log.length, 10) - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#1d1d1f' }}>{new Date(entry.flushed_at).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                <div style={{ fontSize: 11, color: '#aeaeb2', marginTop: 1 }}>{entry.pump_slots.length} leiding{entry.pump_slots.length !== 1 ? 'en' : ''}: L{entry.pump_slots.join(', L')}</div>
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#30d158', background: '#e8faf0', borderRadius: 6, padding: '3px 8px' }}>Gespoeld</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TeamBeheer({ machineId }) {
+  const [members, setMembers]   = useState(null)
+  const [email,   setEmail]     = useState('')
+  const [role,    setRole]      = useState('staff')
+  const [adding,  setAdding]    = useState(false)
+  const [err,     setErr]       = useState(null)
+  const [loading, setLoading]   = useState(true)
+
+  useEffect(() => {
+    api.getMembers(machineId)
+      .then(setMembers)
+      .catch(() => setMembers(null))
+      .finally(() => setLoading(false))
+  }, [machineId])
+
+  if (members === null && !loading) return null  // not owner, skip
+
+  async function addMember(e) {
+    e.preventDefault(); setAdding(true); setErr(null)
+    try {
+      const m = await api.addMember(machineId, email, role)
+      setMembers(prev => [...(prev || []), m])
+      setEmail('')
+    } catch (e) { setErr(e.message) }
+    setAdding(false)
+  }
+
+  async function removeMember(id) {
+    if (!confirm('Toegang intrekken?')) return
+    try {
+      await api.removeMember(machineId, id)
+      setMembers(prev => prev.filter(m => m.id !== id))
+    } catch (e) { alert(e.message) }
+  }
+
+  const roleLabel = r => r === 'manager' ? 'Beheerder' : 'Medewerker'
+  const roleBg    = r => r === 'manager' ? '#e8f4ff' : '#f2f2f7'
+  const roleColor = r => r === 'manager' ? '#007aff' : '#6e6e73'
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', letterSpacing: .3, textTransform: 'uppercase', marginBottom: 8, padding: '0 4px' }}>Team</div>
+      <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2', fontSize: 13 }}>Laden…</div>
+        ) : (
+          <>
+            {/* Add form */}
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid #f2f2f7' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 10 }}>Medewerker toevoegen</div>
+              <form onSubmit={addMember} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="E-mailadres van medewerker" style={{ ...inp, flex: 1, minWidth: 200 }} />
+                <div style={{ position: 'relative' }}>
+                  <select value={role} onChange={e => setRole(e.target.value)} style={{ ...sel, paddingRight: 30, width: 140 }}>
+                    <option value="staff">Medewerker</option>
+                    <option value="manager">Beheerder</option>
+                  </select>
+                  <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <button type="submit" disabled={adding} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                  {adding ? '…' : 'Toevoegen'}
+                </button>
+              </form>
+              {err && <div style={{ marginTop: 8, fontSize: 13, color: '#ff3b30' }}>{err}</div>}
+              <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 8 }}>De persoon moet al een MIXMATE-account hebben.</div>
+            </div>
+
+            {/* Member list */}
+            {!members?.length ? (
+              <div style={{ padding: '20px 16px', textAlign: 'center', color: '#aeaeb2', fontSize: 13 }}>Nog geen medewerkers toegevoegd.</div>
+            ) : members.map((m, i) => (
+              <div key={m.id} style={{ padding: '12px 16px', borderBottom: i < members.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f2f2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#6e6e73', flexShrink: 0 }}>
+                  {(m.name || m.email).charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
+                  <div style={{ fontSize: 12, color: '#aeaeb2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.email}</div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: roleColor(m.role), background: roleBg(m.role), borderRadius: 6, padding: '3px 8px', flexShrink: 0 }}>
+                  {roleLabel(m.role)}
+                </div>
+                <button onClick={() => removeMember(m.id)} style={{ fontSize: 13, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>Verwijder</button>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Instellingen({ machineId, status, onRename }) {
   const [name,         setName]        = useState(status?.name || '')
   const [saving,       setSaving]      = useState(false)
@@ -712,6 +1056,9 @@ function Instellingen({ machineId, status, onRename }) {
           {!status?.online && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 8 }}>Machine moet online zijn om een update uit te voeren.</div>}
         </div>
       </Group>
+
+      <Spoelroutine machineId={machineId} status={status} />
+      <TeamBeheer   machineId={machineId} />
     </div>
   )
 }

@@ -67,4 +67,19 @@ export const api = {
 
   // Update
   triggerUpdate: (machine_id) => req('POST', `/api/machines/${machine_id}/trigger-update`),
+
+  // Spoelroutine
+  flushMachine:  (mid, pumps) => req('POST', `/api/machines/${mid}/flush`, { pumps }),
+  getFlushLog:   (mid)        => req('GET',  `/api/machines/${mid}/flush-log`),
+
+  // Team
+  getMembers:    (mid)              => req('GET',    `/api/machines/${mid}/members`),
+  addMember:     (mid, email, role) => req('POST',   `/api/machines/${mid}/members`, { email, role }),
+  updateMember:  (mid, id, role)    => req('PATCH',  `/api/machines/${mid}/members/${id}`, { role }),
+  removeMember:  (mid, id)          => req('DELETE', `/api/machines/${mid}/members/${id}`),
+
+  // Receptvergrendeling
+  getLocks:      (mid)       => req('GET',    `/api/machines/${mid}/locks`),
+  lockRecipe:    (mid, rid)  => req('POST',   `/api/machines/${mid}/recipes/${rid}/lock`),
+  unlockRecipe:  (mid, rid)  => req('DELETE', `/api/machines/${mid}/recipes/${rid}/lock`),
 }
