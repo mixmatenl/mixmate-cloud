@@ -675,8 +675,58 @@ function Pompen({ machineId }) {
 // ── Spoelen (apart tabblad) ───────────────────────────────────────────────────
 
 function SpoelTab({ machineId, status }) {
+  const [blocked,  setBlocked]  = useState(false)
+  const [toggling, setToggling] = useState(false)
+
+  useEffect(() => {
+    if (!status?.online) return
+    api.getBlockStatus(machineId).then(d => setBlocked(d.blocked)).catch(() => {})
+  }, [machineId, status?.online])
+
+  async function toggleBlock() {
+    setToggling(true)
+    try {
+      const fn = blocked ? api.unblockMachine : api.blockMachine
+      const d = await fn(machineId)
+      setBlocked(d.blocked)
+    } catch {}
+    setToggling(false)
+  }
+
   return (
     <div>
+      <Group label="Machine blokkeren">
+        <div style={{ padding: '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 15, color: '#1d1d1f', fontWeight: 500 }}>
+                {blocked ? 'Machine geblokkeerd' : 'Machine niet geblokkeerd'}
+              </div>
+              <div style={{ fontSize: 13, color: '#aeaeb2', marginTop: 2 }}>
+                {blocked
+                  ? 'Cocktails kunnen nu niet worden gemaakt.'
+                  : 'Blokkeer de machine voordat je gaat spoelen.'}
+              </div>
+            </div>
+            <button onClick={toggleBlock} disabled={toggling || !status?.online} style={{
+              background: blocked ? '#ff3b30' : '#1d1d1f',
+              color: '#fff', border: 'none', borderRadius: 10,
+              padding: '10px 16px', fontSize: 14, fontWeight: 600,
+              cursor: status?.online && !toggling ? 'pointer' : 'not-allowed',
+              fontFamily: 'inherit', flexShrink: 0, opacity: (!status?.online || toggling) ? .4 : 1,
+              transition: 'background .2s',
+            }}>
+              {toggling ? '…' : blocked ? 'Deblokkeer' : 'Blokkeer'}
+            </button>
+          </div>
+          {blocked && (
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, background: '#fff8f0', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px' }}>
+              <div style={{ width: 8, height: 8, borderRadius: 4, background: '#ff9500', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: '#92400e' }}>Machine is geblokkeerd — deblokkeer na het spoelen.</span>
+            </div>
+          )}
+        </div>
+      </Group>
       <Spoelroutine machineId={machineId} status={status} />
     </div>
   )

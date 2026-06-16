@@ -455,6 +455,27 @@ async def get_flush_status(machine_id: str, customer_id: int = Depends(verify_to
     except Exception:
         return {"active": False}
 
+@app.get("/api/machines/{machine_id}/block-status")
+async def get_block_status(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db)
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        return {"blocked": False, "offline": True}
+    try:
+        return await conn.request({"type": "get_block_status"}, timeout=5)
+    except Exception:
+        return {"blocked": False}
+
+@app.post("/api/machines/{machine_id}/block")
+async def block_machine(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    conn = _get_conn(machine_id, customer_id, db)
+    return await conn.request({"type": "block_machine"}, timeout=5)
+
+@app.post("/api/machines/{machine_id}/unblock")
+async def unblock_machine(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    conn = _get_conn(machine_id, customer_id, db)
+    return await conn.request({"type": "unblock_machine"}, timeout=5)
+
 @app.get("/api/machines/{machine_id}/flush-log")
 def get_flush_log(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _check_machine_access(machine_id, customer_id, db)
