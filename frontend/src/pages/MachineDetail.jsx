@@ -169,6 +169,24 @@ function Overview({ status, machineId, onRename }) {
 
 const inp = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
 
+function resizeImageToDataUrl(file, maxPx = 480) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+    }
+    img.src = url
+  })
+}
+
 function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel }) {
   const [name,        setName]        = useState(recipe?.name || '')
   const [description, setDescription] = useState(recipe?.description || '')
@@ -180,8 +198,19 @@ function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel
       ? recipe.ingredients.map(i => ({ ingredient_id: String(i.ingredient_id), amount_ml: i.amount_ml }))
       : [{ ingredient_id: '', amount_ml: 50 }]
   )
-  const [saving, setSaving] = useState(false)
-  const [err,    setErr]    = useState(null)
+  const [saving,       setSaving]      = useState(false)
+  const [err,          setErr]         = useState(null)
+  const [imgLoading,   setImgLoading]  = useState(false)
+  const fileRef = React.useRef(null)
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImgLoading(true)
+    const dataUrl = await resizeImageToDataUrl(file)
+    setImageUrl(dataUrl)
+    setImgLoading(false)
+  }
 
   const addStep    = () => setSteps(s => [...s, { ingredient_id: '', amount_ml: 50 }])
   const removeStep = i  => setSteps(s => s.filter((_, idx) => idx !== i))
@@ -198,7 +227,7 @@ function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel
         description: description.trim(),
         category_id: categoryId === '' ? null : parseInt(categoryId),
         glass_id:    glassId    === '' ? null : parseInt(glassId),
-        image_url:   imageUrl.trim(),
+        image_url:   imageUrl,
         ingredients: ing.map((s, i) => ({
           ingredient_id: parseInt(s.ingredient_id),
           amount_ml:     parseFloat(s.amount_ml),
@@ -218,7 +247,42 @@ function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel
       <div className="space-y-2">
         <input required value={name} onChange={e => setName(e.target.value)} placeholder="Naam van het recept *" className={inp} />
         <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Korte omschrijving (optioneel)" className={inp} />
-        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="Afbeelding URL (optioneel)" className={inp} />
+      </div>
+
+      {/* Afbeelding upload */}
+      <div>
+        <label className="text-xs text-gray-500 mb-1 block">Afbeelding</label>
+        <div className="flex items-center gap-3">
+          <div
+            onClick={() => fileRef.current?.click()}
+            className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:border-gray-400 transition-colors overflow-hidden shrink-0 bg-gray-50"
+          >
+            {imgLoading ? (
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+            ) : imageUrl ? (
+              <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                <path d="m21 15-5-5L5 21"/>
+              </svg>
+            )}
+          </div>
+          <div>
+            <button type="button" onClick={() => fileRef.current?.click()}
+              className="text-sm text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors">
+              {imageUrl ? 'Foto wijzigen' : 'Foto kiezen'}
+            </button>
+            {imageUrl && (
+              <button type="button" onClick={() => setImageUrl('')}
+                className="ml-2 text-xs text-gray-400 hover:text-red-400 transition-colors">
+                Verwijderen
+              </button>
+            )}
+            <p className="text-xs text-gray-400 mt-1">JPG of PNG, wordt automatisch verkleind</p>
+          </div>
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
       </div>
 
       {/* Categorie + glas */}
