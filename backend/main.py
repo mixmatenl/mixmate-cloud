@@ -268,7 +268,7 @@ _password_reset_codes: dict[int, dict] = {}
 
 RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")
 PORTAL_URL      = os.getenv("PORTAL_URL", "https://mixmate-cloud-production.up.railway.app")
-FROM_EMAIL      = "noreply@send.mixmate.nl"
+FROM_EMAIL      = "noreply@mixmate.nl"
 
 async def _send_reset_email(to_email: str, to_name: str, code: str):
     if not RESEND_API_KEY:
