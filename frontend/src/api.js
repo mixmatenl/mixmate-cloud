@@ -64,4 +64,7 @@ export const api = {
 
   // Support
   submitSupport: (data) => req('POST', '/api/support', data),
+
+  // Update
+  triggerUpdate: (machine_id) => req('POST', `/api/machines/${machine_id}/trigger-update`),
 }

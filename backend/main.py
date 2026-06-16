@@ -391,6 +391,18 @@ async def submit_support(body: dict, customer_id: int = Depends(verify_token)):
     return {"ok": True}
 
 
+@app.post("/api/machines/{machine_id}/trigger-update")
+async def trigger_update(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id, Machine.customer_id == customer_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(status_code=503, detail="Machine is offline")
+    await conn.send({"type": "trigger_update"})
+    return {"ok": True}
+
+
 # ── Admin (alleen voor jou) ───────────────────────────────────────────────────
 
 @app.get("/api/admin/customers")
