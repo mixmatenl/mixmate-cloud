@@ -718,7 +718,7 @@ function Spoelroutine({ machineId, status }) {
     api.getPumps(machineId).then(d => {
       const list = d.items || d
       setPumps(list)
-      setSelected(list.map(p => p.slot))
+      setSelected([])
     }).catch(() => {})
     api.getFlushLog(machineId).then(setLog).catch(() => {})
   }, [machineId, status?.online])
