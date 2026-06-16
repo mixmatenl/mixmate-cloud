@@ -584,7 +584,7 @@ def list_machines(customer_id: int = Depends(verify_token), db: Session = Depend
     member_ids = [m.machine_id for m in memberships]
     shared = db.exec(select(Machine).where(Machine.machine_id.in_(member_ids))).all() if member_ids else []
     all_machines = {m.machine_id: m for m in owned + shared}
-    return [_machine_dict(m) for m in all_machines.values()]
+    return [{**_machine_dict(m), "online": m.machine_id in connected_machines} for m in all_machines.values()]
 
 @app.post("/api/machines/pair")
 async def pair_machine(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):

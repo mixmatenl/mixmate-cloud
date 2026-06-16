@@ -237,8 +237,6 @@ export default function Dashboard({ user, onLogout }) {
   const [machines,   setMachines]   = useState([])
   const [loading,    setLoading]    = useState(true)
   const [showWizard, setShowWizard] = useState(false)
-  const [confirmDel, setConfirmDel] = useState(null)
-  const [deleting,   setDeleting]   = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => { load() }, [])
@@ -247,17 +245,6 @@ export default function Dashboard({ user, onLogout }) {
     try { setMachines(await api.getMachines()) }
     catch { onLogout() }
     finally { setLoading(false) }
-  }
-
-  async function handleDelete() {
-    if (!confirmDel) return
-    setDeleting(true)
-    try {
-      await api.unpairMachine(confirmDel.machine_id)
-      setMachines(prev => prev.filter(m => m.machine_id !== confirmDel.machine_id))
-      setConfirmDel(null)
-    } catch (err) { alert('Fout: ' + err.message) }
-    finally { setDeleting(false) }
   }
 
   return (
@@ -355,17 +342,6 @@ export default function Dashboard({ user, onLogout }) {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
                   </div>
                 </button>
-                <button onClick={() => setConfirmDel(m)} style={{
-                  padding: '20px 18px', background: 'none', border: 'none',
-                  borderLeft: '1px solid #f5f5f7', cursor: 'pointer', color: '#c7c7cc',
-                  transition: 'color .15s',
-                }} onMouseEnter={e => e.currentTarget.style.color='#ff3b30'}
-                   onMouseLeave={e => e.currentTarget.style.color='#c7c7cc'}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                    <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-                  </svg>
-                </button>
               </div>
             ))}
           </div>
@@ -378,33 +354,6 @@ export default function Dashboard({ user, onLogout }) {
           onClose={() => setShowWizard(false)}
           onPaired={m => { setMachines(prev => [...prev, m]); navigate(`/machine/${m.machine_id}`) }}
         />
-      )}
-
-      {/* Verwijder bevestiging */}
-      {confirmDel && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', borderRadius: 24, padding: 32, maxWidth: 360, width: '100%' }}>
-            <div style={{ width: 52, height: 52, borderRadius: 16, background: '#fff1f0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 0 20px' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" strokeWidth="2" strokeLinecap="round">
-                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              </svg>
-            </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1d1d1f', marginBottom: 8 }}>Machine verwijderen?</h2>
-            <p style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6, marginBottom: 24 }}>
-              <strong style={{ color: '#1d1d1f' }}>{confirmDel.name}</strong> wordt losgekoppeld van je account. De machine blijft gewoon werken maar moet opnieuw gekoppeld worden.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={handleDelete} disabled={deleting} style={{
-                background: '#ff3b30', color: '#fff', border: 'none', borderRadius: 14,
-                padding: '14px', fontSize: 15, fontWeight: 600, cursor: 'pointer', opacity: deleting ? .5 : 1,
-              }}>{deleting ? 'Verwijderen…' : 'Verwijderen'}</button>
-              <button onClick={() => setConfirmDel(null)} style={{
-                background: '#f5f5f7', color: '#1d1d1f', border: 'none', borderRadius: 14,
-                padding: '14px', fontSize: 15, fontWeight: 600, cursor: 'pointer',
-              }}>Annuleren</button>
-            </div>
-          </div>
-        </div>
       )}
 
       <style>{`

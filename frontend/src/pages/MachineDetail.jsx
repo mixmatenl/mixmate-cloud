@@ -67,7 +67,7 @@ export default function MachineDetail({ onLogout }) {
         {tab === 'Catalogus'   && status?.online && <Catalogus   machineId={machineId} />}
         {tab === 'Pompen'      && status?.online && <Pompen      machineId={machineId} />}
         {tab === 'Spoelen'     && <SpoelTab    machineId={machineId} status={status} />}
-        {tab === 'Instellingen'&& <Instellingen machineId={machineId} status={status} onRename={name => setStatus(s => ({...s, name}))} />}
+        {tab === 'Instellingen'&& <Instellingen machineId={machineId} status={status} onRename={name => setStatus(s => ({...s, name}))} onUnpair={() => navigate('/')} />}
         {tab === 'Info'        && <InfoTab     machineId={machineId} status={status} />}
       </div>
     </div>
@@ -1058,20 +1058,30 @@ function TeamBeheer({ machineId }) {
   )
 }
 
-function Instellingen({ machineId, status, onRename }) {
+function Instellingen({ machineId, status, onRename, onUnpair }) {
   const [name,         setName]        = useState(status?.name || '')
   const [saving,       setSaving]      = useState(false)
   const [saved,        setSaved]       = useState(false)
   const [updating,     setUpdating]    = useState(false)
   const [updateStatus, setUpdateStatus]= useState(null)
+  const [confirmDel,   setConfirmDel]  = useState(false)
+  const [deleting,     setDeleting]    = useState(false)
 
   async function saveName(e) {
     e.preventDefault(); setSaving(true)
     try {
-      if (status?.online) await api.updateSettings(machineId, { machine_name: name })
+      await api.renameMachine(machineId, name)
       onRename(name); setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch {}
     setSaving(false)
+  }
+
+  async function handleUnpair() {
+    setDeleting(true)
+    try {
+      await api.unpairMachine(machineId)
+      onUnpair()
+    } catch { setDeleting(false) }
   }
 
   async function triggerUpdate() {
@@ -1092,12 +1102,11 @@ function Instellingen({ machineId, status, onRename }) {
         <div style={{ padding: '14px 16px' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 8 }}>Naam</div>
           <form onSubmit={saveName} style={{ display: 'flex', gap: 10 }}>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Bijv. Bar machine" style={{ ...inp, flex: 1 }} disabled={!status?.online} />
-            <button type="submit" disabled={saving || !status?.online} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: (!status?.online || saving) ? .4 : 1 }}>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Bijv. Bar machine" style={{ ...inp, flex: 1 }} />
+            <button type="submit" disabled={saving} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: saving ? .4 : 1 }}>
               {saved ? 'Opgeslagen ✓' : saving ? 'Opslaan…' : 'Opslaan'}
             </button>
           </form>
-          {!status?.online && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 8 }}>Machine moet online zijn om de naam aan te passen.</div>}
         </div>
       </Group>
 
@@ -1130,6 +1139,48 @@ function Instellingen({ machineId, status, onRename }) {
       </Group>
 
       <TeamBeheer machineId={machineId} />
+
+      <Group label="Gevaarlijke zone">
+        <div style={{ padding: '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 15, color: '#1d1d1f', fontWeight: 500 }}>Machine ontkoppelen</div>
+              <div style={{ fontSize: 13, color: '#aeaeb2', marginTop: 2 }}>De machine blijft werken maar wordt losgekoppeld van je account.</div>
+            </div>
+            <button onClick={() => setConfirmDel(true)} style={{
+              background: 'none', border: '1.5px solid #ff3b30', color: '#ff3b30',
+              borderRadius: 10, padding: '8px 14px', fontSize: 14, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+            }}>Verwijderen</button>
+          </div>
+        </div>
+      </Group>
+
+      {confirmDel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: 24, padding: 32, maxWidth: 360, width: '100%' }}>
+            <div style={{ width: 52, height: 52, borderRadius: 16, background: '#fff1f0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 0 20px' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" strokeWidth="2" strokeLinecap="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              </svg>
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1d1d1f', marginBottom: 8 }}>Machine verwijderen?</h2>
+            <p style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6, marginBottom: 24 }}>
+              <strong style={{ color: '#1d1d1f' }}>{status?.name}</strong> wordt losgekoppeld van je account. De machine blijft gewoon werken maar moet opnieuw gekoppeld worden.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={handleUnpair} disabled={deleting} style={{
+                background: '#ff3b30', color: '#fff', border: 'none', borderRadius: 14,
+                padding: '14px', fontSize: 15, fontWeight: 600, cursor: 'pointer', opacity: deleting ? .5 : 1,
+              }}>{deleting ? 'Verwijderen…' : 'Verwijderen'}</button>
+              <button onClick={() => setConfirmDel(false)} style={{
+                background: '#f5f5f7', color: '#1d1d1f', border: 'none', borderRadius: 14,
+                padding: '14px', fontSize: 15, fontWeight: 600, cursor: 'pointer',
+              }}>Annuleren</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

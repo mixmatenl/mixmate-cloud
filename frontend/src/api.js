@@ -32,6 +32,7 @@ export const api = {
   getMachines:   ()              => req('GET',    '/api/machines'),
   pairMachine:   (code)          => req('POST',   '/api/machines/pair', { code }),
   unpairMachine: (machine_id)    => req('DELETE', `/api/machines/${machine_id}`),
+  renameMachine: (machine_id, name) => req('PATCH', `/api/machines/${machine_id}`, { name }),
   machineStatus: (machine_id)    => req('GET',    `/api/machines/${machine_id}/status`),
 
   // Machine data (doorgestuurd naar Pi)
