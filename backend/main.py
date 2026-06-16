@@ -307,16 +307,13 @@ async def _send_reset_email(to_email: str, to_name: str, code: str):
             json={"from": FROM_EMAIL, "to": [to_email], "subject": "Wachtwoord herstellen — MIXMATE", "html": html},
             timeout=10,
         )
-        print(f"[Resend] status={r.status_code} body={r.text}", flush=True)
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(body: dict, db: Session = Depends(get_session)):
     email = (body.get("email") or "").strip().lower()
-    print(f"[forgot-password] email={email!r} resend_key_set={bool(RESEND_API_KEY)}", flush=True)
     customer = db.exec(select(Customer).where(Customer.email == email)).first()
     # Altijd 200 teruggeven zodat je niet kunt raden welke e-mails bestaan
     if not customer:
-        print(f"[forgot-password] geen account gevonden voor {email!r}", flush=True)
         return {"ok": True}
 
     code = str(secrets.randbelow(900000) + 100000)
@@ -604,6 +601,9 @@ if FRONTEND_DIST.exists():
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404)
         file = FRONTEND_DIST / full_path
         if file.exists() and file.is_file():
             return FileResponse(str(file))
