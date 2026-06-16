@@ -709,7 +709,9 @@ function Spoelroutine({ machineId, status }) {
   const [liveStatus, setLiveStatus]= useState(null)   // real-time Pi status
   const [log,        setLog]       = useState(null)
   const [showLog,    setShowLog]   = useState(false)
-  const pollRef = useRef(null)
+  const pollRef      = useRef(null)
+  const sawActiveRef = useRef(false) // track of we active:true hebben gezien
+  const pollStartRef = useRef(0)     // timestamp voor timeout
 
   useEffect(() => {
     if (!status?.online) return
@@ -729,17 +731,27 @@ function Spoelroutine({ machineId, status }) {
   // Start polling flush status every second
   function startPolling() {
     stopPolling()
+    sawActiveRef.current = false
+    pollStartRef.current = Date.now()
     pollRef.current = setInterval(async () => {
       try {
         const s = await api.getFlushStatus(machineId)
         setLiveStatus(s)
-        if (!s.active) {
+        if (s.active) {
+          sawActiveRef.current = true
+        } else if (sawActiveRef.current) {
+          // Flush is klaar — we hebben active:true gehad en nu active:false
           stopPolling()
           setFlushing(false)
           setFlushDone({ ok: true })
           setAnalysed(false)
           setSelected(pumps?.map(p => p.slot) || [])
           api.getFlushLog(machineId).then(setLog).catch(() => {})
+        }
+        // active:false zonder active:true → Pi start nog op; stop na 30s timeout
+        else if (Date.now() - pollStartRef.current > 30000) {
+          stopPolling(); setFlushing(false)
+          setFlushDone({ ok: false, msg: 'Machine reageert niet op spoelcommando. Controleer of hij online is.' })
         }
       } catch { stopPolling(); setFlushing(false) }
     }, 1000)
@@ -864,7 +876,7 @@ function Spoelroutine({ machineId, status }) {
                         cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', transition: 'all .15s',
                       }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: on ? '#007aff' : '#aeaeb2', marginBottom: 2 }}>L{p.slot}</div>
-                        {p.ingredient_name && <div style={{ fontSize: 10, color: '#6e6e73', marginBottom: analysed ? 4 : 0 }}>{p.ingredient_name}</div>}
+                        {p.ingredient?.name && <div style={{ fontSize: 10, color: '#6e6e73', marginBottom: analysed ? 4 : 0 }}>{p.ingredient.name}</div>}
                         {analysed && dur && <div style={{ fontSize: 10, fontWeight: 700, color: lbl.color }}>{dur}s</div>}
                       </button>
                     )
