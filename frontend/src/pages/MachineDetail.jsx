@@ -405,8 +405,12 @@ function Catalogus({ machineId }) {
     e.preventDefault(); setGlSaving(true); setGlErr(null)
     const data = { name: glForm.name, volume_ml: Number(glForm.volume_ml) }
     try {
-      if (glEditing) setGlasses(glasses.map(g => g.id === glEditing.id ? await api.updateGlass(machineId, glEditing.id, data) : g))
-      else setGlasses([...glasses, await api.createGlass(machineId, data)])
+      if (glEditing) {
+        const updated = await api.updateGlass(machineId, glEditing.id, data)
+        setGlasses(glasses.map(g => g.id === glEditing.id ? updated : g))
+      } else {
+        setGlasses([...glasses, await api.createGlass(machineId, data)])
+      }
       setGlForm({ name: '', volume_ml: '' }); setGlEditing(null)
     } catch (e) { setGlErr(e.message) }; setGlSaving(false)
   }
@@ -419,8 +423,12 @@ function Catalogus({ machineId }) {
   async function saveCat(e) {
     e.preventDefault(); setCatSaving(true); setCatErr(null)
     try {
-      if (catEditing) setCategories(categories.map(c => c.id === catEditing.id ? await api.updateCategory(machineId, catEditing.id, catForm) : c))
-      else setCategories([...categories, await api.createCategory(machineId, catForm)])
+      if (catEditing) {
+        const updated = await api.updateCategory(machineId, catEditing.id, catForm)
+        setCategories(categories.map(c => c.id === catEditing.id ? updated : c))
+      } else {
+        setCategories([...categories, await api.createCategory(machineId, catForm)])
+      }
       setCatForm({ name: '' }); setCatEditing(null)
     } catch (e) { setCatErr(e.message) }; setCatSaving(false)
   }
