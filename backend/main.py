@@ -301,12 +301,13 @@ async def _send_reset_email(to_email: str, to_name: str, code: str):
     </div>
     """
     async with httpx.AsyncClient() as client:
-        await client.post(
+        r = await client.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             json={"from": FROM_EMAIL, "to": [to_email], "subject": "Wachtwoord herstellen — MIXMATE", "html": html},
             timeout=10,
         )
+        print(f"[Resend] status={r.status_code} body={r.text}", flush=True)
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(body: dict, db: Session = Depends(get_session)):
