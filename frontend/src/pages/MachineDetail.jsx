@@ -167,76 +167,186 @@ function Overview({ status, machineId, onRename }) {
 
 // ── Recepten ──────────────────────────────────────────────────────────────────
 
-function Recepten({ machineId }) {
-  const { items, loading, err, reload, setItems } = useList(() => api.getRecipes(machineId))
-  const [showForm, setShowForm] = useState(false)
-  const [editing,  setEditing]  = useState(null)
-  const [formErr,  setFormErr]  = useState(null)
-  const [saving,   setSaving]   = useState(false)
-  const [form, setForm] = useState({ name: '', category_name: '', description: '' })
+const inp = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
 
-  function openNew() { setForm({ name: '', category_name: '', description: '' }); setEditing(null); setFormErr(null); setShowForm(true) }
-  function openEdit(r) { setForm({ name: r.name, category_name: r.category_name || '', description: r.description || '' }); setEditing(r); setFormErr(null); setShowForm(true) }
+function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel }) {
+  const [name,        setName]        = useState(recipe?.name || '')
+  const [description, setDescription] = useState(recipe?.description || '')
+  const [categoryId,  setCategoryId]  = useState(recipe?.category_id ?? '')
+  const [glassId,     setGlassId]     = useState(recipe?.glass_id ?? '')
+  const [imageUrl,    setImageUrl]    = useState(recipe?.image_url || '')
+  const [steps,       setSteps]       = useState(
+    recipe?.ingredients?.length
+      ? recipe.ingredients.map(i => ({ ingredient_id: String(i.ingredient_id), amount_ml: i.amount_ml }))
+      : [{ ingredient_id: '', amount_ml: 50 }]
+  )
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState(null)
 
-  async function save(e) {
-    e.preventDefault(); setSaving(true); setFormErr(null)
+  const addStep    = () => setSteps(s => [...s, { ingredient_id: '', amount_ml: 50 }])
+  const removeStep = i  => setSteps(s => s.filter((_, idx) => idx !== i))
+  const updateStep = (i, k, v) => setSteps(s => s.map((st, idx) => idx === i ? { ...st, [k]: v } : st))
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!name.trim()) return
+    const ing = steps.filter(s => s.ingredient_id)
+    setSaving(true); setErr(null)
     try {
-      if (editing) {
-        const updated = await api.updateRecipe(machineId, editing.id, form)
-        setItems(items.map(r => r.id === editing.id ? updated : r))
-      } else {
-        const created = await api.createRecipe(machineId, form)
-        setItems([...items, created])
-      }
-      setShowForm(false)
-    } catch (e) { setFormErr(e.message) }
+      await onSave({
+        name: name.trim(),
+        description: description.trim(),
+        category_id: categoryId === '' ? null : parseInt(categoryId),
+        glass_id:    glassId    === '' ? null : parseInt(glassId),
+        image_url:   imageUrl.trim(),
+        ingredients: ing.map((s, i) => ({
+          ingredient_id: parseInt(s.ingredient_id),
+          amount_ml:     parseFloat(s.amount_ml),
+          order: i,
+        })),
+      })
+    } catch (e) { setErr(e.message) }
     setSaving(false)
   }
 
+  return (
+    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+      <div className="font-semibold text-sm text-gray-800">{recipe ? `${recipe.name} bewerken` : 'Nieuw recept'}</div>
+      <Err msg={err} />
+
+      {/* Naam + omschrijving */}
+      <div className="space-y-2">
+        <input required value={name} onChange={e => setName(e.target.value)} placeholder="Naam van het recept *" className={inp} />
+        <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Korte omschrijving (optioneel)" className={inp} />
+        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="Afbeelding URL (optioneel)" className={inp} />
+      </div>
+
+      {/* Categorie + glas */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Categorie</label>
+          <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className={inp}>
+            <option value="">— Geen —</option>
+            {(categories || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Glas</label>
+          <select value={glassId} onChange={e => setGlassId(e.target.value)} className={inp}>
+            <option value="">— Geen —</option>
+            {(glasses || []).map(g => <option key={g.id} value={g.id}>{g.name} ({g.volume_ml}ml)</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Ingrediënten */}
+      <div className="space-y-2">
+        <label className="text-xs text-gray-500 uppercase tracking-wide">Ingrediënten</label>
+        {steps.map((step, i) => (
+          <div key={i} className="flex gap-2 items-center">
+            <select value={step.ingredient_id} onChange={e => updateStep(i, 'ingredient_id', e.target.value)}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-black/10">
+              <option value="">— Kies ingrediënt —</option>
+              {(ingredients || []).map(ing => <option key={ing.id} value={ing.id}>{ing.name}</option>)}
+            </select>
+            <input type="number" value={step.amount_ml} min="1" max="999"
+              onChange={e => updateStep(i, 'amount_ml', e.target.value)}
+              className="w-20 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-black/10" />
+            <span className="text-gray-400 text-xs shrink-0">ml</span>
+            {steps.length > 1 && (
+              <button type="button" onClick={() => removeStep(i)} className="text-gray-300 hover:text-red-400 text-lg leading-none w-6 text-center">×</button>
+            )}
+          </div>
+        ))}
+        <button type="button" onClick={addStep} className="text-sm text-gray-400 hover:text-gray-700">+ Ingrediënt toevoegen</button>
+      </div>
+
+      <div className="flex gap-2 pt-1 border-t border-gray-100">
+        <button type="submit" disabled={saving} className="bg-[#111] text-white text-sm px-5 py-2 rounded-lg disabled:opacity-50 font-medium">
+          {saving ? 'Opslaan...' : 'Opslaan'}
+        </button>
+        <button type="button" onClick={onCancel} className="text-gray-500 text-sm px-4 py-2 rounded-lg border border-gray-200">Annuleren</button>
+      </div>
+    </form>
+  )
+}
+
+function Recepten({ machineId }) {
+  const { items, loading, err, reload } = useList(() => api.getRecipes(machineId))
+  const [ingredients, setIngredients]   = useState([])
+  const [categories,  setCategories]    = useState([])
+  const [glasses,     setGlasses]       = useState([])
+  const [editing,     setEditing]       = useState(null)  // null=list, 'new'=new form, recipe obj=edit
+  const [deleting,    setDeleting]      = useState(null)
+
+  useEffect(() => {
+    Promise.all([
+      api.getIngredients(machineId),
+      api.getCategories(machineId),
+      api.getGlasses(machineId),
+    ]).then(([i, c, g]) => {
+      setIngredients(Array.isArray(i) ? i : (i?.items || []))
+      setCategories(Array.isArray(c) ? c : (c?.items || []))
+      setGlasses(Array.isArray(g) ? g : (g?.items || []))
+    }).catch(() => {})
+  }, [machineId])
+
+  async function save(data) {
+    if (editing === 'new') {
+      await api.createRecipe(machineId, data)
+    } else {
+      await api.updateRecipe(machineId, editing.id, data)
+    }
+    setEditing(null)
+    reload()
+  }
+
   async function del(r) {
-    if (!confirm(`"${r.name}" verwijderen?`)) return
-    try {
-      await api.deleteRecipe(machineId, r.id)
-      setItems(items.filter(x => x.id !== r.id))
-    } catch (e) { alert(e.message) }
+    setDeleting(r.id)
+    try { await api.deleteRecipe(machineId, r.id); reload() }
+    catch (e) { alert(e.message) }
+    setDeleting(null)
   }
 
   if (loading) return <Skeleton />
+  if (editing) return (
+    <RecipeForm
+      recipe={editing === 'new' ? null : editing}
+      ingredients={ingredients}
+      categories={categories}
+      glasses={glasses}
+      onSave={save}
+      onCancel={() => setEditing(null)}
+    />
+  )
   return (
     <div className="space-y-3">
       <Err msg={err} />
       <div className="flex justify-end">
-        <button onClick={openNew} className="bg-[#111] text-white text-sm px-4 py-2 rounded-lg">+ Nieuw recept</button>
+        <button onClick={() => setEditing('new')} className="bg-[#111] text-white text-sm px-4 py-2 rounded-lg font-medium">+ Nieuw recept</button>
       </div>
-      {showForm && (
-        <form onSubmit={save} className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <div className="font-medium text-sm">{editing ? 'Recept bewerken' : 'Nieuw recept'}</div>
-          <Err msg={formErr} />
-          <input required value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
-            placeholder="Naam" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10" />
-          <input value={form.category_name} onChange={e => setForm(f => ({...f, category_name: e.target.value}))}
-            placeholder="Categorie (optioneel)" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10" />
-          <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))}
-            placeholder="Omschrijving (optioneel)" rows={2}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 resize-none" />
-          <div className="flex gap-2">
-            <button type="submit" disabled={saving} className="bg-[#111] text-white text-sm px-4 py-2 rounded-lg disabled:opacity-50">
-              {saving ? 'Opslaan...' : 'Opslaan'}
-            </button>
-            <button type="button" onClick={() => setShowForm(false)} className="text-gray-500 text-sm px-4 py-2 rounded-lg border border-gray-200">Annuleren</button>
-          </div>
-        </form>
-      )}
       {!items?.length ? <Empty text="Geen recepten." /> : (
         <div className="space-y-2">
           {items.map(r => (
             <div key={r.id} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
-              <div className="flex-1">
-                <div className="font-medium text-sm">{r.name}</div>
-                {r.category_name && <div className="text-xs text-gray-500 mt-0.5">{r.category_name}</div>}
+              {r.image_url && (
+                <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-gray-100">
+                  <img src={r.image_url} alt={r.name} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">{r.name}</div>
+                <div className="flex gap-2 mt-0.5">
+                  {r.category_name && <span className="text-xs text-gray-400">{r.category_name}</span>}
+                  {r.glass_name    && <span className="text-xs text-gray-400">· {r.glass_name}</span>}
+                  {r.ingredients?.length > 0 && <span className="text-xs text-gray-400">· {r.ingredients.length} ingrediënten</span>}
+                </div>
               </div>
-              <button onClick={() => openEdit(r)} className="text-gray-400 hover:text-gray-700 text-xs px-2 py-1 rounded border border-gray-200">Bewerk</button>
-              <button onClick={() => del(r)} className="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded border border-red-100">Verwijder</button>
+              <button onClick={() => setEditing(r)} className="text-gray-400 hover:text-gray-700 text-xs px-3 py-1.5 rounded-lg border border-gray-200 shrink-0">Bewerk</button>
+              <button onClick={() => del(r)} disabled={deleting === r.id}
+                className="text-red-400 hover:text-red-600 text-xs px-3 py-1.5 rounded-lg border border-red-100 disabled:opacity-40 shrink-0">
+                {deleting === r.id ? '...' : 'Verwijder'}
+              </button>
             </div>
           ))}
         </div>
