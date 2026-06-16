@@ -266,6 +266,48 @@ def change_password(body: dict, customer_id: int = Depends(verify_token), db: Se
 # { customer_id: {"code": "123456", "expires": datetime} }
 _password_reset_codes: dict[int, dict] = {}
 
+RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")
+PORTAL_URL      = os.getenv("PORTAL_URL", "https://mixmate-cloud-production.up.railway.app")
+FROM_EMAIL      = "noreply@send.mixmate.nl"
+
+async def _send_reset_email(to_email: str, to_name: str, code: str):
+    if not RESEND_API_KEY:
+        return
+    reset_url = f"{PORTAL_URL}/login?mode=reset&email={to_email}&code={code}"
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#fff;">
+      <div style="font-size:20px;font-weight:700;letter-spacing:-.5px;color:#111;margin-bottom:4px;">MIXMATE</div>
+      <div style="font-size:13px;color:#9ca3af;margin-bottom:32px;">Wachtwoord herstellen</div>
+
+      <p style="font-size:14px;color:#374151;margin:0 0 8px;">Hallo {to_name},</p>
+      <p style="font-size:14px;color:#374151;margin:0 0 24px;">
+        We hebben een verzoek ontvangen om je wachtwoord te herstellen.
+        Gebruik de onderstaande code of klik op de knop.
+      </p>
+
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
+        <div style="font-size:11px;font-weight:600;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Verificatiecode</div>
+        <div style="font-size:36px;font-weight:800;letter-spacing:10px;font-family:monospace;color:#111;">{code}</div>
+        <div style="font-size:12px;color:#9ca3af;margin-top:8px;">Geldig voor 10 minuten</div>
+      </div>
+
+      <a href="{reset_url}" style="display:block;background:#111;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:14px;font-weight:600;margin-bottom:24px;">
+        Wachtwoord instellen →
+      </a>
+
+      <p style="font-size:12px;color:#9ca3af;margin:0;">
+        Als je dit niet hebt aangevraagd kun je deze e-mail negeren.
+      </p>
+    </div>
+    """
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": FROM_EMAIL, "to": [to_email], "subject": "Wachtwoord herstellen — MIXMATE", "html": html},
+            timeout=10,
+        )
+
 @app.post("/api/auth/forgot-password")
 async def forgot_password(body: dict, db: Session = Depends(get_session)):
     email = (body.get("email") or "").strip().lower()
@@ -274,21 +316,21 @@ async def forgot_password(body: dict, db: Session = Depends(get_session)):
     if not customer:
         return {"ok": True}
 
-    machine = db.exec(select(Machine).where(Machine.customer_id == customer.id, Machine.paired == True)).first()
-    if not machine:
-        raise HTTPException(status_code=404, detail="Geen gekoppelde machine gevonden voor dit account. Neem contact op met de beheerder.")
-
-    conn = connected_machines.get(machine.machine_id)
-    if not conn:
-        raise HTTPException(status_code=503, detail="De machine is op dit moment offline. Zet de machine aan en probeer opnieuw.")
-
     code = str(secrets.randbelow(900000) + 100000)
     _password_reset_codes[customer.id] = {
         "code": code,
         "expires": datetime.utcnow() + timedelta(minutes=10),
     }
 
-    await conn.send({"type": "reset_code", "code": code, "email": email})
+    # Stuur code naar machine als die online is
+    machine = db.exec(select(Machine).where(Machine.customer_id == customer.id, Machine.paired == True)).first()
+    if machine:
+        conn = connected_machines.get(machine.machine_id)
+        if conn:
+            await conn.send({"type": "reset_code", "code": code, "email": email})
+
+    # Stuur altijd een e-mail
+    await _send_reset_email(email, customer.name or email, code)
     return {"ok": True}
 
 

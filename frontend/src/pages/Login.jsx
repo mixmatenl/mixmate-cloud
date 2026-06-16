@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { api } from '../api.js'
 
 export default function Login({ onLogin }) {
@@ -10,6 +10,17 @@ export default function Login({ onLogin }) {
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState(null)
   const [info,     setInfo]     = useState(null)
+
+  // Afhandelen van reset-link vanuit e-mail: ?mode=reset&email=...&code=...
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('mode') === 'reset') {
+      setEmail(p.get('email') || '')
+      setCode(p.get('code') || '')
+      setMode('verify')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
 
   function switchMode(m) {
     setMode(m); setError(null); setInfo(null)
@@ -30,7 +41,7 @@ export default function Login({ onLogin }) {
 
       } else if (mode === 'forgot') {
         await api.forgotPassword(email)
-        setInfo('De verificatiecode staat nu op het scherm van je MIXMATE machine.')
+        setInfo('We hebben een e-mail gestuurd met een herstelcode. Controleer ook je spam.')
         setMode('verify')
 
       } else if (mode === 'verify') {
@@ -80,13 +91,13 @@ export default function Login({ onLogin }) {
           {mode === 'forgot' && (
             <div className="text-center pb-1">
               <div className="text-base font-semibold text-[#111]">Wachtwoord vergeten</div>
-              <div className="text-xs text-gray-500 mt-1">Voer je e-mailadres in. De code verschijnt op je machine.</div>
+              <div className="text-xs text-gray-500 mt-1">Voer je e-mailadres in. Je ontvangt een herstelcode per e-mail.</div>
             </div>
           )}
           {mode === 'verify' && (
             <div className="text-center pb-1">
               <div className="text-base font-semibold text-[#111]">Nieuw wachtwoord instellen</div>
-              <div className="text-xs text-gray-500 mt-1">Voer de code van het machinescherm in en kies een nieuw wachtwoord.</div>
+              <div className="text-xs text-gray-500 mt-1">Voer de 6-cijferige code uit je e-mail in en kies een nieuw wachtwoord.</div>
             </div>
           )}
 
@@ -115,7 +126,7 @@ export default function Login({ onLogin }) {
 
           {mode === 'verify' && (
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Verificatiecode van de machine</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Verificatiecode uit je e-mail</label>
               <input type="text" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required
                 inputMode="numeric" maxLength={6}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 tracking-widest font-mono text-center text-lg"
@@ -144,7 +155,7 @@ export default function Login({ onLogin }) {
             {loading ? 'Bezig...' : {
               login:    'Inloggen',
               register: 'Account aanmaken',
-              forgot:   'Stuur verificatiecode naar machine',
+              forgot:   'Herstelcode versturen',
               verify:   'Wachtwoord opslaan',
             }[mode]}
           </button>
