@@ -233,8 +233,12 @@ function PairWizard({ onClose, onPaired }) {
   )
 }
 
+const CACHE_KEY = 'mm_machines_cache'
+
 export default function Dashboard({ user, onLogout }) {
-  const [machines,   setMachines]   = useState([])
+  const [machines,   setMachines]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '[]') } catch { return [] }
+  })
   const [loading,    setLoading]    = useState(true)
   const [showWizard, setShowWizard] = useState(false)
   const navigate = useNavigate()
@@ -242,7 +246,11 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { load() }, [])
 
   async function load() {
-    try { setMachines(await api.getMachines()) }
+    try {
+      const data = await api.getMachines()
+      setMachines(data)
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+    }
     catch { onLogout() }
     finally { setLoading(false) }
   }
@@ -269,15 +277,6 @@ export default function Dashboard({ user, onLogout }) {
             Toevoegen
           </button>
         </div>
-
-        {/* Skeletons */}
-        {loading && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {[1,2].map(i => (
-              <div key={i} style={{ background: '#fff', borderRadius: 20, height: 88, animation: 'pulse 1.4s ease-in-out infinite' }} />
-            ))}
-          </div>
-        )}
 
         {/* Lege staat */}
         {!loading && machines.length === 0 && (
@@ -308,42 +307,57 @@ export default function Dashboard({ user, onLogout }) {
         )}
 
         {/* Machine lijst */}
-        {!loading && machines.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {machines.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {machines.map(m => (
-              <div key={m.machine_id} style={{
-                background: '#fff', borderRadius: 20,
-                display: 'flex', alignItems: 'center',
-                overflow: 'hidden',
-                boxShadow: '0 1px 3px rgba(0,0,0,.04)',
-              }}>
-                <button onClick={() => navigate(`/machine/${m.machine_id}`)} style={{
-                  flex: 1, padding: '20px 20px', display: 'flex', alignItems: 'center',
-                  gap: 16, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
-                }}>
-                  <MachineIcon model={m.model} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f', marginBottom: 3 }}>{m.name}</div>
-                    <div style={{ fontSize: 13, color: '#6e6e73' }}>
-                      {m.model || 'MIXMATE'}{m.version ? ` · v${m.version}` : ''}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <div style={{
-                        width: 8, height: 8, borderRadius: 4,
-                        background: m.online ? '#30d158' : '#c7c7cc',
-                        boxShadow: m.online ? '0 0 0 3px rgba(48,209,88,.2)' : 'none',
-                      }} />
-                      <span style={{ fontSize: 12, color: m.online ? '#30d158' : '#c7c7cc', fontWeight: 500 }}>
-                        {m.online ? 'Online' : 'Offline'}
+              <button key={m.machine_id} onClick={() => navigate(`/machine/${m.machine_id}`)} style={{
+                background: '#fff', borderRadius: 18, width: '100%',
+                padding: '16px 20px', display: 'flex', alignItems: 'center',
+                gap: 16, border: 'none', cursor: 'pointer', textAlign: 'left',
+                boxShadow: '0 1px 4px rgba(0,0,0,.06)', transition: 'box-shadow .15s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.1)'}
+              onMouseLeave={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,.06)'}
+              >
+                <MachineIcon model={m.model} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f' }}>{m.name}</span>
+                    {m.flush_overdue && (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>
+                        Spoelen vereist
                       </span>
-                    </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                    )}
                   </div>
-                </button>
-              </div>
+                  <div style={{ fontSize: 13, color: '#aeaeb2' }}>
+                    {m.model || 'MIXMATE'}{m.version ? ` · v${m.version}` : ''}
+                    {m.days_since_flush !== null && m.days_since_flush !== undefined
+                      ? ` · ${m.days_since_flush === 0 ? 'Vandaag gespoeld' : m.days_since_flush === 1 ? 'Gisteren gespoeld' : `${m.days_since_flush}d geleden gespoeld`}`
+                      : ' · Nog nooit gespoeld'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{
+                      width: 7, height: 7, borderRadius: 4,
+                      background: m.online ? '#30d158' : '#c7c7cc',
+                      boxShadow: m.online ? '0 0 0 3px rgba(48,209,88,.2)' : 'none',
+                    }} />
+                    <span style={{ fontSize: 12, color: m.online ? '#30d158' : '#c7c7cc', fontWeight: 500 }}>
+                      {m.online ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                </div>
+              </button>
             ))}
+          </div>
+        )}
+
+        {/* Skeleton alleen als echt eerste load (leeg cache) */}
+        {loading && machines.length === 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[1,2].map(i => <div key={i} style={{ background: '#fff', borderRadius: 18, height: 80, animation: 'pulse 1.4s ease-in-out infinite' }} />)}
           </div>
         )}
       </div>

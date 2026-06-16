@@ -75,6 +75,12 @@ class RecipeLock(SQLModel, table=True):
     machine_id: str = Field(index=True)
     recipe_id: int
 
+class FlushSchedule(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True, unique=True)
+    enabled: bool = True
+    day_of_week: int = 0   # 0=maandag … 6=zondag
+
 def create_tables():
     SQLModel.metadata.create_all(engine)
 
@@ -487,6 +493,29 @@ def get_flush_log(machine_id: str, customer_id: int = Depends(verify_token), db:
              "pump_slots": json.loads(l.pump_slots or "[]"),
              "durations": json.loads(l.durations_json or "{}")} for l in logs]
 
+@app.get("/api/machines/{machine_id}/flush-schedule")
+def get_flush_schedule(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db)
+    schedule = db.exec(select(FlushSchedule).where(FlushSchedule.machine_id == machine_id)).first()
+    info = _flush_info(machine_id, db)
+    if not schedule:
+        return {"enabled": False, "day_of_week": 0, **info}
+    return {"enabled": schedule.enabled, "day_of_week": schedule.day_of_week, **info}
+
+@app.patch("/api/machines/{machine_id}/flush-schedule")
+def update_flush_schedule(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db)
+    schedule = db.exec(select(FlushSchedule).where(FlushSchedule.machine_id == machine_id)).first()
+    if not schedule:
+        schedule = FlushSchedule(machine_id=machine_id)
+        db.add(schedule)
+    if "enabled" in body:
+        schedule.enabled = bool(body["enabled"])
+    if "day_of_week" in body:
+        schedule.day_of_week = int(body["day_of_week"])
+    db.commit()
+    return {"enabled": schedule.enabled, "day_of_week": schedule.day_of_week}
+
 # ── Team beheer ───────────────────────────────────────────────────────────────
 
 @app.get("/api/machines/{machine_id}/members")
@@ -605,7 +634,7 @@ def list_machines(customer_id: int = Depends(verify_token), db: Session = Depend
     member_ids = [m.machine_id for m in memberships]
     shared = db.exec(select(Machine).where(Machine.machine_id.in_(member_ids))).all() if member_ids else []
     all_machines = {m.machine_id: m for m in owned + shared}
-    return [{**_machine_dict(m), "online": m.machine_id in connected_machines} for m in all_machines.values()]
+    return [{**_machine_dict(m), "online": m.machine_id in connected_machines, **_flush_info(m.machine_id, db)} for m in all_machines.values()]
 
 @app.post("/api/machines/pair")
 async def pair_machine(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
@@ -808,6 +837,13 @@ async def update_pump(machine_id: str, pump_id: int, body: dict, customer_id: in
     return await _get_conn(machine_id, customer_id, db).request({"type": "update_pump", "id": pump_id, "data": body})
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _flush_info(machine_id: str, db: Session) -> dict:
+    last = db.exec(select(FlushLog).where(FlushLog.machine_id == machine_id).order_by(FlushLog.flushed_at.desc()).limit(1)).first()
+    schedule = db.exec(select(FlushSchedule).where(FlushSchedule.machine_id == machine_id)).first()
+    days_since = (datetime.utcnow() - last.flushed_at).days if last else None
+    overdue = (schedule.enabled and (days_since is None or days_since >= 7)) if schedule else False
+    return {"days_since_flush": days_since, "flush_overdue": overdue}
 
 def _machine_dict(m: Machine) -> dict:
     return {

@@ -72,7 +72,9 @@ export const api = {
   // Spoelroutine
   flushMachine:    (mid, pumps) => req('POST', `/api/machines/${mid}/flush`, { pumps }),
   getFlushStatus:  (mid)        => req('GET',  `/api/machines/${mid}/flush-status`),
-  getFlushLog:     (mid)        => req('GET',  `/api/machines/${mid}/flush-log`),
+  getFlushLog:      (mid)        => req('GET',   `/api/machines/${mid}/flush-log`),
+  getFlushSchedule: (mid)        => req('GET',   `/api/machines/${mid}/flush-schedule`),
+  updateFlushSchedule: (mid, data) => req('PATCH', `/api/machines/${mid}/flush-schedule`, data),
   getBlockStatus:  (mid)        => req('GET',  `/api/machines/${mid}/block-status`),
   blockMachine:    (mid)        => req('POST', `/api/machines/${mid}/block`),
   unblockMachine:  (mid)        => req('POST', `/api/machines/${mid}/unblock`),

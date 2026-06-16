@@ -708,9 +708,97 @@ function Pompen({ machineId }) {
 
 // ── Spoelen (apart tabblad) ───────────────────────────────────────────────────
 
+const DAYS = ['Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag', 'Zondag']
+
+function FlushScheduleCard({ machineId }) {
+  const [schedule, setSchedule] = useState(null)
+  const [saving,   setSaving]   = useState(false)
+
+  useEffect(() => {
+    api.getFlushSchedule(machineId).then(setSchedule).catch(() => {})
+  }, [machineId])
+
+  async function patch(patch) {
+    const next = { ...schedule, ...patch }
+    setSchedule(next)
+    setSaving(true)
+    try { await api.updateFlushSchedule(machineId, patch) } catch {}
+    setSaving(false)
+  }
+
+  if (!schedule) return null
+
+  const { enabled, day_of_week, days_since_flush, flush_overdue } = schedule
+  const overdueText = days_since_flush === null
+    ? 'Nog nooit gespoeld'
+    : days_since_flush === 0 ? 'Vandaag gespoeld ✓'
+    : days_since_flush === 1 ? 'Gisteren gespoeld'
+    : `${days_since_flush} dagen geleden gespoeld`
+
+  return (
+    <Group label="Spoelschema">
+      <div style={{ padding: '14px 16px' }}>
+        {/* Overdue banner */}
+        {flush_overdue && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff8ee', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e' }}>Spoelen vereist</div>
+              <div style={{ fontSize: 12, color: '#b45309', marginTop: 1 }}>{overdueText} — schema zegt elke {DAYS[day_of_week ?? 0]}.</div>
+            </div>
+          </div>
+        )}
+        {!flush_overdue && days_since_flush !== null && (
+          <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 14 }}>
+            {overdueText}{enabled ? ` — volgende spoeldag: ${DAYS[day_of_week ?? 0]}` : ''}.
+          </div>
+        )}
+
+        {/* Ingeschakeld toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: enabled ? 16 : 0 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: '#1d1d1f' }}>Wekelijkse herinnering</div>
+            <div style={{ fontSize: 13, color: '#aeaeb2', marginTop: 2 }}>Ontvang een waarschuwing als de machine niet op tijd gespoeld is.</div>
+          </div>
+          <button onClick={() => patch({ enabled: !enabled })} disabled={saving} style={{
+            width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+            background: enabled ? '#30d158' : '#e5e5ea',
+            transition: 'background .2s', position: 'relative', flexShrink: 0,
+          }}>
+            <div style={{
+              width: 22, height: 22, borderRadius: 11, background: '#fff',
+              position: 'absolute', top: 2, left: enabled ? 20 : 2,
+              transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+            }} />
+          </button>
+        </div>
+
+        {/* Dag kiezen */}
+        {enabled && (
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 8 }}>Spoeldag</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {DAYS.map((d, i) => (
+                <button key={i} onClick={() => patch({ day_of_week: i })} style={{
+                  padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: day_of_week === i ? 600 : 400,
+                  border: `1.5px solid ${day_of_week === i ? '#007aff' : '#e5e5ea'}`,
+                  background: day_of_week === i ? '#f0f7ff' : '#fff',
+                  color: day_of_week === i ? '#007aff' : '#6e6e73',
+                  cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s',
+                }}>{d.slice(0, 2)}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Group>
+  )
+}
+
 function SpoelTab({ machineId, status, blocked, onToggleBlock, toggling }) {
   return (
     <div>
+      <FlushScheduleCard machineId={machineId} />
       <Spoelroutine machineId={machineId} status={status} />
     </div>
   )
