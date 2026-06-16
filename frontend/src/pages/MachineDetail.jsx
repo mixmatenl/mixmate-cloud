@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 
-const TABS = ['Overzicht', 'Catalogus', 'Pompen', 'Instellingen', 'Info']
+const TABS = ['Overzicht', 'Catalogus', 'Pompen', 'Spoelen', 'Instellingen', 'Info']
 
 export default function MachineDetail({ onLogout }) {
   const { machineId } = useParams()
@@ -63,9 +63,10 @@ export default function MachineDetail({ onLogout }) {
             Machine is offline. Zet hem aan om gegevens te bekijken.
           </div>
         )}
-        {tab === 'Overzicht'   && <Overzicht  status={status} machineId={machineId} />}
-        {tab === 'Catalogus'   && status?.online && <Catalogus    machineId={machineId} />}
-        {tab === 'Pompen'      && status?.online && <Pompen       machineId={machineId} />}
+        {tab === 'Overzicht'   && <Overzicht   status={status} machineId={machineId} />}
+        {tab === 'Catalogus'   && status?.online && <Catalogus   machineId={machineId} />}
+        {tab === 'Pompen'      && status?.online && <Pompen      machineId={machineId} />}
+        {tab === 'Spoelen'     && <SpoelTab    machineId={machineId} status={status} />}
         {tab === 'Instellingen'&& <Instellingen machineId={machineId} status={status} onRename={name => setStatus(s => ({...s, name}))} />}
         {tab === 'Info'        && <InfoTab     machineId={machineId} status={status} />}
       </div>
@@ -667,6 +668,16 @@ function Pompen({ machineId }) {
   )
 }
 
+// ── Spoelen (apart tabblad) ───────────────────────────────────────────────────
+
+function SpoelTab({ machineId, status }) {
+  return (
+    <div>
+      <Spoelroutine machineId={machineId} status={status} />
+    </div>
+  )
+}
+
 // ── Instellingen ──────────────────────────────────────────────────────────────
 
 function calcFlushDuration(slot, daysSince) {
@@ -1057,8 +1068,7 @@ function Instellingen({ machineId, status, onRename }) {
         </div>
       </Group>
 
-      <Spoelroutine machineId={machineId} status={status} />
-      <TeamBeheer   machineId={machineId} />
+      <TeamBeheer machineId={machineId} />
     </div>
   )
 }

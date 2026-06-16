@@ -431,7 +431,8 @@ async def flush_machine(machine_id: str, body: dict, customer_id: int = Depends(
     pumps = body.get("pumps", [])   # [{"slot": 1, "duration": 14}, ...]
     if not pumps:
         raise HTTPException(status_code=400, detail="Geen leidingen geselecteerd")
-    await conn.request({"type": "flush_pumps", "pumps": pumps}, timeout=180)
+    total_timeout = sum(p.get("duration", 10) for p in pumps) + len(pumps) * 2 + 30
+    await conn.request({"type": "flush_pumps", "pumps": pumps}, timeout=total_timeout)
     slots = [p["slot"] for p in pumps]
     durations = {str(p["slot"]): p["duration"] for p in pumps}
     db.add(FlushLog(
