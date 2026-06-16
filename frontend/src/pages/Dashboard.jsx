@@ -261,26 +261,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f7', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-
-      {/* Header */}
-      <div style={{ background: 'rgba(255,255,255,.8)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,.08)', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 24px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: -.3, color: '#1d1d1f' }}>MIXMATE</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: '#6e6e73' }}>{user?.name || user?.email}</span>
-            <div style={{
-              width: 32, height: 32, borderRadius: 16, background: '#1d1d1f',
-              color: '#fff', fontSize: 13, fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer',
-            }} title="Uitloggen" onClick={onLogout}>
-              {initials(user?.name || user?.email)}
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 24px' }}>
 
         {/* Titel + knop */}

@@ -358,6 +358,39 @@ def reset_password(body: dict, db: Session = Depends(get_session)):
     return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
 
 
+@app.post("/api/support")
+async def submit_support(body: dict, customer_id: int = Depends(verify_token)):
+    if not RESEND_API_KEY:
+        raise HTTPException(status_code=503, detail="E-mail niet geconfigureerd")
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff;">
+      <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
+      <div style="font-size:13px;color:#9ca3af;margin-bottom:32px;">Nieuwe machinemelding</div>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;width:140px;">Klant</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('customer_name','')} &lt;{body.get('customer_email','')}&gt;</td></tr>
+        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Machine</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('machine_name','')} (ID: {body.get('machine_id','')})</td></tr>
+        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Categorie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('category','')}</td></tr>
+        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Urgentie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('urgency','')}</td></tr>
+        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Voorkeur</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('preferred_date','')} — {body.get('preferred_time','')}</td></tr>
+      </table>
+      <div style="margin-top:24px;background:#f9fafb;border-radius:12px;padding:18px;">
+        <div style="font-size:12px;font-weight:600;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Beschrijving</div>
+        <p style="font-size:14px;color:#374151;margin:0;white-space:pre-wrap;">{body.get('description','')}</p>
+      </div>
+    </div>
+    """
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": FROM_EMAIL, "to": ["info@mixmate.nl"], "reply_to": body.get("customer_email", ""), "subject": f"Machinemelding: {body.get('category','')} — {body.get('machine_name','')}", "html": html},
+            timeout=10,
+        )
+    if r.status_code >= 400:
+        raise HTTPException(status_code=502, detail="E-mail kon niet worden verzonden")
+    return {"ok": True}
+
+
 # ── Admin (alleen voor jou) ───────────────────────────────────────────────────
 
 @app.get("/api/admin/customers")

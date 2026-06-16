@@ -1,31 +1,40 @@
-import React, { useState, useEffect } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import React, { useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import MachineDetail from './pages/MachineDetail.jsx'
+import Support from './pages/Support.jsx'
+import Account from './pages/Account.jsx'
+import Layout from './components/Layout.jsx'
 
 export default function App() {
   const [token, setToken] = useState(() => {
-    // Accepteer token uit URL (bijv. doorgestuurd vanuit Shopify)
     const params = new URLSearchParams(window.location.search)
     const urlToken = params.get('token')
     if (urlToken) {
       localStorage.setItem('mm_token', urlToken)
+      localStorage.setItem('mixmate_token', urlToken)
       const name  = params.get('name')  || ''
       const email = params.get('email') || ''
-      if (name || email) localStorage.setItem('mm_user', JSON.stringify({ name, email }))
+      if (name || email) {
+        const u = JSON.stringify({ name, email })
+        localStorage.setItem('mm_user', u)
+        localStorage.setItem('mixmate_user', u)
+      }
       window.history.replaceState({}, '', window.location.pathname)
       return urlToken
     }
     return localStorage.getItem('mm_token')
   })
-  const [user,  setUser]  = useState(() => {
+  const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('mm_user') || 'null') } catch { return null }
   })
 
   function onLogin(token, user) {
     localStorage.setItem('mm_token', token)
     localStorage.setItem('mm_user', JSON.stringify(user))
+    localStorage.setItem('mixmate_token', token)
+    localStorage.setItem('mixmate_user', JSON.stringify(user))
     setToken(token)
     setUser(user)
   }
@@ -33,21 +42,30 @@ export default function App() {
   function onLogout() {
     localStorage.removeItem('mm_token')
     localStorage.removeItem('mm_user')
+    localStorage.removeItem('mixmate_token')
+    localStorage.removeItem('mixmate_user')
     setToken(null)
     setUser(null)
   }
 
+  if (!token) {
+    return (
+      <Routes>
+        <Route path="*" element={<Login onLogin={onLogin} />} />
+      </Routes>
+    )
+  }
+
   return (
-    <Routes>
-      <Route path="/login" element={
-        token ? <Navigate to="/" replace /> : <Login onLogin={onLogin} />
-      } />
-      <Route path="/" element={
-        token ? <Dashboard user={user} onLogout={onLogout} /> : <Navigate to="/login" replace />
-      } />
-      <Route path="/machine/:machineId" element={
-        token ? <MachineDetail user={user} onLogout={onLogout} /> : <Navigate to="/login" replace />
-      } />
-    </Routes>
+    <Layout user={user} onLogout={onLogout}>
+      <Routes>
+        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
+        <Route path="/machine/:machineId" element={<MachineDetail user={user} onLogout={onLogout} />} />
+        <Route path="/support" element={<Support user={user} />} />
+        <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
   )
 }

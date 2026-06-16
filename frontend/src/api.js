@@ -61,4 +61,7 @@ export const api = {
   updateSettings:   (mid, data)     => req('POST',   `/api/machines/${mid}/settings`, data),
 
   getMachineInfo:   (mid)           => req('GET',    `/api/machines/${mid}/info`),
+
+  // Support
+  submitSupport: (data) => req('POST', '/api/support', data),
 }

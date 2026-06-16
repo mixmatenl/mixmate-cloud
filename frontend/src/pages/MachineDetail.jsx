@@ -25,26 +25,26 @@ export default function MachineDetail({ onLogout }) {
   )
 
   return (
-    <div className="min-h-screen" style={{ background: '#f5f5f7', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      {/* Header */}
-      <div style={{ background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,.08)', position: 'sticky', top: 0, zIndex: 10 }}>
+    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      {/* Sticky sub-header */}
+      <div style={{ background: 'rgba(242,242,247,.92)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,.08)', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 720, margin: '0 auto', padding: '0 24px' }}>
-          <div style={{ height: 56, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#007aff', display: 'flex', alignItems: 'center', gap: 4, fontSize: 15, padding: 0 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#007aff', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14, padding: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
               Machines
             </button>
-            <span style={{ color: '#c7c7cc' }}>/</span>
-            <span style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status?.name || 'Machine'}</span>
+            <span style={{ color: '#c7c7cc' }}>›</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status?.name || 'Machine'}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-              <div style={{ width: 8, height: 8, borderRadius: 4, background: status?.online ? '#30d158' : '#c7c7cc', boxShadow: status?.online ? '0 0 0 3px rgba(48,209,88,.2)' : 'none' }} />
+              <div style={{ width: 7, height: 7, borderRadius: 4, background: status?.online ? '#30d158' : '#c7c7cc', boxShadow: status?.online ? '0 0 0 3px rgba(48,209,88,.2)' : 'none' }} />
               <span style={{ fontSize: 12, color: status?.online ? '#30d158' : '#aeaeb2', fontWeight: 500 }}>{status?.online ? 'Online' : 'Offline'}</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 2, overflowX: 'auto', paddingBottom: 1 }}>
             {TABS.map(t => (
               <button key={t} onClick={() => setTab(t)} style={{
-                padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer',
+                padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer',
                 fontSize: 13, fontWeight: tab === t ? 600 : 400,
                 color: tab === t ? '#1d1d1f' : '#6e6e73',
                 borderBottom: `2px solid ${tab === t ? '#1d1d1f' : 'transparent'}`,
