@@ -493,6 +493,21 @@ def get_flush_log(machine_id: str, customer_id: int = Depends(verify_token), db:
              "pump_slots": json.loads(l.pump_slots or "[]"),
              "durations": json.loads(l.durations_json or "{}")} for l in logs]
 
+@app.get("/api/machines/{machine_id}/pours")
+async def get_machine_pours(machine_id: str, date: str = None, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    conn = _get_conn(machine_id, customer_id, db)
+    msg = {"type": "get_pours"}
+    if date:
+        msg["date"] = date
+    result = await conn.request(msg, timeout=8)
+    return result.get("pours", [])
+
+@app.get("/api/machines/{machine_id}/pour-stats")
+async def get_machine_pour_stats(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    conn = _get_conn(machine_id, customer_id, db)
+    result = await conn.request({"type": "get_pour_stats"}, timeout=8)
+    return result
+
 @app.get("/api/machines/{machine_id}/flush-schedule")
 def get_flush_schedule(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _check_machine_access(machine_id, customer_id, db)

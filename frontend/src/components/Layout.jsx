@@ -106,6 +106,16 @@ export default function Layout({ user, onLogout, children }) {
         />
       </NavGroup>
 
+      <NavGroup label="Analyse">
+        <NavRow
+          active={path === '/rapporten'}
+          to="/rapporten"
+          color="#34c759"
+          label="Rapporten"
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>}
+        />
+      </NavGroup>
+
       <NavGroup label="Ondersteuning">
         <NavRow
           active={path === '/support'}

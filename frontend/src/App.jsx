@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import MachineDetail from './pages/MachineDetail.jsx'
 import Support from './pages/Support.jsx'
 import Account from './pages/Account.jsx'
+import Rapporten from './pages/Rapporten.jsx'
 import Layout from './components/Layout.jsx'
 
 export default function App() {
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
         <Route path="/machine/:machineId" element={<MachineDetail user={user} onLogout={onLogout} />} />
+        <Route path="/rapporten" element={<Rapporten />} />
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
         <Route path="*" element={<Navigate to="/" replace />} />

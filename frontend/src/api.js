@@ -89,4 +89,8 @@ export const api = {
   getLocks:      (mid)       => req('GET',    `/api/machines/${mid}/locks`),
   lockRecipe:    (mid, rid)  => req('POST',   `/api/machines/${mid}/recipes/${rid}/lock`),
   unlockRecipe:  (mid, rid)  => req('DELETE', `/api/machines/${mid}/recipes/${rid}/lock`),
+
+  // Rapporten
+  getMachinePours:     (mid, date) => req('GET', `/api/machines/${mid}/pours${date ? `?date=${date}` : ''}`),
+  getMachinePourStats: (mid)       => req('GET', `/api/machines/${mid}/pour-stats`),
 }
