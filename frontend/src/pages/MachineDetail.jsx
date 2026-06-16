@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 
@@ -88,6 +88,10 @@ function useList(loader) {
   }, [])
   useEffect(() => { load() }, [])
   return { items, loading, err, reload: load, setItems }
+}
+
+function Spinner({ dark }) {
+  return <span style={{ width: 14, height: 14, border: `2px solid ${dark ? 'rgba(0,0,0,.15)' : 'rgba(255,255,255,.3)'}`, borderTopColor: dark ? '#1d1d1f' : '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin .7s linear infinite', flexShrink: 0 }} />
 }
 
 function Skeleton() {
@@ -695,16 +699,17 @@ function flushLabel(duration) {
 }
 
 function Spoelroutine({ machineId, status }) {
-  const [pumps,     setPumps]     = useState(null)
-  const [selected,  setSelected]  = useState([])   // slot numbers connected to water
-  const [analysed,  setAnalysed]  = useState(false)
-  const [analysing, setAnalysing] = useState(false)
-  const [durations, setDurations] = useState({})   // slot → seconds
-  const [daysSince, setDaysSince] = useState(0)
-  const [flushing,  setFlushing]  = useState(false)
-  const [flushDone, setFlushDone] = useState(null)
-  const [log,       setLog]       = useState(null)
-  const [showLog,   setShowLog]   = useState(false)
+  const [pumps,      setPumps]     = useState(null)
+  const [selected,   setSelected]  = useState([])
+  const [analysed,   setAnalysed]  = useState(false)
+  const [analysing,  setAnalysing] = useState(false)
+  const [durations,  setDurations] = useState({})
+  const [flushing,   setFlushing]  = useState(false)
+  const [flushDone,  setFlushDone] = useState(null)
+  const [liveStatus, setLiveStatus]= useState(null)   // real-time Pi status
+  const [log,        setLog]       = useState(null)
+  const [showLog,    setShowLog]   = useState(false)
+  const pollRef = useRef(null)
 
   useEffect(() => {
     if (!status?.online) return
@@ -716,37 +721,62 @@ function Spoelroutine({ machineId, status }) {
     api.getFlushLog(machineId).then(setLog).catch(() => {})
   }, [machineId, status?.online])
 
+  // Stop polling helper
+  function stopPolling() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+  }
+
+  // Start polling flush status every second
+  function startPolling() {
+    stopPolling()
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await api.getFlushStatus(machineId)
+        setLiveStatus(s)
+        if (!s.active) {
+          stopPolling()
+          setFlushing(false)
+          setFlushDone({ ok: true })
+          setAnalysed(false)
+          setSelected(pumps?.map(p => p.slot) || [])
+          api.getFlushLog(machineId).then(setLog).catch(() => {})
+        }
+      } catch { stopPolling(); setFlushing(false) }
+    }, 1000)
+  }
+
+  useEffect(() => () => stopPolling(), [])
+
   const lastFlush = log?.[0]?.flushed_at ? new Date(log[0].flushed_at) : null
-  const msDiff    = lastFlush ? Date.now() - lastFlush.getTime() : null
-  const daysSinceLast = msDiff != null ? Math.floor(msDiff / 86400000) : 30
+  const daysSinceLast = lastFlush ? Math.floor((Date.now() - lastFlush.getTime()) / 86400000) : 30
 
   async function analyse() {
     setAnalysing(true); setAnalysed(false)
     await new Promise(r => setTimeout(r, 1800))
     const d = {}
     selected.forEach(slot => { d[slot] = calcFlushDuration(slot, daysSinceLast) })
-    setDurations(d)
-    setDaysSince(daysSinceLast)
-    setAnalysed(true); setAnalysing(false)
+    setDurations(d); setAnalysed(true); setAnalysing(false)
   }
 
   async function startFlush() {
     if (!confirm(`Spoelroutine starten voor ${selected.length} leiding(en)? Zorg dat water is aangesloten.`)) return
-    setFlushing(true); setFlushDone(null)
+    setFlushing(true); setFlushDone(null); setLiveStatus(null)
     const pumpsPayload = selected.map(slot => ({ slot, duration: durations[slot] || 10 }))
     try {
       await api.flushMachine(machineId, pumpsPayload)
-      setFlushDone({ ok: true })
-      const newLog = await api.getFlushLog(machineId)
-      setLog(newLog)
-      setAnalysed(false); setSelected(pumps?.map(p => p.slot) || [])
+      startPolling()
     } catch (e) {
       setFlushDone({ ok: false, msg: e.message })
+      setFlushing(false)
     }
-    setFlushing(false)
   }
 
   const totalTime = selected.reduce((s, slot) => s + (durations[slot] || 0), 0)
+
+  // Live progress bar during flush
+  const livePct = liveStatus?.active && liveStatus.current_duration > 0
+    ? Math.min((liveStatus.elapsed || 0) / liveStatus.current_duration, 1)
+    : 0
 
   return (
     <div style={{ marginBottom: 28 }}>
@@ -784,99 +814,118 @@ function Spoelroutine({ machineId, status }) {
                   : 'Spoelen aanbevolen voor gebruik'}
               </div>
             </div>
-            {daysSinceLast > 7 && (
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '3px 8px', flexShrink: 0 }}>Let op</div>
-            )}
+            {daysSinceLast > 7 && <div style={{ fontSize: 11, fontWeight: 600, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '3px 8px', flexShrink: 0 }}>Let op</div>}
           </div>
 
-          {/* Pump selection */}
-          <div style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 10 }}>
-              Selecteer leidingen op water
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
-              {pumps.map(p => {
-                const on = selected.includes(p.slot)
-                const dur = durations[p.slot]
-                const lbl = dur ? flushLabel(dur) : null
-                return (
-                  <button key={p.slot} onClick={() => {
-                    setSelected(s => on ? s.filter(x => x !== p.slot) : [...s, p.slot])
-                    setAnalysed(false)
-                  }} style={{
-                    border: `2px solid ${on ? '#007aff' : '#e5e5ea'}`,
-                    borderRadius: 12, padding: '10px 8px', background: on ? '#f0f7ff' : '#fafafa',
-                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', transition: 'all .15s',
-                  }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: on ? '#007aff' : '#aeaeb2', marginBottom: 2 }}>L{p.slot}</div>
-                    {p.ingredient_name && <div style={{ fontSize: 10, color: '#6e6e73', marginBottom: analysed ? 4 : 0 }}>{p.ingredient_name}</div>}
-                    {analysed && dur && (
-                      <div style={{ fontSize: 10, fontWeight: 700, color: lbl.color }}>{dur}s</div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Analysis result */}
-            {analysed && selected.length > 0 && (
-              <div style={{ marginTop: 12, background: '#f9f9fb', borderRadius: 10, padding: '12px 14px' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Analyse resultaat</div>
-                {selected.sort((a,b)=>a-b).map(slot => {
-                  const dur = durations[slot]; const lbl = flushLabel(dur)
-                  return (
-                    <div key={slot} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f3' }}>
-                      <div>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#1d1d1f' }}>Leiding {slot}</span>
-                        <span style={{ fontSize: 11, color: '#aeaeb2', marginLeft: 8 }}>
-                          {lbl.text}{daysSinceLast > 2 ? ` · ${daysSinceLast}d niet gespoeld` : ''}
-                        </span>
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: lbl.color }}>{dur}s</span>
-                    </div>
-                  )
-                })}
-                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                  <span style={{ color: '#6e6e73' }}>Totale duur</span>
-                  <span style={{ fontWeight: 700, color: '#1d1d1f' }}>±{totalTime}s</span>
-                </div>
+          {/* Live voortgang tijdens spoelen */}
+          {flushing && liveStatus?.active && (
+            <div style={{ padding: '16px', borderBottom: '1px solid #f2f2f7', background: '#f0f7ff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, color: '#1d1d1f', marginBottom: 8 }}>
+                <span>Leiding {liveStatus.current_slot} spoelen…</span>
+                <span style={{ color: '#007aff' }}>{liveStatus.done + 1} / {liveStatus.total}</span>
               </div>
-            )}
-
-            {/* Buttons */}
-            <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
-              {!analysed ? (
-                <button onClick={analyse} disabled={analysing || selected.length === 0} style={{
-                  background: selected.length ? '#1d1d1f' : '#e5e5ea',
-                  color: selected.length ? '#fff' : '#aeaeb2',
-                  border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600,
-                  cursor: selected.length && !analysing ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                }}>
-                  {analysing
-                    ? <><span style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin .7s linear infinite' }} /> Leidingen analyseren…</>
-                    : 'Analyseer leidingen'
-                  }
-                </button>
-              ) : (
-                <>
-                  <button onClick={startFlush} disabled={flushing} style={{
-                    background: '#007aff', color: '#fff', border: 'none', borderRadius: 10,
-                    padding: '10px 16px', fontSize: 14, fontWeight: 600,
-                    cursor: flushing ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-                    display: 'flex', alignItems: 'center', gap: 8, opacity: flushing ? .6 : 1,
-                  }}>
-                    {flushing
-                      ? <><span style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin .7s linear infinite' }} /> Spoelen…</>
-                      : `Start spoelroutine (${selected.length} leiding${selected.length !== 1 ? 'en' : ''})`
-                    }
-                  </button>
-                  <button onClick={() => setAnalysed(false)} disabled={flushing} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '10px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    Opnieuw
-                  </button>
-                </>
+              <div style={{ background: '#e5e5ea', borderRadius: 6, height: 8, overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: '#007aff', borderRadius: 6, width: `${Math.round(livePct * 100)}%`, transition: 'width .4s linear' }} />
+              </div>
+              <div style={{ fontSize: 12, color: '#6e6e73', marginTop: 6 }}>
+                {Math.round(liveStatus.elapsed || 0)}s / {Math.round(liveStatus.current_duration || 0)}s
+              </div>
+              {/* Leiding-blokjes */}
+              {liveStatus.total > 1 && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                  {Array.from({ length: liveStatus.total }, (_, i) => (
+                    <div key={i} style={{
+                      flex: 1, height: 5, borderRadius: 3,
+                      background: i < liveStatus.done ? '#30d158' : i === liveStatus.done ? '#007aff' : 'rgba(0,0,0,.1)',
+                      transition: 'background .3s',
+                    }} />
+                  ))}
+                </div>
               )}
             </div>
+          )}
+
+          {/* Pompkeuze */}
+          <div style={{ padding: '14px 16px' }}>
+            {!flushing && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 10 }}>
+                  Selecteer leidingen op water
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
+                  {pumps.map(p => {
+                    const on = selected.includes(p.slot)
+                    const dur = durations[p.slot]
+                    const lbl = dur ? flushLabel(dur) : null
+                    return (
+                      <button key={p.slot} onClick={() => { setSelected(s => on ? s.filter(x => x !== p.slot) : [...s, p.slot]); setAnalysed(false) }} style={{
+                        border: `2px solid ${on ? '#007aff' : '#e5e5ea'}`,
+                        borderRadius: 12, padding: '10px 8px', background: on ? '#f0f7ff' : '#fafafa',
+                        cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', transition: 'all .15s',
+                      }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: on ? '#007aff' : '#aeaeb2', marginBottom: 2 }}>L{p.slot}</div>
+                        {p.ingredient_name && <div style={{ fontSize: 10, color: '#6e6e73', marginBottom: analysed ? 4 : 0 }}>{p.ingredient_name}</div>}
+                        {analysed && dur && <div style={{ fontSize: 10, fontWeight: 700, color: lbl.color }}>{dur}s</div>}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {analysed && selected.length > 0 && (
+                  <div style={{ marginTop: 12, background: '#f9f9fb', borderRadius: 10, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Analyse resultaat</div>
+                    {[...selected].sort((a,b)=>a-b).map(slot => {
+                      const dur = durations[slot]; const lbl = flushLabel(dur)
+                      return (
+                        <div key={slot} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f3' }}>
+                          <div>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#1d1d1f' }}>Leiding {slot}</span>
+                            <span style={{ fontSize: 11, color: '#aeaeb2', marginLeft: 8 }}>{lbl.text}{daysSinceLast > 2 ? ` · ${daysSinceLast}d niet gespoeld` : ''}</span>
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: lbl.color }}>{dur}s</span>
+                        </div>
+                      )
+                    })}
+                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span style={{ color: '#6e6e73' }}>Totale duur</span>
+                      <span style={{ fontWeight: 700, color: '#1d1d1f' }}>±{totalTime}s</span>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
+                  {!analysed ? (
+                    <button onClick={analyse} disabled={analysing || selected.length === 0} style={{
+                      background: selected.length ? '#1d1d1f' : '#e5e5ea', color: selected.length ? '#fff' : '#aeaeb2',
+                      border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600,
+                      cursor: selected.length && !analysing ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      {analysing ? <><Spinner /> Leidingen analyseren…</> : 'Analyseer leidingen'}
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={startFlush} style={{
+                        background: '#007aff', color: '#fff', border: 'none', borderRadius: 10,
+                        padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }}>
+                        Start spoelroutine ({selected.length} leiding{selected.length !== 1 ? 'en' : ''})
+                      </button>
+                      <button onClick={() => setAnalysed(false)} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '10px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Opnieuw
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+
+            {flushing && !liveStatus?.active && !flushDone && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', color: '#6e6e73', fontSize: 14 }}>
+                <Spinner dark /> Verbinden met machine…
+              </div>
+            )}
 
             {flushDone && (
               <div style={{ marginTop: 12, background: flushDone.ok ? '#e8faf0' : '#fff1f0', border: `1px solid ${flushDone.ok ? '#a7f3d0' : '#ffd6d3'}`, color: flushDone.ok ? '#065f46' : '#ff3b30', borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>

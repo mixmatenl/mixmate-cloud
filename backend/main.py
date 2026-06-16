@@ -444,6 +444,17 @@ async def flush_machine(machine_id: str, body: dict, customer_id: int = Depends(
     db.commit()
     return {"ok": True}
 
+@app.get("/api/machines/{machine_id}/flush-status")
+async def get_flush_status(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db)
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        return {"active": False, "offline": True}
+    try:
+        return await conn.request({"type": "get_flush_status"}, timeout=5)
+    except Exception:
+        return {"active": False}
+
 @app.get("/api/machines/{machine_id}/flush-log")
 def get_flush_log(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _check_machine_access(machine_id, customer_id, db)

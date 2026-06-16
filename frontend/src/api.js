@@ -69,8 +69,9 @@ export const api = {
   triggerUpdate: (machine_id) => req('POST', `/api/machines/${machine_id}/trigger-update`),
 
   // Spoelroutine
-  flushMachine:  (mid, pumps) => req('POST', `/api/machines/${mid}/flush`, { pumps }),
-  getFlushLog:   (mid)        => req('GET',  `/api/machines/${mid}/flush-log`),
+  flushMachine:   (mid, pumps) => req('POST', `/api/machines/${mid}/flush`, { pumps }),
+  getFlushStatus: (mid)        => req('GET',  `/api/machines/${mid}/flush-status`),
+  getFlushLog:    (mid)        => req('GET',  `/api/machines/${mid}/flush-log`),
 
   // Team
   getMembers:    (mid)              => req('GET',    `/api/machines/${mid}/members`),
