@@ -7,6 +7,7 @@ import Support from './pages/Support.jsx'
 import Account from './pages/Account.jsx'
 import Rapporten from './pages/Rapporten.jsx'
 import Layout from './components/Layout.jsx'
+import InstallBanner from './components/InstallBanner.jsx'
 
 export default function App() {
   const [token, setToken] = useState(() => {
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <InstallBanner />
     </Layout>
   )
 }
