@@ -242,7 +242,7 @@ export default function MachineDetail({ onLogout }) {
         {tab === 'Catalogus'   && status?.online && <Catalogus   machineId={machineId} />}
         {tab === 'Pompen'      && status?.online && <Pompen      machineId={machineId} />}
         {tab === 'Spoelen'     && <SpoelTab    machineId={machineId} status={status} blocked={blocked} onToggleBlock={toggleBlock} toggling={toggling} />}
-        {tab === 'Instellingen'&& <Instellingen machineId={machineId} status={status} onRename={name => setStatus(s => ({...s, name}))} onUnpair={() => navigate('/')} />}
+        {tab === 'Instellingen'&& <Instellingen machineId={machineId} status={status} onRename={name => setStatus(s => ({...s, name}))} onUnpair={() => navigate('/')} demoActive={demoSlideshow} onDemoToggle={() => api.getDemoStatus(machineId).then(s => setDemoSlideshow(s.slideshow_active)).catch(()=>{})} />}
         {tab === 'Info'        && <InfoTab     machineId={machineId} status={status} />}
       </div>
     </div>
@@ -1321,7 +1321,7 @@ function TeamBeheer({ machineId }) {
   )
 }
 
-function Instellingen({ machineId, status, onRename, onUnpair }) {
+function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDemoToggle }) {
   const [name,         setName]        = useState(status?.name || '')
   const [saving,       setSaving]      = useState(false)
   const [saved,        setSaved]       = useState(false)
@@ -1329,6 +1329,25 @@ function Instellingen({ machineId, status, onRename, onUnpair }) {
   const [updateStatus, setUpdateStatus]= useState(null)
   const [confirmDel,   setConfirmDel]  = useState(false)
   const [deleting,     setDeleting]    = useState(false)
+  const [demoLoading,  setDemoLoading] = useState(false)
+  const [demoMsg,      setDemoMsg]     = useState(null)
+
+  async function toggleDemo() {
+    setDemoLoading(true); setDemoMsg(null)
+    try {
+      if (demoActive) {
+        await api.deactivateDemo(machineId)
+        setDemoMsg({ ok: true, text: 'Demo modus uitgeschakeld.' })
+      } else {
+        await api.activateDemo(machineId)
+        setDemoMsg({ ok: true, text: 'Demo modus actief — beide schermen tonen nu de slideshow.' })
+      }
+      onDemoToggle?.()
+    } catch (e) {
+      setDemoMsg({ ok: false, text: e.message || 'Kon demo niet schakelen.' })
+    }
+    setDemoLoading(false)
+  }
 
   async function saveName(e) {
     e.preventDefault(); setSaving(true)
@@ -1398,6 +1417,40 @@ function Instellingen({ machineId, status, onRename, onUnpair }) {
             </div>
           )}
           {!status?.online && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 8 }}>Machine moet online zijn om een update uit te voeren.</div>}
+        </div>
+      </Group>
+
+      <Group label="Demo modus">
+        <div style={{ padding: '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: demoMsg ? 12 : 0 }}>
+            <div>
+              <div style={{ fontSize: 15, color: '#1d1d1f', fontWeight: 500 }}>Demo slideshow</div>
+              <div style={{ fontSize: 13, color: '#aeaeb2', marginTop: 2 }}>
+                {demoActive
+                  ? 'Actief — kiosk en portaal tonen nu de demo overlay'
+                  : 'Laad demo-cocktails en start de slideshow op alle schermen'}
+              </div>
+            </div>
+            <button onClick={toggleDemo} disabled={demoLoading || !status?.online} style={{
+              background: demoActive ? '#ff3b30' : '#1d1d1f',
+              color: '#fff', border: 'none', borderRadius: 10,
+              padding: '10px 16px', fontSize: 14, fontWeight: 600,
+              cursor: demoLoading || !status?.online ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit', flexShrink: 0,
+              opacity: demoLoading || !status?.online ? .5 : 1,
+              transition: 'all .15s',
+            }}>
+              {demoLoading ? 'Bezig…' : demoActive ? 'Demo stoppen' : 'Demo starten'}
+            </button>
+          </div>
+          {demoMsg && (
+            <div style={{
+              background: demoMsg.ok ? '#e8faf0' : '#fff1f0',
+              border: `1px solid ${demoMsg.ok ? '#a7f3d0' : '#ffd6d3'}`,
+              color: demoMsg.ok ? '#065f46' : '#ff3b30',
+              borderRadius: 10, padding: '10px 14px', fontSize: 13,
+            }}>{demoMsg.text}</div>
+          )}
         </div>
       </Group>
 

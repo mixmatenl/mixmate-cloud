@@ -97,4 +97,6 @@ export const api = {
   // Demo sync
   getDemoStatus:     (mid) => req('GET',  `/api/machines/${mid}/demo-status`),
   exitDemoSlideshow: (mid) => req('POST', `/api/machines/${mid}/demo/exit-slideshow`),
+  activateDemo:      (mid) => req('POST', `/api/machines/${mid}/demo/activate`),
+  deactivateDemo:    (mid) => req('POST', `/api/machines/${mid}/demo/deactivate`),
 }

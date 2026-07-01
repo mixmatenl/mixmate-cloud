@@ -492,6 +492,16 @@ async def exit_demo_slideshow(machine_id: str, customer_id: int = Depends(verify
     conn = _get_conn(machine_id, customer_id, db)
     return await conn.request({"type": "exit_demo_slideshow"}, timeout=5)
 
+@app.post("/api/machines/{machine_id}/demo/activate")
+async def activate_demo(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    conn = _get_conn(machine_id, customer_id, db)
+    return await conn.request({"type": "activate_demo"}, timeout=30)
+
+@app.post("/api/machines/{machine_id}/demo/deactivate")
+async def deactivate_demo(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    conn = _get_conn(machine_id, customer_id, db)
+    return await conn.request({"type": "deactivate_demo"}, timeout=15)
+
 @app.get("/api/machines/{machine_id}/flush-log")
 def get_flush_log(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _check_machine_access(machine_id, customer_id, db)
