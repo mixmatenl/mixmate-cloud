@@ -93,4 +93,8 @@ export const api = {
   // Rapporten
   getMachinePours:     (mid, date) => req('GET', `/api/machines/${mid}/pours${date ? `?date=${date}` : ''}`),
   getMachinePourStats: (mid)       => req('GET', `/api/machines/${mid}/pour-stats`),
+
+  // Demo sync
+  getDemoStatus:     (mid) => req('GET',  `/api/machines/${mid}/demo-status`),
+  exitDemoSlideshow: (mid) => req('POST', `/api/machines/${mid}/demo/exit-slideshow`),
 }

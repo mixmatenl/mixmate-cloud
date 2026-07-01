@@ -4,14 +4,29 @@ import { api } from '../api.js'
 
 const TABS = ['Overzicht', 'Catalogus', 'Pompen', 'Spoelen', 'Instellingen', 'Info']
 
+const VOORDELEN = [
+  { icon: '🍹', title: 'Tot 32 cocktails', desc: 'Automatisch bereid in enkele seconden' },
+  { icon: '⚡', title: 'Bliksemsnel', desc: 'Van bestelling naar glas in 7 seconden' },
+  { icon: '📱', title: 'Bedien via de app', desc: 'Kies, pas aan en geniet — zonder wachten' },
+  { icon: '🎯', title: 'Altijd perfect', desc: 'Elke cocktail exact hetzelfde recept' },
+  { icon: '🔄', title: 'Eindeloos aanpasbaar', desc: 'Eigen recepten, glazen en ingrediënten' },
+  { icon: '🎉', title: 'Ideaal voor events', desc: 'Schaalbaar van borrel tot groot festival' },
+]
+const SLIDE_COLORS = ['#1a0533', '#0d2137', '#1a1a0a', '#2d0a0a', '#0d1f0d', '#001a2d']
+
 export default function MachineDetail({ onLogout }) {
   const { machineId } = useParams()
   const navigate = useNavigate()
-  const [tab,      setTab]      = useState('Overzicht')
-  const [status,   setStatus]   = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [blocked,  setBlocked]  = useState(false)
-  const [toggling, setToggling] = useState(false)
+  const [tab,             setTab]             = useState('Overzicht')
+  const [status,          setStatus]          = useState(null)
+  const [loading,         setLoading]         = useState(true)
+  const [blocked,         setBlocked]         = useState(false)
+  const [toggling,        setToggling]        = useState(false)
+  const [demoSlideshow,   setDemoSlideshow]   = useState(false)
+  const [demoRecipes,     setDemoRecipes]     = useState([])
+  const [demoSlide,       setDemoSlide]       = useState(0)
+  const [demoVisible,     setDemoVisible]     = useState(true)
+  const demoTimerRef = useRef(null)
 
   useEffect(() => {
     api.machineStatus(machineId)
@@ -22,6 +37,44 @@ export default function MachineDetail({ onLogout }) {
       .catch(() => navigate('/'))
       .finally(() => setLoading(false))
   }, [machineId])
+
+  // Poll demo status
+  useEffect(() => {
+    let cancelled = false
+    async function poll() {
+      try {
+        const s = await api.getDemoStatus(machineId)
+        if (cancelled) return
+        if (s.slideshow_active && !demoSlideshow) {
+          setDemoSlideshow(true)
+          api.getRecipes(machineId).then(r => setDemoRecipes(Array.isArray(r) ? r : r.items || [])).catch(() => {})
+        } else if (!s.slideshow_active) {
+          setDemoSlideshow(false)
+        }
+      } catch {}
+    }
+    poll()
+    const iv = setInterval(poll, 3000)
+    return () => { cancelled = true; clearInterval(iv) }
+  }, [machineId, demoSlideshow])
+
+  // Cycleer demo slides
+  useEffect(() => {
+    if (!demoSlideshow) return
+    demoTimerRef.current = setInterval(() => {
+      setDemoVisible(false)
+      setTimeout(() => {
+        setDemoSlide(s => (s + 1) % VOORDELEN.length)
+        setDemoVisible(true)
+      }, 300)
+    }, 3500)
+    return () => clearInterval(demoTimerRef.current)
+  }, [demoSlideshow])
+
+  async function exitDemo() {
+    try { await api.exitDemoSlideshow(machineId) } catch {}
+    setDemoSlideshow(false)
+  }
 
   async function toggleBlock() {
     setToggling(true)
@@ -38,8 +91,96 @@ export default function MachineDetail({ onLogout }) {
     </div>
   )
 
+  const demoRecipe = demoRecipes[demoSlide % Math.max(1, demoRecipes.length)]
+  const demoVoordeel = VOORDELEN[demoSlide % VOORDELEN.length]
+  const demoBg = SLIDE_COLORS[demoSlide % SLIDE_COLORS.length]
+
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+
+      {/* Demo attractor overlay */}
+      {demoSlideshow && (
+        <div onClick={exitDemo} style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: demoBg, transition: 'background 0.8s ease',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
+        }}>
+          {/* Watermark */}
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '22vw', fontWeight: 900, color: 'rgba(255,255,255,0.04)',
+            letterSpacing: '-0.04em', pointerEvents: 'none', overflow: 'hidden',
+          }}>MIXMATE</div>
+
+          {/* Accent lijn */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' }} />
+
+          {/* Content */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            gap: 28, padding: '0 40px', maxWidth: 420, width: '100%',
+            opacity: demoVisible ? 1 : 0,
+            transform: demoVisible ? 'none' : 'translateY(8px)',
+            transition: 'opacity 0.3s ease, transform 0.3s ease',
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 12, letterSpacing: '0.3em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 4 }}>MIXMATE</div>
+              <div style={{ fontSize: 11, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase' }}>Cocktailmachine</div>
+            </div>
+
+            <div style={{
+              background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 24, padding: '28px 36px', textAlign: 'center', width: '100%',
+            }}>
+              <div style={{ fontSize: 48, marginBottom: 14 }}>{demoVoordeel.icon}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 8, lineHeight: 1.2 }}>{demoVoordeel.title}</div>
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5 }}>{demoVoordeel.desc}</div>
+            </div>
+
+            {demoRecipe && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 14, padding: '12px 18px', width: '100%',
+              }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {demoRecipe.image_url
+                    ? <img src={demoRecipe.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <span style={{ fontSize: 20 }}>🍹</span>}
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{demoRecipe.name}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                    {demoRecipe.ingredients?.length || 0} ingrediënten
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* CTA */}
+          <div style={{ position: 'absolute', bottom: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', textAlign: 'center', letterSpacing: '-0.01em' }}>
+              Tik op het scherm om de app te proberen
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#34c759', animation: 'mmPulse 2s ease-in-out infinite' }} />
+              Demo modus actief
+            </div>
+          </div>
+
+          {/* Dots */}
+          <div style={{ position: 'absolute', bottom: 18, display: 'flex', gap: 5 }}>
+            {VOORDELEN.map((_, i) => (
+              <div key={i} style={{ width: i === demoSlide % VOORDELEN.length ? 16 : 5, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.4)', opacity: i === demoSlide % VOORDELEN.length ? 1 : 0.25, transition: 'all 0.3s ease' }} />
+            ))}
+          </div>
+
+          <style>{`@keyframes mmPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
+        </div>
+      )}
+
       {/* Sub-header */}
       <div style={{ background: 'rgba(242,242,247,.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,.08)', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 720, margin: '0 auto', padding: '0 24px' }}>
