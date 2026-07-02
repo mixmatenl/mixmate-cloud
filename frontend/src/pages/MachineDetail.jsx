@@ -102,48 +102,46 @@ export default function MachineDetail({ onLogout }) {
       .finally(() => setLoading(false))
   }, [machineId])
 
-  // Poll demo status
+  // Poll demo status — elke 800ms als demo actief (voor slide sync), anders 3s
   useEffect(() => {
     let cancelled = false
+    let firstActivation = true
     async function poll() {
       try {
         const s = await api.getDemoStatus(machineId)
         if (cancelled) return
-        if (s.slideshow_active && !demoSlideshow) {
-          setDemoSlideshow(true)
-          setTimeout(() => setDemoVisible(true), 60)
-        } else if (!s.slideshow_active) {
+        if (s.slideshow_active) {
+          if (!demoSlideshow) {
+            setDemoSlideshow(true)
+            setTimeout(() => setDemoVisible(true), 60)
+            firstActivation = false
+          }
+          // Slide index van Pi backend gebruiken — bron van waarheid
+          if (s.slide_index !== undefined) {
+            const next = s.slide_index
+            if (next !== demoPrevRef.current && !demoBusyRef.current) {
+              demoPrevRef.current = next
+              demoBusyRef.current = true
+              setDemoVisible(false)
+              setTimeout(() => {
+                setDemoIdx(next)
+                setTimeout(() => {
+                  setDemoVisible(true)
+                  demoBusyRef.current = false
+                }, 40)
+              }, FADE_OUT_MS)
+            }
+          }
+        } else {
           setDemoSlideshow(false)
           setDemoVisible(false)
         }
       } catch {}
     }
     poll()
-    const iv = setInterval(poll, 3000)
+    const iv = setInterval(poll, demoSlideshow ? 800 : 3000)
     return () => { cancelled = true; clearInterval(iv) }
   }, [machineId, demoSlideshow])
-
-  // Wall-clock slide sync
-  useEffect(() => {
-    if (!demoSlideshow) return
-    const iv = setInterval(() => {
-      if (demoBusyRef.current) return
-      const next = clockIdx(FEATURES.length)
-      if (next !== demoPrevRef.current) {
-        demoPrevRef.current = next
-        demoBusyRef.current = true
-        setDemoVisible(false)
-        setTimeout(() => {
-          setDemoIdx(next)
-          setTimeout(() => {
-            setDemoVisible(true)
-            demoBusyRef.current = false
-          }, 40)
-        }, FADE_OUT_MS)
-      }
-    }, 200)
-    return () => clearInterval(iv)
-  }, [demoSlideshow])
 
   async function exitDemo() {
     try { await api.exitDemoSlideshow(machineId) } catch {}

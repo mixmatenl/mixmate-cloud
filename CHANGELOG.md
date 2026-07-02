@@ -1,3 +1,8 @@
+## [1.2.1] - 2026-07-02
+### Verbeterd
+- Portaal gebruikt `slide_index` van Pi backend — gegarandeerd synchroon met kiosk
+- Poll-interval daalt naar 800ms als demo actief is voor soepele overgang
+
 ## [1.2.0] - 2026-07-02
 ### Verbeterd
 - Demo overlay portaal identiek aan kiosk DemoMode: zelfde slides (Snelheid, Nauwkeurigheid, Hygiëne, etc.), achtergronden, accentkleuren, watermerk-getal, voortgangsbalk
