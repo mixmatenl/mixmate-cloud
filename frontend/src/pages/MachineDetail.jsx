@@ -4,15 +4,79 @@ import { api } from '../api.js'
 
 const TABS = ['Overzicht', 'Catalogus', 'Pompen', 'Spoelen', 'Instellingen', 'Info']
 
-const VOORDELEN = [
-  { icon: '🍹', title: 'Tot 32 cocktails', desc: 'Automatisch bereid in enkele seconden' },
-  { icon: '⚡', title: 'Bliksemsnel', desc: 'Van bestelling naar glas in 7 seconden' },
-  { icon: '📱', title: 'Bedien via de app', desc: 'Kies, pas aan en geniet — zonder wachten' },
-  { icon: '🎯', title: 'Altijd perfect', desc: 'Elke cocktail exact hetzelfde recept' },
-  { icon: '🔄', title: 'Eindeloos aanpasbaar', desc: 'Eigen recepten, glazen en ingrediënten' },
-  { icon: '🎉', title: 'Ideaal voor events', desc: 'Schaalbaar van borrel tot groot festival' },
+const SLIDE_MS    = 5000
+const FADE_OUT_MS = 280
+const FADE_IN_MS  = 420
+
+function clockIdx(len) {
+  return Math.floor(Date.now() / SLIDE_MS) % len
+}
+
+const FEATURES = [
+  {
+    id: 'speed',
+    bg: '#060d1f',
+    accent: '#3b82f6',
+    label: 'Snelheid',
+    headline: '180 cocktails\nper uur',
+    sub: 'De MIXMATE serveert non-stop — geen wachtrijen, geen verstoringen, altijd op tijd.',
+    mark: '180',
+  },
+  {
+    id: 'accuracy',
+    bg: '#0b0818',
+    accent: '#a78bfa',
+    label: 'Nauwkeurigheid',
+    headline: 'Tot op de milliliter\nnauwkeurig',
+    sub: 'Elk glas staat op een ingebouwd weegplateau. Elke dosis wordt gemeten, niet geschat.',
+    mark: '±0.1',
+  },
+  {
+    id: 'hygiene',
+    bg: '#030f14',
+    accent: '#22d3ee',
+    label: 'Hygiëne',
+    headline: 'Automatische\nspoelprogramma\'s',
+    sub: 'Start het spoelprogramma wanneer jij wilt — via de app of het touchscreen. Volledig automatisch.',
+    mark: '100%',
+  },
+  {
+    id: 'recipes',
+    bg: '#140610',
+    accent: '#f472b6',
+    label: 'Recepten',
+    headline: 'Tot 500 recepten\ninstelbaar',
+    sub: 'Upload en beheer tot 500 recepten via de app of het touchscreen — van klassiekers tot eigen huisspecials.',
+    mark: '500',
+  },
+  {
+    id: 'remote',
+    bg: '#061408',
+    accent: '#4ade80',
+    label: 'Beheer',
+    headline: 'Volledig beheer\nop afstand',
+    sub: 'Recepten aanpassen, pompen configureren en de machinestatus live bekijken — vanuit elke locatie.',
+    mark: '24/7',
+  },
+  {
+    id: 'reports',
+    bg: '#140f00',
+    accent: '#fbbf24',
+    label: 'Rapporten',
+    headline: 'Automatische\ndienstrapportages',
+    sub: 'Elke dienst een volledig overzicht: topcocktails, uitgifte per recept, gebruiksuren en meer.',
+    mark: '∞',
+  },
+  {
+    id: 'consistent',
+    bg: '#0a0a0a',
+    accent: '#e5e5e5',
+    label: 'Consistentie',
+    headline: 'Elke cocktail\nidentiek',
+    sub: 'Geen verschil tussen de eerste en de honderdste — altijd exact dezelfde smaak en presentatie.',
+    mark: '=',
+  },
 ]
-const SLIDE_COLORS = ['#1a0533', '#0d2137', '#1a1a0a', '#2d0a0a', '#0d1f0d', '#001a2d']
 
 export default function MachineDetail({ onLogout }) {
   const { machineId } = useParams()
@@ -23,10 +87,10 @@ export default function MachineDetail({ onLogout }) {
   const [blocked,         setBlocked]         = useState(false)
   const [toggling,        setToggling]        = useState(false)
   const [demoSlideshow,   setDemoSlideshow]   = useState(false)
-  const [demoRecipes,     setDemoRecipes]     = useState([])
-  const [demoSlide,       setDemoSlide]       = useState(0)
-  const [demoVisible,     setDemoVisible]     = useState(true)
-  const demoTimerRef = useRef(null)
+  const [demoIdx,         setDemoIdx]         = useState(() => clockIdx(FEATURES.length))
+  const [demoVisible,     setDemoVisible]     = useState(false)
+  const demoBusyRef  = useRef(false)
+  const demoPrevRef  = useRef(demoIdx)
 
   useEffect(() => {
     api.machineStatus(machineId)
@@ -47,9 +111,10 @@ export default function MachineDetail({ onLogout }) {
         if (cancelled) return
         if (s.slideshow_active && !demoSlideshow) {
           setDemoSlideshow(true)
-          api.getRecipes(machineId).then(r => setDemoRecipes(Array.isArray(r) ? r : r.items || [])).catch(() => {})
+          setTimeout(() => setDemoVisible(true), 60)
         } else if (!s.slideshow_active) {
           setDemoSlideshow(false)
+          setDemoVisible(false)
         }
       } catch {}
     }
@@ -58,17 +123,26 @@ export default function MachineDetail({ onLogout }) {
     return () => { cancelled = true; clearInterval(iv) }
   }, [machineId, demoSlideshow])
 
-  // Cycleer demo slides
+  // Wall-clock slide sync
   useEffect(() => {
     if (!demoSlideshow) return
-    demoTimerRef.current = setInterval(() => {
-      setDemoVisible(false)
-      setTimeout(() => {
-        setDemoSlide(s => (s + 1) % VOORDELEN.length)
-        setDemoVisible(true)
-      }, 300)
-    }, 3500)
-    return () => clearInterval(demoTimerRef.current)
+    const iv = setInterval(() => {
+      if (demoBusyRef.current) return
+      const next = clockIdx(FEATURES.length)
+      if (next !== demoPrevRef.current) {
+        demoPrevRef.current = next
+        demoBusyRef.current = true
+        setDemoVisible(false)
+        setTimeout(() => {
+          setDemoIdx(next)
+          setTimeout(() => {
+            setDemoVisible(true)
+            demoBusyRef.current = false
+          }, 40)
+        }, FADE_OUT_MS)
+      }
+    }, 200)
+    return () => clearInterval(iv)
   }, [demoSlideshow])
 
   async function exitDemo() {
@@ -91,93 +165,150 @@ export default function MachineDetail({ onLogout }) {
     </div>
   )
 
-  const demoRecipe = demoRecipes[demoSlide % Math.max(1, demoRecipes.length)]
-  const demoVoordeel = VOORDELEN[demoSlide % VOORDELEN.length]
-  const demoBg = SLIDE_COLORS[demoSlide % SLIDE_COLORS.length]
+  const demoF = FEATURES[demoIdx]
 
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
 
       {/* Demo attractor overlay */}
       {demoSlideshow && (
-        <div onClick={exitDemo} style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: demoBg, transition: 'background 0.8s ease',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
-        }}>
-          {/* Watermark */}
+        <div
+          onClick={exitDemo}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: demoF.bg,
+            transition: 'background 0.4s ease',
+            overflow: 'hidden',
+            userSelect: 'none', WebkitUserSelect: 'none',
+            cursor: 'pointer',
+          }}
+        >
+          {/* Gekleurde bovenlijn */}
           <div style={{
-            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '22vw', fontWeight: 900, color: 'rgba(255,255,255,0.04)',
-            letterSpacing: '-0.04em', pointerEvents: 'none', overflow: 'hidden',
-          }}>MIXMATE</div>
+            position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+            background: demoF.accent,
+            transition: 'background 0.4s ease',
+            zIndex: 2,
+          }} />
 
-          {/* Accent lijn */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' }} />
-
-          {/* Content */}
+          {/* Groot watermerk-getal */}
           <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            gap: 28, padding: '0 40px', maxWidth: 420, width: '100%',
-            opacity: demoVisible ? 1 : 0,
-            transform: demoVisible ? 'none' : 'translateY(8px)',
-            transition: 'opacity 0.3s ease, transform 0.3s ease',
+            position: 'absolute',
+            right: '-0.05em', bottom: '0.02em',
+            fontSize: '38vw',
+            fontWeight: 900,
+            lineHeight: 1,
+            color: demoF.accent,
+            opacity: 0.055,
+            letterSpacing: '-0.04em',
+            pointerEvents: 'none',
+            transition: 'color 0.4s ease',
+            zIndex: 1,
+          }}>{demoF.mark}</div>
+
+          {/* Logo + badge */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0,
+            padding: '30px 44px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            zIndex: 10, pointerEvents: 'none',
           }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 12, letterSpacing: '0.3em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 4 }}>MIXMATE</div>
-              <div style={{ fontSize: 11, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase' }}>Cocktailmachine</div>
-            </div>
+            <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.65)' }}>MIXMATE</span>
+            <span style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '3px',
+              textTransform: 'uppercase', color: 'rgba(255,255,255,0.22)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              padding: '3px 9px', borderRadius: 20,
+            }}>Demo</span>
+          </div>
 
-            <div style={{
-              background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 24, padding: '28px 36px', textAlign: 'center', width: '100%',
-            }}>
-              <div style={{ fontSize: 48, marginBottom: 14 }}>{demoVoordeel.icon}</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 8, lineHeight: 1.2 }}>{demoVoordeel.title}</div>
-              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5 }}>{demoVoordeel.desc}</div>
-            </div>
+          {/* Slide-inhoud — fade in/out */}
+          <div
+            key={demoIdx}
+            style={{
+              position: 'absolute', inset: 0, zIndex: 10,
+              display: 'flex', flexDirection: 'column',
+              padding: '90px 44px 44px',
+              opacity: demoVisible ? 1 : 0,
+              transform: demoVisible ? 'translateY(0) translateZ(0)' : 'translateY(10px) translateZ(0)',
+              transition: demoVisible
+                ? `opacity ${FADE_IN_MS}ms cubic-bezier(0,0,0.2,1), transform ${FADE_IN_MS}ms cubic-bezier(0,0,0.2,1)`
+                : `opacity ${FADE_OUT_MS}ms ease, transform ${FADE_OUT_MS}ms ease`,
+              willChange: 'opacity, transform',
+              pointerEvents: 'none',
+            }}
+          >
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 28 }}>
 
-            {demoRecipe && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 14, padding: '12px 18px', width: '100%',
-              }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {demoRecipe.image_url
-                    ? <img src={demoRecipe.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <span style={{ fontSize: 20 }}>🍹</span>}
-                </div>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{demoRecipe.name}</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-                    {demoRecipe.ingredients?.length || 0} ingrediënten
-                  </div>
-                </div>
+              {/* Label */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 18, alignSelf: 'flex-start' }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: demoF.accent }} />
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: demoF.accent }}>
+                  {demoF.label}
+                </span>
               </div>
-            )}
-          </div>
 
-          {/* CTA */}
-          <div style={{ position: 'absolute', bottom: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', textAlign: 'center', letterSpacing: '-0.01em' }}>
-              Tik op het scherm om de app te proberen
+              {/* Headline */}
+              <h1 style={{
+                fontSize: 'clamp(38px, 5.8vw, 66px)',
+                fontWeight: 800,
+                color: '#ffffff',
+                letterSpacing: '-1.5px',
+                lineHeight: 1.08,
+                margin: '0 0 20px',
+                maxWidth: 680,
+                whiteSpace: 'pre-line',
+              }}>{demoF.headline}</h1>
+
+              {/* Sub */}
+              <p style={{
+                fontSize: 15, lineHeight: 1.7,
+                color: 'rgba(255,255,255,0.48)',
+                margin: 0, maxWidth: 480,
+              }}>{demoF.sub}</p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#34c759', animation: 'mmPulse 2s ease-in-out infinite' }} />
-              Demo modus actief
+
+            {/* Dots */}
+            <div style={{ display: 'flex', gap: 5, marginBottom: 16 }}>
+              {FEATURES.map((_, i) => (
+                <div key={i} style={{
+                  width: i === demoIdx ? 22 : 5, height: 5, borderRadius: 3,
+                  background: '#fff',
+                  opacity: i === demoIdx ? 1 : 0.2,
+                  transition: 'width 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+                }} />
+              ))}
+            </div>
+
+            {/* Knop */}
+            <div style={{ pointerEvents: 'auto' }}>
+              <button
+                onClick={exitDemo}
+                style={{
+                  width: '100%', padding: '17px 0',
+                  borderRadius: 16,
+                  background: 'rgba(255,255,255,0.09)',
+                  color: '#fff',
+                  fontSize: 15, fontWeight: 600,
+                  border: '1px solid rgba(255,255,255,0.16)',
+                  cursor: 'pointer',
+                  transition: 'opacity 0.1s ease',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Tik om de app te starten →
+              </button>
             </div>
           </div>
 
-          {/* Dots */}
-          <div style={{ position: 'absolute', bottom: 18, display: 'flex', gap: 5 }}>
-            {VOORDELEN.map((_, i) => (
-              <div key={i} style={{ width: i === demoSlide % VOORDELEN.length ? 16 : 5, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.4)', opacity: i === demoSlide % VOORDELEN.length ? 1 : 0.25, transition: 'all 0.3s ease' }} />
-            ))}
+          {/* Voortgangsbalk */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            height: 2, background: 'rgba(255,255,255,0.06)',
+            zIndex: 20, pointerEvents: 'none',
+          }}>
+            <DemoProgressBar accent={demoF.accent} slideMs={SLIDE_MS} idx={demoIdx} />
           </div>
-
-          <style>{`@keyframes mmPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
         </div>
       )}
 
@@ -1509,6 +1640,36 @@ function InfoField({ label, value, mono }) {
       <span style={{ fontSize: 14, color: '#6e6e73' }}>{label}</span>
       <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', fontFamily: mono ? 'monospace' : 'inherit' }}>{value || '—'}</span>
     </div>
+  )
+}
+
+function DemoProgressBar({ accent, slideMs, idx }) {
+  const [pct, setPct]   = useState(0)
+  const startRef = useRef(null)
+  const rafRef   = useRef(null)
+
+  useEffect(() => {
+    setPct(0)
+    startRef.current = null
+    cancelAnimationFrame(rafRef.current)
+    function tick(now) {
+      if (!startRef.current) startRef.current = now
+      const p = Math.min(((now - startRef.current) / slideMs) * 100, 100)
+      setPct(p)
+      if (p < 100) rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [idx, slideMs])
+
+  return (
+    <div style={{
+      height: '100%',
+      width: `${pct}%`,
+      background: accent,
+      transition: 'background 0.4s ease',
+      willChange: 'width',
+    }} />
   )
 }
 
