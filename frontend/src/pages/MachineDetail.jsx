@@ -1452,6 +1452,10 @@ function TeamBeheer({ machineId }) {
 
 function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDemoToggle }) {
   const [name,         setName]        = useState(status?.name || '')
+  const [serial,       setSerial]      = useState(status?.serial_number || '')
+  const [serialSaving, setSerialSaving]= useState(false)
+  const [serialSaved,  setSerialSaved] = useState(false)
+  const [serialErr,    setSerialErr]   = useState(null)
   const [saving,       setSaving]      = useState(false)
   const [saved,        setSaved]       = useState(false)
   const [updating,     setUpdating]    = useState(false)
@@ -1487,6 +1491,17 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
     setSaving(false)
   }
 
+  async function saveSerial(e) {
+    e.preventDefault(); setSerialSaving(true); setSerialErr(null)
+    try {
+      await api.updateMachine(machineId, { serial_number: serial.trim() })
+      setSerialSaved(true); setTimeout(() => setSerialSaved(false), 2000)
+    } catch (err) {
+      setSerialErr(err.message || 'Kon serienummer niet opslaan.')
+    }
+    setSerialSaving(false)
+  }
+
   async function handleUnpair() {
     setDeleting(true)
     try {
@@ -1518,6 +1533,39 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
               {saved ? 'Opgeslagen ✓' : saving ? 'Opslaan…' : 'Opslaan'}
             </button>
           </form>
+        </div>
+        <div style={{ padding: '14px 16px', borderTop: '1px solid #f2f2f7' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3 }}>Serienummer</div>
+            {status?.serial_number_confirmed && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#34c759', background: '#e8faf0', border: '1px solid #a7f3d0', borderRadius: 6, padding: '2px 7px' }}>
+                ✓ Bevestigd door machine
+              </div>
+            )}
+          </div>
+          {status?.serial_number_confirmed ? (
+            <div style={{ ...inp, background: '#f9f9f9', color: '#6e6e73', fontFamily: 'monospace', cursor: 'not-allowed' }}>
+              {status.serial_number}
+            </div>
+          ) : (
+            <>
+              <form onSubmit={saveSerial} style={{ display: 'flex', gap: 10 }}>
+                <input
+                  value={serial}
+                  onChange={e => setSerial(e.target.value)}
+                  placeholder="bijv. MM-2024-00123"
+                  style={{ ...inp, flex: 1, fontFamily: 'monospace' }}
+                />
+                <button type="submit" disabled={serialSaving || !serial.trim()} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: (serialSaving || !serial.trim()) ? .4 : 1 }}>
+                  {serialSaved ? 'Opgeslagen ✓' : serialSaving ? 'Opslaan…' : 'Opslaan'}
+                </button>
+              </form>
+              <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 6 }}>
+                Wordt automatisch vergrendeld zodra de machine online komt en zijn serienummer bevestigt.
+              </div>
+              {serialErr && <div style={{ fontSize: 13, color: '#ff3b30', marginTop: 6 }}>{serialErr}</div>}
+            </>
+          )}
         </div>
       </Group>
 

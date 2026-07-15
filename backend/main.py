@@ -51,6 +51,8 @@ class Machine(SQLModel, table=True):
     name: str = "Mijn Machine"
     model: str = ""
     version: str = ""
+    serial_number: str = ""
+    serial_number_confirmed: bool = False  # True zodra machine zelf het serienummer heeft gestuurd
     last_seen: Optional[datetime] = None
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     customer: Optional[Customer] = Relationship(back_populates="machines")
@@ -231,6 +233,9 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                 machine.last_seen = datetime.utcnow()
                 if data.get("version"): machine.version = data["version"]
                 if data.get("model"):   machine.model   = data["model"]
+                if data.get("serial_number") and not machine.serial_number_confirmed:
+                    machine.serial_number           = data["serial_number"]
+                    machine.serial_number_confirmed = True
                 db.add(machine)
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
@@ -710,6 +715,10 @@ def rename_machine(machine_id: str, body: dict, customer_id: int = Depends(verif
         raise HTTPException(status_code=404, detail="Niet gevonden")
     if "name" in body:
         machine.name = body["name"]
+    if "serial_number" in body:
+        if machine.serial_number_confirmed:
+            raise HTTPException(status_code=409, detail="Serienummer is bevestigd door de machine en kan niet meer worden gewijzigd")
+        machine.serial_number = body["serial_number"]
     db.add(machine)
     db.commit()
     return _machine_dict(machine)
@@ -882,12 +891,14 @@ def _flush_info(machine_id: str, db: Session) -> dict:
 
 def _machine_dict(m: Machine) -> dict:
     return {
-        "machine_id": m.machine_id,
-        "name":       m.name,
-        "model":      m.model,
-        "version":    m.version,
-        "paired":     m.paired,
-        "last_seen":  m.last_seen.isoformat() if m.last_seen else None,
+        "machine_id":               m.machine_id,
+        "name":                     m.name,
+        "model":                    m.model,
+        "version":                  m.version,
+        "serial_number":            m.serial_number,
+        "serial_number_confirmed":  m.serial_number_confirmed,
+        "paired":                   m.paired,
+        "last_seen":                m.last_seen.isoformat() if m.last_seen else None,
     }
 
 # ── Statische frontend serveren ───────────────────────────────────────────────
