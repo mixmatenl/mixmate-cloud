@@ -229,8 +229,8 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
 
             if msg_type == "heartbeat":
                 machine.last_seen = datetime.utcnow()
-                if "version" in data: machine.version = data["version"]
-                if "model"   in data: machine.model   = data["model"]
+                if data.get("version"): machine.version = data["version"]
+                if data.get("model"):   machine.model   = data["model"]
                 db.add(machine)
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
