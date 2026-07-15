@@ -251,7 +251,13 @@ export default function Dashboard({ user, onLogout }) {
       setMachines(data)
       localStorage.setItem(CACHE_KEY, JSON.stringify(data))
     }
-    catch { onLogout() }
+    catch (err) {
+      // Alleen uitloggen bij een verlopen/ongeldige sessie, niet bij server- of netwerkfouten
+      if (err.status === 401 || err.message === 'Niet geautoriseerd' || err.message === 'Ongeldige token') {
+        onLogout()
+      }
+      // Anders: toon gecachte data als die er is
+    }
     finally { setLoading(false) }
   }
 

@@ -15,7 +15,9 @@ async function req(method, path, body) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Onbekende fout' }))
-    throw new Error(err.detail || 'Fout')
+    const error = new Error(err.detail || 'Fout')
+    error.status = res.status
+    throw error
   }
   return res.json()
 }

@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Field, Session, SQLModel, create_engine, select, Relationship
+from sqlalchemy import text
 import httpx
 import jwt
 
@@ -85,6 +86,18 @@ class FlushSchedule(SQLModel, table=True):
 
 def create_tables():
     SQLModel.metadata.create_all(engine)
+    # Voeg nieuwe kolommen toe aan bestaande tabellen als ze nog niet bestaan
+    migrations = [
+        "ALTER TABLE machine ADD COLUMN serial_number VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE machine ADD COLUMN serial_number_confirmed BOOLEAN NOT NULL DEFAULT FALSE",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception:
+                pass  # Kolom bestaat al
 
 def get_session():
     with Session(engine) as session:
