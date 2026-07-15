@@ -100,6 +100,15 @@ export const api = {
   getMachinePours:     (mid, date) => req('GET', `/api/machines/${mid}/pours${date ? `?date=${date}` : ''}`),
   getMachinePourStats: (mid)       => req('GET', `/api/machines/${mid}/pour-stats`),
 
+  // Admin
+  adminMe:              ()              => req('GET',   '/api/admin/me'),
+  adminSearchCustomers: (q)             => req('GET',   `/api/admin/customers?q=${encodeURIComponent(q || '')}`),
+  adminRestartMachine:  (machine_id)    => req('POST',  `/api/admin/machines/${machine_id}/restart`),
+  adminGetTickets:      ()              => req('GET',   '/api/admin/tickets'),
+  adminUpdateTicket:    (id, data)      => req('PATCH', `/api/admin/tickets/${id}`, data),
+  adminAddResponse:     (id, message)   => req('POST',  `/api/admin/tickets/${id}/responses`, { message }),
+  adminGetResponses:    (id)            => req('GET',   `/api/support/tickets/${id}/responses`),
+
   // Demo sync
   getDemoStatus:     (mid) => req('GET',  `/api/machines/${mid}/demo-status`),
   exitDemoSlideshow: (mid) => req('POST', `/api/machines/${mid}/demo/exit-slideshow`),

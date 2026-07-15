@@ -7,6 +7,7 @@ import Support from './pages/Support.jsx'
 import Account from './pages/Account.jsx'
 import Rapporten from './pages/Rapporten.jsx'
 import Meldingen from './pages/Meldingen.jsx'
+import Admin from './pages/Admin.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="/meldingen" element={<Meldingen />} />
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
+        <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />

@@ -84,6 +84,14 @@ class FlushSchedule(SQLModel, table=True):
     enabled: bool = True
     day_of_week: int = 0   # 0=maandag … 6=zondag
 
+class TicketResponse(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="supportticket.id", index=True)
+    author_name: str = ""
+    message: str = ""
+    is_admin: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class SupportTicket(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     customer_id: int = Field(foreign_key="customer.id", index=True)
@@ -137,6 +145,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 JWT_SECRET   = os.getenv("JWT_SECRET", secrets.token_hex(32))
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")   # geheim wachtwoord voor admin endpoints
+ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "r.muller@mixmate.nl,info@mixmate.nl,h.louwrink@mixmate.nl").split(",") if e.strip()}
 
 security = HTTPBearer(auto_error=False)
 
@@ -158,6 +167,14 @@ def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Admin niet geconfigureerd")
     if credentials.credentials != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Ongeldig admin wachtwoord")
+
+def verify_admin_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_session)) -> int:
+    """Admin-check op basis van klantsessie: alleen e-mailadressen in ADMIN_EMAILS."""
+    customer_id = verify_token(credentials)
+    customer = db.get(Customer, customer_id)
+    if not customer or customer.email.lower() not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="Geen beheerderstoegang")
+    return customer_id
 
 # ── WebSocket machine verbindingen ────────────────────────────────────────────
 
@@ -489,8 +506,64 @@ def list_tickets(customer_id: int = Depends(verify_token), db: Session = Depends
     tickets = db.exec(select(SupportTicket).where(SupportTicket.customer_id == customer_id).order_by(SupportTicket.created_at.desc())).all()
     return [_ticket_dict(t) for t in tickets]
 
-@app.patch("/api/support/tickets/{ticket_id}")
-def update_ticket(ticket_id: int, body: dict, _: str = Depends(verify_admin), db: Session = Depends(get_session)):
+@app.get("/api/support/tickets/{ticket_id}/responses")
+def get_responses(ticket_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket or ticket.customer_id != customer_id:
+        raise HTTPException(status_code=404, detail="Ticket niet gevonden")
+    responses = db.exec(select(TicketResponse).where(TicketResponse.ticket_id == ticket_id).order_by(TicketResponse.created_at)).all()
+    return [{"id": r.id, "author_name": r.author_name, "message": r.message, "is_admin": r.is_admin, "created_at": r.created_at.isoformat()} for r in responses]
+
+# ── Admin endpoints (vereist ingelogd admin-account) ─────────────────────────
+
+@app.get("/api/admin/me")
+def admin_me(customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Check of de ingelogde gebruiker admin is."""
+    customer = db.get(Customer, customer_id)
+    return {"is_admin": True, "name": customer.name, "email": customer.email}
+
+@app.get("/api/admin/customers")
+def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    query = select(Customer)
+    if q:
+        like = f"%{q}%"
+        query = query.where((Customer.name.ilike(like)) | (Customer.email.ilike(like)))
+    customers = db.exec(query.order_by(Customer.name).limit(50)).all()
+    result = []
+    for c in customers:
+        machines = db.exec(select(Machine).where(Machine.customer_id == c.id)).all()
+        result.append({
+            "id": c.id, "name": c.name, "email": c.email,
+            "machine_count": len(machines),
+            "machines": [{**_machine_dict(m), "online": m.machine_id in connected_machines} for m in machines],
+        })
+    return result
+
+@app.post("/api/admin/machines/{machine_id}/restart")
+async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(status_code=503, detail="Machine is offline")
+    await conn.request({"type": "trigger_update"}, timeout=10)
+    return {"ok": True}
+
+@app.get("/api/admin/tickets")
+def admin_list_tickets(customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    tickets = db.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
+    customers = {c.id: c for c in db.exec(select(Customer)).all()}
+    result = []
+    for t in tickets:
+        d = _ticket_dict(t)
+        c = customers.get(t.customer_id)
+        d["customer_name"]  = c.name  if c else ""
+        d["customer_email"] = c.email if c else ""
+        responses = db.exec(select(TicketResponse).where(TicketResponse.ticket_id == t.id)).all()
+        d["response_count"] = len(responses)
+        result.append(d)
+    return result
+
+@app.patch("/api/admin/tickets/{ticket_id}")
+async def admin_update_ticket(ticket_id: int, body: dict, customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket niet gevonden")
@@ -500,20 +573,81 @@ def update_ticket(ticket_id: int, body: dict, _: str = Depends(verify_admin), db
         ticket.appointment_at = datetime.fromisoformat(body["appointment_at"]) if body["appointment_at"] else None
     db.add(ticket)
     db.commit()
+
+    # Stuur e-mail naar klant als afspraak wordt ingepland
+    if "appointment_at" in body and body["appointment_at"] and RESEND_API_KEY:
+        klant = db.get(Customer, ticket.customer_id)
+        if klant:
+            afspraak_str = datetime.fromisoformat(body["appointment_at"]).strftime("%A %d %B om %H:%M").capitalize()
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://api.resend.com/emails",
+                        headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                        json={
+                            "from": FROM_EMAIL, "to": [klant.email],
+                            "subject": f"Afspraak ingepland voor melding #{ticket.id}",
+                            "html": f"""<div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
+                                <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
+                                <p style="color:#374151;">Hallo {klant.name},</p>
+                                <p style="color:#374151;">Er is een afspraak ingepland voor uw melding <strong>#{ticket.id} — {ticket.category}</strong>.</p>
+                                <div style="background:#f0f6ff;border:1px solid #a8d0ff;border-radius:12px;padding:18px;margin:20px 0;text-align:center;">
+                                  <div style="font-size:13px;color:#6b7280;margin-bottom:4px;">Afspraak</div>
+                                  <div style="font-size:22px;font-weight:700;color:#1d1d1f;">{afspraak_str}</div>
+                                  {f'<div style="margin-top:10px;font-size:14px;color:#374151;">{body.get("appointment_note","")}</div>' if body.get("appointment_note") else ""}
+                                </div>
+                                <p style="color:#374151;">U kunt de voortgang volgen via uw portaal op <a href="https://portaal.mixmate.nl/meldingen">portaal.mixmate.nl</a>.</p>
+                              </div>""",
+                        }, timeout=10,
+                    )
+            except Exception:
+                pass
+
     return _ticket_dict(ticket)
 
-@app.get("/api/admin/tickets")
-def admin_list_tickets(_: str = Depends(verify_admin), db: Session = Depends(get_session)):
-    tickets = db.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
-    customers = {c.id: c for c in db.exec(select(Customer)).all()}
-    result = []
-    for t in tickets:
-        d = _ticket_dict(t)
-        c = customers.get(t.customer_id)
-        d["customer_name"]  = c.name  if c else ""
-        d["customer_email"] = c.email if c else ""
-        result.append(d)
-    return result
+@app.post("/api/admin/tickets/{ticket_id}/responses")
+async def admin_add_response(ticket_id: int, body: dict, customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket niet gevonden")
+    admin = db.get(Customer, customer_id)
+    response = TicketResponse(
+        ticket_id   = ticket_id,
+        author_name = admin.name if admin else "MIXMATE",
+        message     = body.get("message", "").strip(),
+        is_admin    = True,
+    )
+    if not response.message:
+        raise HTTPException(status_code=400, detail="Bericht mag niet leeg zijn")
+    db.add(response)
+    db.commit()
+    db.refresh(response)
+
+    # E-mail naar klant
+    if RESEND_API_KEY:
+        klant = db.get(Customer, ticket.customer_id)
+        if klant:
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://api.resend.com/emails",
+                        headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                        json={
+                            "from": FROM_EMAIL, "to": [klant.email],
+                            "subject": f"Reactie op uw melding #{ticket.id}",
+                            "html": f"""<div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
+                                <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
+                                <p style="color:#374151;">Hallo {klant.name},</p>
+                                <p style="color:#374151;">Er is een reactie geplaatst op uw melding <strong>#{ticket.id} — {ticket.category}</strong>.</p>
+                                <div style="background:#f9fafb;border-radius:12px;padding:18px;margin:20px 0;white-space:pre-wrap;font-size:14px;color:#374151;">{response.message}</div>
+                                <a href="https://portaal.mixmate.nl/meldingen" style="display:inline-block;background:#111;color:#fff;text-decoration:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:600;">Bekijk in portaal →</a>
+                              </div>""",
+                        }, timeout=10,
+                    )
+            except Exception:
+                pass
+
+    return {"id": response.id, "author_name": response.author_name, "message": response.message, "is_admin": True, "created_at": response.created_at.isoformat()}
 
 
 @app.post("/api/machines/{machine_id}/trigger-update")
@@ -728,14 +862,14 @@ def unlock_recipe(machine_id: str, recipe_id: int, customer_id: int = Depends(ve
         db.commit()
     return {"locked": False}
 
-# ── Admin (alleen voor jou) ───────────────────────────────────────────────────
+# ── Admin (alleen voor jou, wachtwoord-gebaseerd) ────────────────────────────
 
-@app.get("/api/admin/customers")
+@app.get("/api/internal/customers")
 def admin_list_customers(_=Depends(verify_admin), db: Session = Depends(get_session)):
     customers = db.exec(select(Customer)).all()
     return [{"id": c.id, "email": c.email, "name": c.name, "created_at": c.created_at} for c in customers]
 
-@app.post("/api/admin/customers")
+@app.post("/api/internal/customers")
 def admin_create_customer(body: dict, _=Depends(verify_admin), db: Session = Depends(get_session)):
     email    = (body.get("email") or "").strip().lower()
     name     = body.get("name") or ""
@@ -750,7 +884,7 @@ def admin_create_customer(body: dict, _=Depends(verify_admin), db: Session = Dep
     db.refresh(customer)
     return {"id": customer.id, "email": customer.email, "name": customer.name, "password": password}
 
-@app.delete("/api/admin/customers/{customer_id}")
+@app.delete("/api/internal/customers/{customer_id}")
 def admin_delete_customer(customer_id: int, _=Depends(verify_admin), db: Session = Depends(get_session)):
     customer = db.get(Customer, customer_id)
     if not customer:
