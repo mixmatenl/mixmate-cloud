@@ -68,7 +68,9 @@ export const api = {
   getMachineInfo:   (mid)           => req('GET',    `/api/machines/${mid}/info`),
 
   // Support
-  submitSupport: (data) => req('POST', '/api/support', data),
+  submitSupport:  (data)               => req('POST',  '/api/support',                  data),
+  getTickets:     ()                   => req('GET',   '/api/support/tickets'),
+  updateTicket:   (id, data)           => req('PATCH', `/api/support/tickets/${id}`,    data),
 
   // Update
   triggerUpdate: (machine_id) => req('POST', `/api/machines/${machine_id}/trigger-update`),

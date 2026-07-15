@@ -84,12 +84,28 @@ class FlushSchedule(SQLModel, table=True):
     enabled: bool = True
     day_of_week: int = 0   # 0=maandag … 6=zondag
 
+class SupportTicket(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    customer_id: int = Field(foreign_key="customer.id", index=True)
+    machine_name: str = ""
+    machine_serial: str = ""
+    category: str = ""
+    urgency: str = ""
+    description: str = ""
+    preferred_date: str = ""
+    preferred_time: str = ""
+    status: str = "open"               # open | ingepland | in_behandeling | opgelost
+    appointment_at: Optional[datetime] = None
+    appointment_note: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 def create_tables():
     SQLModel.metadata.create_all(engine)
     # Voeg nieuwe kolommen toe aan bestaande tabellen als ze nog niet bestaan
     migrations = [
         "ALTER TABLE machine ADD COLUMN serial_number VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE machine ADD COLUMN serial_number_confirmed BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE supportticket ADD COLUMN appointment_note VARCHAR NOT NULL DEFAULT ''",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -402,37 +418,102 @@ def reset_password(body: dict, db: Session = Depends(get_session)):
     return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
 
 
+def _ticket_dict(t: SupportTicket) -> dict:
+    return {
+        "id":               t.id,
+        "machine_name":     t.machine_name,
+        "machine_serial":   t.machine_serial,
+        "category":         t.category,
+        "urgency":          t.urgency,
+        "description":      t.description,
+        "preferred_date":   t.preferred_date,
+        "preferred_time":   t.preferred_time,
+        "status":           t.status,
+        "appointment_at":   t.appointment_at.isoformat() if t.appointment_at else None,
+        "appointment_note": t.appointment_note,
+        "created_at":       t.created_at.isoformat(),
+    }
+
 @app.post("/api/support")
-async def submit_support(body: dict, customer_id: int = Depends(verify_token)):
-    if not RESEND_API_KEY:
-        raise HTTPException(status_code=503, detail="E-mail niet geconfigureerd")
-    html = f"""
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff;">
-      <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
-      <div style="font-size:13px;color:#9ca3af;margin-bottom:32px;">Nieuwe machinemelding</div>
-      <table style="width:100%;border-collapse:collapse;font-size:14px;">
-        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;width:140px;">Klant</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('customer_name','')} &lt;{body.get('customer_email','')}&gt;</td></tr>
-        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Machine</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('machine_name','')} (ID: {body.get('machine_id','')})</td></tr>
-        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Categorie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('category','')}</td></tr>
-        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Urgentie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('urgency','')}</td></tr>
-        <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Voorkeur</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('preferred_date','')} — {body.get('preferred_time','')}</td></tr>
-      </table>
-      <div style="margin-top:24px;background:#f9fafb;border-radius:12px;padding:18px;">
-        <div style="font-size:12px;font-weight:600;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Beschrijving</div>
-        <p style="font-size:14px;color:#374151;margin:0;white-space:pre-wrap;">{body.get('description','')}</p>
-      </div>
-    </div>
-    """
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={"from": FROM_EMAIL, "to": ["info@mixmate.nl"], "reply_to": body.get("customer_email", ""), "subject": f"Machinemelding: {body.get('category','')} — {body.get('machine_name','')}", "html": html},
-            timeout=10,
-        )
-    if r.status_code >= 400:
-        raise HTTPException(status_code=502, detail="E-mail kon niet worden verzonden")
-    return {"ok": True}
+async def submit_support(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    # Sla ticket op in de database
+    ticket = SupportTicket(
+        customer_id    = customer_id,
+        machine_name   = body.get("machine_name",   ""),
+        machine_serial = body.get("machine_id",     ""),
+        category       = body.get("category",       ""),
+        urgency        = body.get("urgency",         ""),
+        description    = body.get("description",     ""),
+        preferred_date = body.get("preferred_date",  ""),
+        preferred_time = body.get("preferred_time",  ""),
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+
+    # Stuur e-mail (niet-blokkerend bij fout)
+    if RESEND_API_KEY:
+        html = f"""
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff;">
+          <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
+          <div style="font-size:13px;color:#9ca3af;margin-bottom:32px;">Nieuwe machinemelding #{ticket.id}</div>
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;width:140px;">Klant</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('customer_name','')} &lt;{body.get('customer_email','')}&gt;</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Machine</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('machine_name','')} (ID: {body.get('machine_id','')})</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Categorie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('category','')}</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Urgentie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('urgency','')}</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Voorkeur</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('preferred_date','')} — {body.get('preferred_time','')}</td></tr>
+          </table>
+          <div style="margin-top:24px;background:#f9fafb;border-radius:12px;padding:18px;">
+            <div style="font-size:12px;font-weight:600;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Beschrijving</div>
+            <p style="font-size:14px;color:#374151;margin:0;white-space:pre-wrap;">{body.get('description','')}</p>
+          </div>
+          <p style="font-size:12px;color:#9ca3af;margin-top:24px;">Ticket-ID: #{ticket.id} — beheer via portaal.mixmate.nl</p>
+        </div>
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                    json={"from": FROM_EMAIL, "to": ["info@mixmate.nl"], "reply_to": body.get("customer_email", ""), "subject": f"[#{ticket.id}] Machinemelding: {body.get('category','')} — {body.get('machine_name','')}", "html": html},
+                    timeout=10,
+                )
+        except Exception:
+            pass  # E-mail mislukking blokkeert niet het opslaan
+
+    return {"ok": True, "ticket_id": ticket.id}
+
+@app.get("/api/support/tickets")
+def list_tickets(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    tickets = db.exec(select(SupportTicket).where(SupportTicket.customer_id == customer_id).order_by(SupportTicket.created_at.desc())).all()
+    return [_ticket_dict(t) for t in tickets]
+
+@app.patch("/api/support/tickets/{ticket_id}")
+def update_ticket(ticket_id: int, body: dict, _: str = Depends(verify_admin), db: Session = Depends(get_session)):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket niet gevonden")
+    if "status"           in body: ticket.status           = body["status"]
+    if "appointment_note" in body: ticket.appointment_note = body["appointment_note"]
+    if "appointment_at"   in body:
+        ticket.appointment_at = datetime.fromisoformat(body["appointment_at"]) if body["appointment_at"] else None
+    db.add(ticket)
+    db.commit()
+    return _ticket_dict(ticket)
+
+@app.get("/api/admin/tickets")
+def admin_list_tickets(_: str = Depends(verify_admin), db: Session = Depends(get_session)):
+    tickets = db.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
+    customers = {c.id: c for c in db.exec(select(Customer)).all()}
+    result = []
+    for t in tickets:
+        d = _ticket_dict(t)
+        c = customers.get(t.customer_id)
+        d["customer_name"]  = c.name  if c else ""
+        d["customer_email"] = c.email if c else ""
+        result.append(d)
+    return result
 
 
 @app.post("/api/machines/{machine_id}/trigger-update")

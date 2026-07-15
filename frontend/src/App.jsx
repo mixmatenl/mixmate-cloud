@@ -6,6 +6,7 @@ import MachineDetail from './pages/MachineDetail.jsx'
 import Support from './pages/Support.jsx'
 import Account from './pages/Account.jsx'
 import Rapporten from './pages/Rapporten.jsx'
+import Meldingen from './pages/Meldingen.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
         <Route path="/machine/:machineId" element={<MachineDetail user={user} onLogout={onLogout} />} />
         <Route path="/rapporten" element={<Rapporten />} />
+        <Route path="/meldingen" element={<Meldingen />} />
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
