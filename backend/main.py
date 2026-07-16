@@ -117,13 +117,14 @@ def create_tables():
         "ALTER TABLE supportticket ADD COLUMN appointment_note VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE supportticket ADD COLUMN ticket_type VARCHAR NOT NULL DEFAULT 'service'",
     ]
-    with engine.connect() as conn:
-        for sql in migrations:
-            try:
+    for sql in migrations:
+        try:
+            with engine.connect() as conn:
                 conn.execute(text(sql))
                 conn.commit()
-            except Exception:
-                pass  # Kolom bestaat al
+                print(f"[MIGRATION OK] {sql[:60]}", flush=True)
+        except Exception as exc:
+            print(f"[MIGRATION SKIP] {sql[:60]} — {exc}", flush=True)
 
 def get_session():
     with Session(engine) as session:
