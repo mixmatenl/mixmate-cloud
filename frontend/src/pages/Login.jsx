@@ -33,11 +33,11 @@ export default function Login({ onLogin }) {
     try {
       if (mode === 'login') {
         const r = await api.login(email, password)
-        onLogin(r.token, { name: r.name, email: r.email })
+        onLogin(r.token, { name: r.name, email: r.email, must_change_password: r.must_change_password })
 
       } else if (mode === 'register') {
         const r = await api.register(name, email, password)
-        onLogin(r.token, { name: r.name, email: r.email })
+        onLogin(r.token, { name: r.name, email: r.email, must_change_password: false })
 
       } else if (mode === 'forgot') {
         await api.forgotPassword(email)
@@ -46,7 +46,7 @@ export default function Login({ onLogin }) {
 
       } else if (mode === 'verify') {
         const r = await api.resetPassword(email, code, password)
-        onLogin(r.token, { name: r.name, email: r.email })
+        onLogin(r.token, { name: r.name, email: r.email, must_change_password: false })
       }
     } catch (err) {
       setError(err.message)
