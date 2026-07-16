@@ -737,6 +737,16 @@ async def admin_add_response(ticket_id: int, body: dict, customer_id: int = Depe
 @app.post("/api/offerte")
 async def submit_offerte_website(body: dict, db: Session = Depends(get_session)):
     """Publiek endpoint — offerte-aanvragen via de Shopify website (geen auth vereist)."""
+    import traceback
+    try:
+        return await _do_offerte(body, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"[OFFERTE ERROR] {exc}\n{traceback.format_exc()}", flush=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+async def _do_offerte(body: dict, db):
     name  = (body.get("name")  or "").strip()
     email = (body.get("email") or "").strip().lower()
     if not name or not email:
