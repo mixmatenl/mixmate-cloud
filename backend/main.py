@@ -145,7 +145,10 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 # ── JWT Auth ──────────────────────────────────────────────────────────────────
 
-JWT_SECRET   = os.getenv("JWT_SECRET", secrets.token_hex(32))
+JWT_SECRET   = os.getenv("JWT_SECRET", "")
+if not JWT_SECRET:
+    print("WARNING: JWT_SECRET env var not set — tokens will be invalidated on every restart!", flush=True)
+    JWT_SECRET = secrets.token_hex(32)
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")   # geheim wachtwoord voor admin endpoints
 ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "r.muller@mixmate.nl,info@mixmate.nl,h.louwrink@mixmate.nl").split(",") if e.strip()}
 
@@ -424,14 +427,16 @@ async def _resend(to: str, subject: str, html: str, reply_to: str = "") -> None:
         payload["reply_to"] = reply_to
     try:
         async with httpx.AsyncClient() as client:
-            await client.post(
+            r = await client.post(
                 "https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
                 json=payload,
                 timeout=10,
             )
-    except Exception:
-        pass
+            if r.status_code >= 400:
+                print(f"[RESEND ERROR] status={r.status_code} to={to} body={r.text[:300]}", flush=True)
+    except Exception as exc:
+        print(f"[RESEND EXCEPTION] to={to} subject={subject!r}: {exc}", flush=True)
 
 async def _send_reset_email(to_email: str, to_name: str, code: str):
     reset_url = f"{PORTAL_URL}/login?mode=reset&email={to_email}&code={code}"
