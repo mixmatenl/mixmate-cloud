@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlmodel import Field, Session, SQLModel, create_engine, select, Relationship
+from sqlmodel import Field, Session, SQLModel, create_engine, select, delete, Relationship
 from sqlalchemy import text
 import httpx
 import jwt
@@ -589,8 +589,25 @@ async def submit_support(body: dict, customer_id: int = Depends(verify_token), d
 
 @app.get("/api/support/tickets")
 def list_tickets(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    tickets = db.exec(select(SupportTicket).where(SupportTicket.customer_id == customer_id).order_by(SupportTicket.created_at.desc())).all()
+    tickets = db.exec(
+        select(SupportTicket)
+        .where(SupportTicket.customer_id == customer_id, SupportTicket.ticket_type == "service")
+        .order_by(SupportTicket.created_at.desc())
+    ).all()
     return [_ticket_dict(t) for t in tickets]
+
+@app.patch("/api/support/tickets/{ticket_id}/resolve")
+def resolve_ticket(ticket_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket or ticket.customer_id != customer_id:
+        raise HTTPException(status_code=404, detail="Ticket niet gevonden")
+    if ticket.status == "opgelost":
+        return _ticket_dict(ticket)
+    ticket.status = "opgelost"
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return _ticket_dict(ticket)
 
 @app.get("/api/support/tickets/{ticket_id}/responses")
 def get_responses(ticket_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
@@ -692,6 +709,16 @@ async def admin_update_ticket(ticket_id: int, body: dict, customer_id: int = Dep
             await _resend(klant.email, "Afspraak bevestigd — MIXMATE", _email_html(email_body))
 
     return _ticket_dict(ticket)
+
+@app.delete("/api/admin/tickets/{ticket_id}")
+def admin_delete_ticket(ticket_id: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket niet gevonden")
+    db.exec(delete(TicketResponse).where(TicketResponse.ticket_id == ticket_id))
+    db.delete(ticket)
+    db.commit()
+    return {"ok": True}
 
 @app.post("/api/admin/tickets/{ticket_id}/responses")
 async def admin_add_response(ticket_id: int, body: dict, customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):

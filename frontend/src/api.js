@@ -104,10 +104,12 @@ export const api = {
   adminMe:              ()              => req('GET',   '/api/admin/me'),
   adminSearchCustomers: (q)             => req('GET',   `/api/admin/customers?q=${encodeURIComponent(q || '')}`),
   adminRestartMachine:  (machine_id)    => req('POST',  `/api/admin/machines/${machine_id}/restart`),
-  adminGetTickets:      ()              => req('GET',   '/api/admin/tickets'),
-  adminUpdateTicket:    (id, data)      => req('PATCH', `/api/admin/tickets/${id}`, data),
-  adminAddResponse:     (id, message)   => req('POST',  `/api/admin/tickets/${id}/responses`, { message }),
-  adminGetResponses:    (id)            => req('GET',   `/api/support/tickets/${id}/responses`),
+  adminGetTickets:      ()              => req('GET',    '/api/admin/tickets'),
+  adminUpdateTicket:    (id, data)      => req('PATCH',  `/api/admin/tickets/${id}`, data),
+  adminDeleteTicket:    (id)            => req('DELETE', `/api/admin/tickets/${id}`),
+  adminAddResponse:     (id, message)   => req('POST',   `/api/admin/tickets/${id}/responses`, { message }),
+  adminGetResponses:    (id)            => req('GET',    `/api/support/tickets/${id}/responses`),
+  resolveTicket:        (id)            => req('PATCH',  `/api/support/tickets/${id}/resolve`),
 
   // Demo sync
   getDemoStatus:     (mid) => req('GET',  `/api/machines/${mid}/demo-status`),

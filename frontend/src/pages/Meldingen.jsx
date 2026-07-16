@@ -29,9 +29,22 @@ function formatDate(iso) {
   })
 }
 
-function TicketCard({ ticket }) {
+function TicketCard({ ticket, onResolve }) {
   const [open, setOpen] = useState(false)
+  const [resolving, setResolving] = useState(false)
   const hasAppointment = ticket.status === 'ingepland' && ticket.appointment_at
+  const canResolve = ticket.status !== 'opgelost'
+
+  async function handleResolve(e) {
+    e.stopPropagation()
+    if (!window.confirm('Weet u zeker dat het probleem is verholpen?')) return
+    setResolving(true)
+    try {
+      const updated = await api.resolveTicket(ticket.id)
+      onResolve(updated)
+    } catch { /* silently ignore */ }
+    setResolving(false)
+  }
 
   return (
     <div style={{
@@ -129,7 +142,22 @@ function TicketCard({ ticket }) {
             <p style={{ fontSize: 14, color: '#3a3a3c', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' }}>{ticket.description}</p>
           </div>
 
-          <div style={{ fontSize: 12, color: '#aeaeb2' }}>Melding #{ticket.id}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ fontSize: 12, color: '#aeaeb2' }}>Melding #{ticket.id}</div>
+            {canResolve && (
+              <button
+                onClick={handleResolve}
+                disabled={resolving}
+                style={{
+                  background: '#f0faf3', color: '#34c759', border: '1px solid #a3e6b4',
+                  borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600,
+                  cursor: resolving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: resolving ? .6 : 1,
+                }}
+              >
+                {resolving ? 'Verwerken…' : '✓ Probleem verholpen'}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -200,6 +228,10 @@ export default function Meldingen() {
       .finally(() => setLoading(false))
   }, [])
 
+  function handleResolve(updated) {
+    setTickets(ts => ts.map(t => t.id === updated.id ? updated : t))
+  }
+
   const open     = tickets.filter(t => t.status === 'open')
   const active   = tickets.filter(t => t.status === 'ingepland' || t.status === 'in_behandeling')
   const resolved = tickets.filter(t => t.status === 'opgelost')
@@ -231,19 +263,19 @@ export default function Meldingen() {
 
       {active.length > 0 && (
         <Section label="Actief">
-          {active.map(t => <TicketCard key={t.id} ticket={t} />)}
+          {active.map(t => <TicketCard key={t.id} ticket={t} onResolve={handleResolve} />)}
         </Section>
       )}
 
       {open.length > 0 && (
         <Section label="Open">
-          {open.map(t => <TicketCard key={t.id} ticket={t} />)}
+          {open.map(t => <TicketCard key={t.id} ticket={t} onResolve={handleResolve} />)}
         </Section>
       )}
 
       {resolved.length > 0 && (
         <Section label="Opgelost">
-          {resolved.map(t => <TicketCard key={t.id} ticket={t} />)}
+          {resolved.map(t => <TicketCard key={t.id} ticket={t} onResolve={handleResolve} />)}
         </Section>
       )}
     </div>

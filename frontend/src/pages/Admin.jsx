@@ -186,6 +186,11 @@ function TicketTab({ ticketType }) {
   }, [ticketType])
 
   function updateTicket(updated) {
+    if (updated === null) {
+      setTickets(ts => ts.filter(t => t.id !== selected?.id))
+      setSelected(null)
+      return
+    }
     setTickets(ts => ts.map(t => t.id === updated.id ? { ...t, ...updated } : t))
     setSelected(t => t?.id === updated.id ? { ...t, ...updated } : t)
   }
@@ -286,12 +291,23 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
   const [message,   setMessage]   = useState('')
   const [sending,   setSending]   = useState(false)
   const [responses, setResponses] = useState(null)
-  const [prijs,     setPrijs]     = useState('')
+  const [prijs,        setPrijs]        = useState('')
   const [sendingPrijs, setSendingPrijs] = useState(false)
+  const [deleting,     setDeleting]     = useState(false)
 
   useEffect(() => {
     api.adminGetResponses(ticket.id).then(setResponses).catch(() => setResponses([]))
   }, [ticket.id])
+
+  async function deleteTicket() {
+    if (!window.confirm(`Melding #${ticket.id} definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return
+    setDeleting(true)
+    try {
+      await api.adminDeleteTicket(ticket.id)
+      onUpdate(null)
+      onClose()
+    } catch (e) { alert(e.message); setDeleting(false) }
+  }
 
   async function save() {
     setSaving(true); setSavedMsg(null)
@@ -355,7 +371,12 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
           </div>
           <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>{ticket.customer_name} · {ticket.customer_email}</div>
         </div>
-        <button onClick={onClose} style={s.btnSm}>Sluiten</button>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button onClick={deleteTicket} disabled={deleting} style={{ ...s.btnSm, color: '#ff3b30', background: '#fff1f0' }}>
+            {deleting ? 'Verwijderen…' : 'Verwijderen'}
+          </button>
+          <button onClick={onClose} style={s.btnSm}>Sluiten</button>
+        </div>
       </div>
 
       {/* Info kaart */}
