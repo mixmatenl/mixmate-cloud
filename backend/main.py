@@ -40,6 +40,7 @@ class Customer(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     name: str = ""
     password_hash: str = ""
+    must_change_password: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     machines: list["Machine"] = Relationship(back_populates="customer")
 
@@ -116,6 +117,7 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN serial_number_confirmed BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE supportticket ADD COLUMN appointment_note VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE supportticket ADD COLUMN ticket_type VARCHAR NOT NULL DEFAULT 'service'",
+        "ALTER TABLE customer ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     for sql in migrations:
         try:
@@ -311,7 +313,12 @@ def login(body: dict, db: Session = Depends(get_session)):
     if not customer or not verify_password(password, customer.password_hash):
         raise HTTPException(status_code=401, detail="Onjuist e-mailadres of wachtwoord")
 
-    return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
+    return {
+        "token": create_token(customer.id),
+        "name": customer.name,
+        "email": customer.email,
+        "must_change_password": customer.must_change_password,
+    }
 
 @app.post("/api/auth/register")
 def register(body: dict, db: Session = Depends(get_session)):
@@ -330,6 +337,21 @@ def register(body: dict, db: Session = Depends(get_session)):
     db.refresh(customer)
     return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
 
+@app.post("/api/auth/set-password")
+def set_password(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    """Wachtwoord instellen zonder huidig wachtwoord — alleen toegestaan als must_change_password=True."""
+    new_pass = body.get("new_password") or ""
+    if len(new_pass) < 8:
+        raise HTTPException(status_code=400, detail="Wachtwoord moet minimaal 8 tekens zijn")
+    customer = db.get(Customer, customer_id)
+    if not customer.must_change_password:
+        raise HTTPException(status_code=403, detail="Gebruik /api/auth/change-password")
+    customer.password_hash = hash_password(new_pass)
+    customer.must_change_password = False
+    db.add(customer)
+    db.commit()
+    return {"ok": True}
+
 @app.post("/api/auth/change-password")
 def change_password(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     current  = body.get("current_password") or ""
@@ -340,6 +362,7 @@ def change_password(body: dict, customer_id: int = Depends(verify_token), db: Se
     if not verify_password(current, customer.password_hash):
         raise HTTPException(status_code=401, detail="Huidig wachtwoord klopt niet")
     customer.password_hash = hash_password(new_pass)
+    customer.must_change_password = False
     db.add(customer)
     db.commit()
     return {"ok": True}
@@ -648,6 +671,38 @@ async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_u
     if not conn:
         raise HTTPException(status_code=503, detail="Machine is offline")
     await conn.request({"type": "trigger_update"}, timeout=10)
+    return {"ok": True}
+
+@app.post("/api/admin/customers/{customer_id}/reset-password")
+async def admin_reset_password(customer_id: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Klant niet gevonden")
+    temp_password = secrets.token_urlsafe(10)
+    customer.password_hash = hash_password(temp_password)
+    customer.must_change_password = True
+    db.add(customer)
+    db.commit()
+    body = (
+        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+        f"letter-spacing:-0.5px;'>Tijdelijk wachtwoord</h2>"
+        f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+        f"Hallo {customer.name or customer.email}, uw wachtwoord is gereset door MIXMATE. "
+        f"Gebruik het onderstaande tijdelijke wachtwoord om in te loggen. "
+        f"U wordt daarna direct gevraagd een nieuw wachtwoord in te stellen.</p>"
+        "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+        " style='background:#f5f5f7;border-radius:16px;margin:0 0 20px;'><tr>"
+        "<td style='padding:24px;text-align:center;'>"
+        "<p style='margin:0 0 8px;font-size:11px;font-weight:700;color:#6e6e73;"
+        "text-transform:uppercase;letter-spacing:1.5px;'>Tijdelijk wachtwoord</p>"
+        f"<p style='margin:0;font-size:28px;font-weight:700;color:#1d1d1f;"
+        f"letter-spacing:2px;font-family:Courier New,Courier,monospace;'>{temp_password}</p>"
+        "</td></tr></table>"
+        "<p style='margin:0 0 20px;font-size:13px;color:#aeaeb2;line-height:1.6;'>"
+        "Heeft u dit niet verwacht? Neem dan contact op met MIXMATE.</p>"
+        + _email_button(f"{PORTAL_URL}/login", "Inloggen →")
+    )
+    await _resend(customer.email, "Uw wachtwoord is gereset — MIXMATE", _email_html(body))
     return {"ok": True}
 
 @app.get("/api/admin/tickets")

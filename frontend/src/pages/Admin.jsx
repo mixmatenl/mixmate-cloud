@@ -118,6 +118,8 @@ function KlantenTab() {
 function KlantDetail({ klant, onClose }) {
   const [restarting, setRestarting] = useState({})
   const [msgs, setMsgs] = useState({})
+  const [resetting, setResetting] = useState(false)
+  const [resetMsg, setResetMsg] = useState(null)
 
   async function restart(machineId) {
     setRestarting(r => ({ ...r, [machineId]: true }))
@@ -131,14 +133,33 @@ function KlantDetail({ klant, onClose }) {
     setTimeout(() => setMsgs(m => { const n = { ...m }; delete n[machineId]; return n }), 4000)
   }
 
+  async function resetPassword() {
+    if (!window.confirm(`Wachtwoord van ${klant.name || klant.email} resetten? Er wordt een tijdelijk wachtwoord per e-mail verstuurd.`)) return
+    setResetting(true); setResetMsg(null)
+    try {
+      await api.adminResetPassword(klant.id)
+      setResetMsg({ ok: true, text: 'Tijdelijk wachtwoord verstuurd.' })
+    } catch (e) {
+      setResetMsg({ ok: false, text: e.message })
+    }
+    setResetting(false)
+    setTimeout(() => setResetMsg(null), 5000)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f' }}>{klant.name}</div>
           <div style={{ fontSize: 13, color: '#6e6e73' }}>{klant.email}</div>
         </div>
-        <button onClick={onClose} style={s.btnSm}>Sluiten</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+          {resetMsg && <span style={{ fontSize: 13, color: resetMsg.ok ? '#34c759' : '#ff3b30' }}>{resetMsg.text}</span>}
+          <button onClick={resetPassword} disabled={resetting} style={{ ...s.btnSm, color: '#ff9500', background: '#fff8f0' }}>
+            {resetting ? 'Versturen…' : 'Reset wachtwoord'}
+          </button>
+          <button onClick={onClose} style={s.btnSm}>Sluiten</button>
+        </div>
       </div>
       <div style={s.label}>Machines ({klant.machines?.length || 0})</div>
       {(klant.machines || []).length === 0 && <div style={{ color: '#aeaeb2', fontSize: 14 }}>Geen machines gekoppeld.</div>}
