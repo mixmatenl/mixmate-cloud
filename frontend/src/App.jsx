@@ -8,6 +8,7 @@ import Account from './pages/Account.jsx'
 import Rapporten from './pages/Rapporten.jsx'
 import Meldingen from './pages/Meldingen.jsx'
 import Admin from './pages/Admin.jsx'
+import Offerte from './pages/Offerte.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 
@@ -70,7 +71,8 @@ export default function App() {
         <Route path="/meldingen" element={<Meldingen />} />
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
-        <Route path="/admin" element={<Admin />} />
+        <Route path="/admin"   element={<Admin />} />
+        <Route path="/offerte" element={<Offerte user={user} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />

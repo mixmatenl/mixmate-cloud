@@ -95,6 +95,7 @@ class TicketResponse(SQLModel, table=True):
 class SupportTicket(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     customer_id: int = Field(foreign_key="customer.id", index=True)
+    ticket_type: str = "service"        # service | offerte
     machine_name: str = ""
     machine_serial: str = ""
     category: str = ""
@@ -114,6 +115,7 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN serial_number VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE machine ADD COLUMN serial_number_confirmed BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE supportticket ADD COLUMN appointment_note VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE supportticket ADD COLUMN ticket_type VARCHAR NOT NULL DEFAULT 'service'",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -347,43 +349,112 @@ RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")
 PORTAL_URL      = os.getenv("PORTAL_URL", "https://mixmate-cloud-production.up.railway.app")
 FROM_EMAIL      = "noreply@mixmate.nl"
 
-async def _send_reset_email(to_email: str, to_name: str, code: str):
+def _email_html(body: str) -> str:
+    """Gedeelde e-mail wrapper met MIXMATE branding, mobiel-vriendelijk."""
+    return (
+        "<!DOCTYPE html><html lang='nl'><head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta name='color-scheme' content='light'>"
+        "</head>"
+        "<body style='margin:0;padding:0;background:#f5f5f7;"
+        "font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;"
+        "-webkit-font-smoothing:antialiased;'>"
+        "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+        " style='background:#f5f5f7;padding:32px 16px;'>"
+        "<tr><td align='center'>"
+        "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+        " style='max-width:540px;'>"
+        # Logo
+        "<tr><td style='padding:0 0 20px 2px;'>"
+        "<table cellpadding='0' cellspacing='0' role='presentation'><tr>"
+        "<td style='background:#1d1d1f;border-radius:10px;width:36px;height:36px;"
+        "text-align:center;vertical-align:middle;'>"
+        "<span style='color:#fff;font-size:16px;font-weight:800;line-height:36px;"
+        "display:block;letter-spacing:-0.5px;'>M</span></td>"
+        "<td style='padding-left:10px;vertical-align:middle;'>"
+        "<span style='font-size:17px;font-weight:700;color:#1d1d1f;"
+        "letter-spacing:-0.4px;'>MIXMATE</span></td>"
+        "</tr></table>"
+        "</td></tr>"
+        # Card
+        "<tr><td style='background:#ffffff;border-radius:20px;padding:32px 28px;"
+        "box-shadow:0 2px 8px rgba(0,0,0,0.07);'>"
+        + body +
+        "</td></tr>"
+        # Footer
+        "<tr><td style='padding:20px 4px 0;text-align:center;'>"
+        "<p style='margin:0;font-size:12px;color:#aeaeb2;line-height:1.6;'>"
+        "MIXMATE &nbsp;&middot;&nbsp; "
+        "<a href='https://portaal.mixmate.nl' style='color:#aeaeb2;text-decoration:none;'>"
+        "portaal.mixmate.nl</a></p>"
+        "</td></tr>"
+        "</table>"
+        "</td></tr></table>"
+        "</body></html>"
+    )
+
+def _email_button(url: str, label: str) -> str:
+    return (
+        "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+        " style='margin:20px 0;'><tr><td>"
+        f"<a href='{url}' style='display:inline-block;background:#1d1d1f;color:#ffffff;"
+        "text-decoration:none;border-radius:12px;padding:14px 26px;"
+        "font-size:15px;font-weight:600;letter-spacing:-0.2px;'>"
+        f"{label}</a>"
+        "</td></tr></table>"
+    )
+
+def _email_info_row(label: str, value: str, last: bool = False) -> str:
+    border = "" if last else "border-bottom:1px solid #f2f2f7;"
+    return (
+        f"<tr>"
+        f"<td style='padding:10px 0;{border}font-size:13px;color:#6e6e73;"
+        f"width:130px;vertical-align:top;'>{label}</td>"
+        f"<td style='padding:10px 0;{border}font-size:13px;color:#1d1d1f;"
+        f"font-weight:600;vertical-align:top;'>{value}</td>"
+        f"</tr>"
+    )
+
+async def _resend(to: str, subject: str, html: str, reply_to: str = "") -> None:
     if not RESEND_API_KEY:
         return
+    payload: dict = {"from": FROM_EMAIL, "to": [to], "subject": subject, "html": html}
+    if reply_to:
+        payload["reply_to"] = reply_to
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=10,
+            )
+    except Exception:
+        pass
+
+async def _send_reset_email(to_email: str, to_name: str, code: str):
     reset_url = f"{PORTAL_URL}/login?mode=reset&email={to_email}&code={code}"
-    html = f"""
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#fff;">
-      <div style="font-size:20px;font-weight:700;letter-spacing:-.5px;color:#111;margin-bottom:4px;">MIXMATE</div>
-      <div style="font-size:13px;color:#9ca3af;margin-bottom:32px;">Wachtwoord herstellen</div>
-
-      <p style="font-size:14px;color:#374151;margin:0 0 8px;">Hallo {to_name},</p>
-      <p style="font-size:14px;color:#374151;margin:0 0 24px;">
-        We hebben een verzoek ontvangen om je wachtwoord te herstellen.
-        Gebruik de onderstaande code of klik op de knop.
-      </p>
-
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
-        <div style="font-size:11px;font-weight:600;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Verificatiecode</div>
-        <div style="font-size:36px;font-weight:800;letter-spacing:10px;font-family:monospace;color:#111;">{code}</div>
-        <div style="font-size:12px;color:#9ca3af;margin-top:8px;">Geldig voor 10 minuten</div>
-      </div>
-
-      <a href="{reset_url}" style="display:block;background:#111;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:14px;font-weight:600;margin-bottom:24px;">
-        Wachtwoord instellen →
-      </a>
-
-      <p style="font-size:12px;color:#9ca3af;margin:0;">
-        Als je dit niet hebt aangevraagd kun je deze e-mail negeren.
-      </p>
-    </div>
-    """
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={"from": FROM_EMAIL, "to": [to_email], "subject": "Wachtwoord herstellen — MIXMATE", "html": html},
-            timeout=10,
-        )
+    body = (
+        "<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+        "letter-spacing:-0.5px;'>Wachtwoord herstellen</h2>"
+        f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+        f"Hallo {to_name}, gebruik de onderstaande code om je wachtwoord in te stellen.</p>"
+        # Code box
+        "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+        " style='background:#f5f5f7;border-radius:16px;margin-bottom:24px;'><tr>"
+        "<td style='padding:24px;text-align:center;'>"
+        "<p style='margin:0 0 10px;font-size:11px;font-weight:700;color:#6e6e73;"
+        "text-transform:uppercase;letter-spacing:1.5px;'>Verificatiecode</p>"
+        f"<p style='margin:0 0 10px;font-size:40px;font-weight:800;letter-spacing:14px;"
+        f"color:#1d1d1f;font-family:Courier New,Courier,monospace;'>{code}</p>"
+        "<p style='margin:0;font-size:12px;color:#aeaeb2;'>Geldig voor 10 minuten</p>"
+        "</td></tr></table>"
+        + _email_button(reset_url, "Wachtwoord instellen →") +
+        "<p style='margin:16px 0 0;font-size:13px;color:#aeaeb2;line-height:1.6;'>"
+        "Heb je dit niet aangevraagd? Dan kun je deze e-mail negeren.</p>"
+    )
+    await _resend(to_email, "Wachtwoord herstellen — MIXMATE", _email_html(body))
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(body: dict, db: Session = Depends(get_session)):
@@ -438,6 +509,7 @@ def reset_password(body: dict, db: Session = Depends(get_session)):
 def _ticket_dict(t: SupportTicket) -> dict:
     return {
         "id":               t.id,
+        "ticket_type":      t.ticket_type,
         "machine_name":     t.machine_name,
         "machine_serial":   t.machine_serial,
         "category":         t.category,
@@ -453,9 +525,10 @@ def _ticket_dict(t: SupportTicket) -> dict:
 
 @app.post("/api/support")
 async def submit_support(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    # Sla ticket op in de database
+    ticket_type = body.get("ticket_type", "service")
     ticket = SupportTicket(
         customer_id    = customer_id,
+        ticket_type    = ticket_type,
         machine_name   = body.get("machine_name",   ""),
         machine_serial = body.get("machine_id",     ""),
         category       = body.get("category",       ""),
@@ -468,37 +541,46 @@ async def submit_support(body: dict, customer_id: int = Depends(verify_token), d
     db.commit()
     db.refresh(ticket)
 
-    # Stuur e-mail (niet-blokkerend bij fout)
-    if RESEND_API_KEY:
-        html = f"""
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff;">
-          <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
-          <div style="font-size:13px;color:#9ca3af;margin-bottom:32px;">Nieuwe machinemelding #{ticket.id}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:14px;">
-            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;width:140px;">Klant</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('customer_name','')} &lt;{body.get('customer_email','')}&gt;</td></tr>
-            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Machine</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;font-weight:600;color:#111;">{body.get('machine_name','')} (ID: {body.get('machine_id','')})</td></tr>
-            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Categorie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('category','')}</td></tr>
-            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Urgentie</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('urgency','')}</td></tr>
-            <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;">Voorkeur</td><td style="padding:10px 0;border-bottom:1px solid #f3f4f6;color:#111;">{body.get('preferred_date','')} — {body.get('preferred_time','')}</td></tr>
-          </table>
-          <div style="margin-top:24px;background:#f9fafb;border-radius:12px;padding:18px;">
-            <div style="font-size:12px;font-weight:600;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Beschrijving</div>
-            <p style="font-size:14px;color:#374151;margin:0;white-space:pre-wrap;">{body.get('description','')}</p>
-          </div>
-          <p style="font-size:12px;color:#9ca3af;margin-top:24px;">Ticket-ID: #{ticket.id} — beheer via portaal.mixmate.nl</p>
-        </div>
-        """
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    "https://api.resend.com/emails",
-                    headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-                    json={"from": FROM_EMAIL, "to": ["info@mixmate.nl"], "reply_to": body.get("customer_email", ""), "subject": f"[#{ticket.id}] Machinemelding: {body.get('category','')} — {body.get('machine_name','')}", "html": html},
-                    timeout=10,
-                )
-        except Exception:
-            pass  # E-mail mislukking blokkeert niet het opslaan
+    customer_name  = body.get("customer_name",  "")
+    customer_email = body.get("customer_email", "")
 
+    if ticket_type == "offerte":
+        subject = f"[Offerte #{ticket.id}] {body.get('category', 'Aanvraag')} — {customer_name}"
+        email_body = (
+            f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+            f"letter-spacing:-0.5px;'>Nieuwe offerte-aanvraag #{ticket.id}</h2>"
+            f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Via portaal.mixmate.nl</p>"
+            "<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;margin-bottom:20px;'>"
+            + _email_info_row("Klant", f"{customer_name} &lt;{customer_email}&gt;")
+            + _email_info_row("Interesse", body.get("category", ""))
+            + _email_info_row("Beschrijving", body.get("description", "").replace("\n", "<br>"), last=True)
+            + "</table>"
+            + _email_button(f"https://portaal.mixmate.nl/admin", "Bekijk in portaal →")
+        )
+    else:
+        subject = f"[Melding #{ticket.id}] {body.get('category', '')} — {body.get('machine_name', '')}"
+        voorkeur = f"{body.get('preferred_date', '')} – {body.get('preferred_time', '')}"
+        email_body = (
+            f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+            f"letter-spacing:-0.5px;'>Nieuwe machinemelding #{ticket.id}</h2>"
+            f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Via portaal.mixmate.nl</p>"
+            "<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;margin-bottom:20px;'>"
+            + _email_info_row("Klant",    f"{customer_name} &lt;{customer_email}&gt;")
+            + _email_info_row("Machine",  f"{body.get('machine_name', '')} &mdash; {body.get('machine_id', '')}")
+            + _email_info_row("Categorie", body.get("category", ""))
+            + _email_info_row("Urgentie",  body.get("urgency", ""))
+            + _email_info_row("Voorkeur",  voorkeur, last=True)
+            + "</table>"
+            + f"<div style='background:#f5f5f7;border-radius:14px;padding:18px;margin-bottom:20px;'>"
+            + f"<p style='margin:0 0 8px;font-size:11px;font-weight:700;color:#6e6e73;"
+            + f"text-transform:uppercase;letter-spacing:1px;'>Beschrijving</p>"
+            + f"<p style='margin:0;font-size:14px;color:#1d1d1f;line-height:1.6;"
+            + f"white-space:pre-wrap;'>{body.get('description', '')}</p>"
+            + "</div>"
+            + _email_button("https://portaal.mixmate.nl/admin", "Bekijk in portaal →")
+        )
+
+    await _resend("info@mixmate.nl", subject, _email_html(email_body), reply_to=customer_email)
     return {"ok": True, "ticket_id": ticket.id}
 
 @app.get("/api/support/tickets")
@@ -575,33 +657,34 @@ async def admin_update_ticket(ticket_id: int, body: dict, customer_id: int = Dep
     db.commit()
 
     # Stuur e-mail naar klant als afspraak wordt ingepland
-    if "appointment_at" in body and body["appointment_at"] and RESEND_API_KEY:
+    if "appointment_at" in body and body["appointment_at"]:
         klant = db.get(Customer, ticket.customer_id)
         if klant:
-            afspraak_str = datetime.fromisoformat(body["appointment_at"]).strftime("%A %d %B om %H:%M").capitalize()
-            try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        "https://api.resend.com/emails",
-                        headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-                        json={
-                            "from": FROM_EMAIL, "to": [klant.email],
-                            "subject": f"Afspraak ingepland voor melding #{ticket.id}",
-                            "html": f"""<div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
-                                <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
-                                <p style="color:#374151;">Hallo {klant.name},</p>
-                                <p style="color:#374151;">Er is een afspraak ingepland voor uw melding <strong>#{ticket.id} — {ticket.category}</strong>.</p>
-                                <div style="background:#f0f6ff;border:1px solid #a8d0ff;border-radius:12px;padding:18px;margin:20px 0;text-align:center;">
-                                  <div style="font-size:13px;color:#6b7280;margin-bottom:4px;">Afspraak</div>
-                                  <div style="font-size:22px;font-weight:700;color:#1d1d1f;">{afspraak_str}</div>
-                                  {f'<div style="margin-top:10px;font-size:14px;color:#374151;">{body.get("appointment_note","")}</div>' if body.get("appointment_note") else ""}
-                                </div>
-                                <p style="color:#374151;">U kunt de voortgang volgen via uw portaal op <a href="https://portaal.mixmate.nl/meldingen">portaal.mixmate.nl</a>.</p>
-                              </div>""",
-                        }, timeout=10,
-                    )
-            except Exception:
-                pass
+            afspraak_dt  = datetime.fromisoformat(body["appointment_at"])
+            afspraak_str = afspraak_dt.strftime("%A %d %B om %H:%M").capitalize()
+            note_html    = (
+                f"<p style='margin:12px 0 0;font-size:14px;color:#374151;line-height:1.6;'>"
+                f"{body.get('appointment_note','')}</p>"
+                if body.get("appointment_note") else ""
+            )
+            email_body = (
+                f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+                f"letter-spacing:-0.5px;'>Afspraak bevestigd</h2>"
+                f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+                f"Hallo {klant.name}, er is een afspraak ingepland voor uw melding "
+                f"<strong style='color:#1d1d1f;'>#{ticket.id} &mdash; {ticket.category}</strong>.</p>"
+                "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+                " style='background:#f0f6ff;border-radius:16px;margin:0 0 20px;'><tr>"
+                "<td style='padding:24px;text-align:center;'>"
+                "<p style='margin:0 0 8px;font-size:11px;font-weight:700;color:#007aff;"
+                "text-transform:uppercase;letter-spacing:1.5px;'>Afspraakmomment</p>"
+                f"<p style='margin:0;font-size:24px;font-weight:700;color:#1d1d1f;"
+                f"letter-spacing:-0.5px;'>{afspraak_str}</p>"
+                + note_html +
+                "</td></tr></table>"
+                + _email_button("https://portaal.mixmate.nl/meldingen", "Voortgang bekijken →")
+            )
+            await _resend(klant.email, f"Afspraak bevestigd — melding #{ticket.id}", _email_html(email_body))
 
     return _ticket_dict(ticket)
 
@@ -624,28 +707,24 @@ async def admin_add_response(ticket_id: int, body: dict, customer_id: int = Depe
     db.refresh(response)
 
     # E-mail naar klant
-    if RESEND_API_KEY:
-        klant = db.get(Customer, ticket.customer_id)
-        if klant:
-            try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        "https://api.resend.com/emails",
-                        headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-                        json={
-                            "from": FROM_EMAIL, "to": [klant.email],
-                            "subject": f"Reactie op uw melding #{ticket.id}",
-                            "html": f"""<div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
-                                <div style="font-size:20px;font-weight:700;color:#111;margin-bottom:4px;">MIXMATE</div>
-                                <p style="color:#374151;">Hallo {klant.name},</p>
-                                <p style="color:#374151;">Er is een reactie geplaatst op uw melding <strong>#{ticket.id} — {ticket.category}</strong>.</p>
-                                <div style="background:#f9fafb;border-radius:12px;padding:18px;margin:20px 0;white-space:pre-wrap;font-size:14px;color:#374151;">{response.message}</div>
-                                <a href="https://portaal.mixmate.nl/meldingen" style="display:inline-block;background:#111;color:#fff;text-decoration:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:600;">Bekijk in portaal →</a>
-                              </div>""",
-                        }, timeout=10,
-                    )
-            except Exception:
-                pass
+    klant = db.get(Customer, ticket.customer_id)
+    if klant:
+        portal_link = "https://portaal.mixmate.nl/meldingen"
+        label = "Bekijk in portaal →"
+        email_body = (
+            f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+            f"letter-spacing:-0.5px;'>Reactie van MIXMATE</h2>"
+            f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+            f"Hallo {klant.name}, er is een bericht geplaatst op uw aanvraag "
+            f"<strong style='color:#1d1d1f;'>#{ticket.id} &mdash; {ticket.category}</strong>.</p>"
+            "<div style='background:#f5f5f7;border-radius:14px;padding:20px;margin-bottom:20px;"
+            "border-left:3px solid #1d1d1f;'>"
+            f"<p style='margin:0;font-size:15px;color:#1d1d1f;line-height:1.7;"
+            f"white-space:pre-wrap;'>{response.message}</p>"
+            "</div>"
+            + _email_button(portal_link, label)
+        )
+        await _resend(klant.email, f"Reactie op uw aanvraag #{ticket.id}", _email_html(email_body))
 
     return {"id": response.id, "author_name": response.author_name, "message": response.message, "is_admin": True, "created_at": response.created_at.isoformat()}
 

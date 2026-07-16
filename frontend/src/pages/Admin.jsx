@@ -27,8 +27,19 @@ function StatusBadge({ status }) {
   return <span style={s.badge(info.color, info.bg, info.border)}>{info.label}</span>
 }
 
+// ── Mobile hook ───────────────────────────────────────────────────────────────
+function useIsMobile() {
+  const [mobile, setMobile] = React.useState(typeof window !== 'undefined' && window.innerWidth < 720)
+  React.useEffect(() => {
+    const h = () => setMobile(window.innerWidth < 720)
+    window.addEventListener('resize', h)
+    return () => window.removeEventListener('resize', h)
+  }, [])
+  return mobile
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const TABS = ['Meldingen', 'Klanten']
+const TABS = ['Meldingen', 'Offertes', 'Klanten']
 
 // ── Klanten tab ───────────────────────────────────────────────────────────────
 function KlantenTab() {
@@ -36,6 +47,7 @@ function KlantenTab() {
   const [results,   setResults]   = useState(null)
   const [loading,   setLoading]   = useState(false)
   const [selected,  setSelected]  = useState(null)
+  const isMobile = useIsMobile()
   const timer = useRef(null)
 
   function search(val) {
@@ -51,8 +63,21 @@ function KlantenTab() {
 
   useEffect(() => { search('') }, [])
 
+  // Op mobiel: toon detail fullscreen als geselecteerd
+  if (isMobile && selected) {
+    return (
+      <div>
+        <button onClick={() => setSelected(null)} style={{ ...s.btnSm, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Terug
+        </button>
+        <KlantDetail klant={selected} onClose={() => setSelected(null)} />
+      </div>
+    )
+  }
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 1fr' : '1fr', gap: 20 }}>
+    <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: selected ? '1fr 1fr' : '1fr', gap: 20 }}>
       <div>
         <div style={{ marginBottom: 14 }}>
           <input value={q} onChange={e => search(e.target.value)} placeholder="Zoek op naam of e-mailadres…" style={s.inp} />
@@ -76,7 +101,7 @@ function KlantenTab() {
         </div>
       </div>
 
-      {selected && <KlantDetail klant={selected} onClose={() => setSelected(null)} />}
+      {selected && !isMobile && <KlantDetail klant={selected} onClose={() => setSelected(null)} />}
     </div>
   )
 }
@@ -146,41 +171,58 @@ function KlantDetail({ klant, onClose }) {
   )
 }
 
-// ── Meldingen tab ─────────────────────────────────────────────────────────────
-function MeldingenTab() {
+// ── Gedeelde ticket lijst + detail (voor Meldingen en Offertes) ───────────────
+function TicketTab({ ticketType }) {
   const [tickets,  setTickets]  = useState([])
   const [loading,  setLoading]  = useState(true)
   const [filter,   setFilter]   = useState('open')
   const [selected, setSelected] = useState(null)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     api.adminGetTickets()
-      .then(setTickets)
+      .then(all => setTickets(all.filter(t => (t.ticket_type || 'service') === ticketType)))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [ticketType])
 
   function updateTicket(updated) {
     setTickets(ts => ts.map(t => t.id === updated.id ? { ...t, ...updated } : t))
     setSelected(t => t?.id === updated.id ? { ...t, ...updated } : t)
   }
 
-  const filtered = filter === 'alle' ? tickets : tickets.filter(t => t.status === filter || (filter === 'actief' && (t.status === 'ingepland' || t.status === 'in_behandeling')))
+  const filtered = filter === 'alle' ? tickets : tickets.filter(t =>
+    t.status === filter || (filter === 'actief' && (t.status === 'ingepland' || t.status === 'in_behandeling'))
+  )
+
+  // Mobiel: detail fullscreen
+  if (isMobile && selected) {
+    return (
+      <div>
+        <button onClick={() => setSelected(null)} style={{ ...s.btnSm, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Terug
+        </button>
+        <TicketDetail ticket={selected} onClose={() => setSelected(null)} onUpdate={updateTicket} />
+      </div>
+    )
+  }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
+    <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: selected ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
       <div>
-        {/* Filter tabs */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           {[['open', 'Open'], ['actief', 'Actief'], ['opgelost', 'Opgelost'], ['alle', 'Alle']].map(([val, lbl]) => (
             <button key={val} onClick={() => setFilter(val)} style={{
               ...s.btnSm,
               background: filter === val ? '#1d1d1f' : '#f2f2f7',
-              color: filter === val ? '#fff' : '#1d1d1f',
+              color:      filter === val ? '#fff'    : '#1d1d1f',
             }}>
               {lbl}
               <span style={{ marginLeft: 6, background: filter === val ? 'rgba(255,255,255,.2)' : '#e5e5ea', borderRadius: 10, padding: '1px 6px', fontSize: 11 }}>
-                {val === 'alle' ? tickets.length : val === 'actief' ? tickets.filter(t => t.status === 'ingepland' || t.status === 'in_behandeling').length : tickets.filter(t => t.status === val).length}
+                {val === 'alle' ? tickets.length
+                  : val === 'actief' ? tickets.filter(t => t.status === 'ingepland' || t.status === 'in_behandeling').length
+                  : tickets.filter(t => t.status === val).length}
               </span>
             </button>
           ))}
@@ -188,7 +230,7 @@ function MeldingenTab() {
 
         <div style={s.card}>
           {loading && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2' }}>Laden…</div>}
-          {!loading && filtered.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen meldingen.</div>}
+          {!loading && filtered.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen {ticketType === 'offerte' ? 'offertes' : 'meldingen'}.</div>}
           {filtered.map(t => (
             <div key={t.id} onClick={() => setSelected(selected?.id === t.id ? null : t)}
               style={{ ...s.row, background: selected?.id === t.id ? '#f0f6ff' : undefined, flexWrap: 'wrap' }}>
@@ -199,7 +241,8 @@ function MeldingenTab() {
                   {t.urgency?.includes('Urgent') && <span style={s.badge('#ff3b30', '#fff1f0', '#ffd6d3')}>Urgent</span>}
                 </div>
                 <div style={{ fontSize: 12, color: '#6e6e73' }}>
-                  {t.customer_name} · {t.machine_name || 'Machine'}
+                  {t.customer_name}
+                  {t.machine_name && <> · {t.machine_name}</>}
                   <span style={{ margin: '0 5px', color: '#c7c7cc' }}>·</span>
                   {new Date(t.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
                   {t.response_count > 0 && <span style={{ marginLeft: 8, color: '#007aff' }}>💬 {t.response_count}</span>}
@@ -215,12 +258,8 @@ function MeldingenTab() {
         </div>
       </div>
 
-      {selected && (
-        <TicketDetail
-          ticket={selected}
-          onClose={() => setSelected(null)}
-          onUpdate={updateTicket}
-        />
+      {selected && !isMobile && (
+        <TicketDetail ticket={selected} onClose={() => setSelected(null)} onUpdate={updateTicket} />
       )}
     </div>
   )
@@ -432,8 +471,9 @@ export default function Admin() {
         ))}
       </div>
 
-      {tab === 'Meldingen' && <MeldingenTab />}
-      {tab === 'Klanten'   && <KlantenTab   />}
+      {tab === 'Meldingen' && <TicketTab ticketType="service" />}
+      {tab === 'Offertes'  && <TicketTab ticketType="offerte" />}
+      {tab === 'Klanten'   && <KlantenTab />}
     </div>
   )
 }
