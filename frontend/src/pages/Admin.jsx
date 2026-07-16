@@ -74,6 +74,11 @@ function KlantenTab() {
 
   useEffect(() => { search('') }, [])
 
+  function handleDelete(id) {
+    setResults(r => (r || []).filter(c => c.id !== id))
+    setSelected(null)
+  }
+
   if (isMobile && selected) {
     return (
       <div>
@@ -81,7 +86,7 @@ function KlantenTab() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
           Terug
         </button>
-        <KlantDetail klant={selected} onClose={() => setSelected(null)} />
+        <KlantDetail klant={selected} onClose={() => setSelected(null)} onDelete={handleDelete} />
       </div>
     )
   }
@@ -105,32 +110,69 @@ function KlantenTab() {
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{c.name || '—'}</div>
                 <div style={{ fontSize: 12, color: '#6e6e73', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</div>
               </div>
-              <div style={{ fontSize: 12, color: '#aeaeb2', flexShrink: 0 }}>{c.machine_count} machine{c.machine_count !== 1 ? 's' : ''}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                {c.newsletter_subscribed && (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#007aff', background: '#f0f6ff', border: '1px solid #a8d0ff', borderRadius: 20, padding: '2px 7px' }}>
+                    nieuwsbrief
+                  </span>
+                )}
+                <span style={{ fontSize: 12, color: '#aeaeb2' }}>{c.machine_count} machine{c.machine_count !== 1 ? 's' : ''}</span>
+              </div>
             </div>
           ))}
         </div>
       </div>
-      {selected && !isMobile && <KlantDetail klant={selected} onClose={() => setSelected(null)} />}
+      {selected && !isMobile && <KlantDetail klant={selected} onClose={() => setSelected(null)} onDelete={handleDelete} />}
     </div>
   )
 }
 
-function KlantDetail({ klant, onClose }) {
-  const [restarting, setRestarting] = useState({})
-  const [msgs, setMsgs] = useState({})
-  const [resetting, setResetting] = useState(false)
-  const [resetMsg, setResetMsg] = useState(null)
+function Toggle({ checked, onChange, disabled }) {
+  return (
+    <button type="button" onClick={() => !disabled && onChange(!checked)} style={{
+      width: 44, height: 26, borderRadius: 13, border: 'none',
+      cursor: disabled ? 'default' : 'pointer',
+      background: checked ? '#34c759' : '#e5e5ea',
+      position: 'relative', transition: 'background .2s', flexShrink: 0, padding: 0,
+      opacity: disabled ? .6 : 1,
+    }}>
+      <span style={{
+        position: 'absolute', top: 2, left: checked ? 20 : 2,
+        width: 22, height: 22, borderRadius: '50%',
+        background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.2)',
+        transition: 'left .18s',
+      }} />
+    </button>
+  )
+}
 
-  async function restart(machineId) {
-    setRestarting(r => ({ ...r, [machineId]: true }))
+function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
+  const [klant, setKlant]         = useState(initialKlant)
+  const [name, setName]           = useState(initialKlant.name || '')
+  const [email, setEmail]         = useState(initialKlant.email || '')
+  const [newsletter, setNewsletter] = useState(!!initialKlant.newsletter_subscribed)
+  const [saving, setSaving]       = useState(false)
+  const [saveMsg, setSaveMsg]     = useState(null)
+  const [resetting, setResetting] = useState(false)
+  const [resetMsg, setResetMsg]   = useState(null)
+  const [deleting, setDeleting]   = useState(false)
+  const [restarting, setRestarting] = useState({})
+  const [machineMsgs, setMachineMsgs] = useState({})
+
+  const dirty = name !== klant.name || email !== klant.email || newsletter !== !!klant.newsletter_subscribed
+
+  async function save() {
+    setSaving(true); setSaveMsg(null)
     try {
-      await api.adminRestartMachine(machineId)
-      setMsgs(m => ({ ...m, [machineId]: { ok: true, text: 'Herstart verstuurd.' } }))
-    } catch (e) {
-      setMsgs(m => ({ ...m, [machineId]: { ok: false, text: e.message } }))
-    }
-    setRestarting(r => ({ ...r, [machineId]: false }))
-    setTimeout(() => setMsgs(m => { const n = { ...m }; delete n[machineId]; return n }), 4000)
+      const updated = await api.adminUpdateCustomer(klant.id, { name, email, newsletter_subscribed: newsletter })
+      setKlant(updated)
+      setName(updated.name)
+      setEmail(updated.email)
+      setNewsletter(!!updated.newsletter_subscribed)
+      setSaveMsg({ ok: true, text: 'Opgeslagen.' })
+    } catch (e) { setSaveMsg({ ok: false, text: e.message }) }
+    setSaving(false)
+    setTimeout(() => setSaveMsg(null), 4000)
   }
 
   async function resetPassword() {
@@ -139,28 +181,107 @@ function KlantDetail({ klant, onClose }) {
     try {
       await api.adminResetPassword(klant.id)
       setResetMsg({ ok: true, text: 'Tijdelijk wachtwoord verstuurd.' })
-    } catch (e) {
-      setResetMsg({ ok: false, text: e.message })
-    }
+    } catch (e) { setResetMsg({ ok: false, text: e.message }) }
     setResetting(false)
     setTimeout(() => setResetMsg(null), 5000)
   }
 
+  async function deleteAccount() {
+    if (!window.confirm(`Account van ${klant.name || klant.email} definitief verwijderen? Alle meldingen en machines worden ook verwijderd.`)) return
+    if (!window.confirm('Weet u het zeker? Dit kan niet ongedaan worden gemaakt.')) return
+    setDeleting(true)
+    try {
+      await api.adminDeleteCustomer(klant.id)
+      onDelete(klant.id)
+      onClose()
+    } catch (e) { alert(e.message); setDeleting(false) }
+  }
+
+  async function restartMachine(machineId) {
+    setRestarting(r => ({ ...r, [machineId]: true }))
+    try {
+      await api.adminRestartMachine(machineId)
+      setMachineMsgs(m => ({ ...m, [machineId]: { ok: true, text: 'Herstart verstuurd.' } }))
+    } catch (e) {
+      setMachineMsgs(m => ({ ...m, [machineId]: { ok: false, text: e.message } }))
+    }
+    setRestarting(r => ({ ...r, [machineId]: false }))
+    setTimeout(() => setMachineMsgs(m => { const n = { ...m }; delete n[machineId]; return n }), 4000)
+  }
+
+  const labelStyle = { fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 6 }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f' }}>{klant.name}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f' }}>{klant.name || klant.email}</div>
           <div style={{ fontSize: 13, color: '#6e6e73' }}>{klant.email}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-          {resetMsg && <span style={{ fontSize: 13, color: resetMsg.ok ? '#34c759' : '#ff3b30' }}>{resetMsg.text}</span>}
-          <button onClick={resetPassword} disabled={resetting} style={{ ...s.btnSm, color: '#ff9500', background: '#fff8f0' }}>
-            {resetting ? 'Versturen…' : 'Reset wachtwoord'}
-          </button>
-          <button onClick={onClose} style={s.btnSm}>Sluiten</button>
+        <button onClick={onClose} style={s.btnSm}>Sluiten</button>
+      </div>
+
+      {/* Instellingen kaart */}
+      <div style={s.card}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #f2f2f7' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f' }}>Accountinstellingen</div>
+        </div>
+        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <div style={labelStyle}>Naam</div>
+              <input value={name} onChange={e => setName(e.target.value)} style={s.inp} placeholder="Naam" />
+            </div>
+            <div>
+              <div style={labelStyle}>E-mailadres</div>
+              <input value={email} onChange={e => setEmail(e.target.value)} style={s.inp} placeholder="email@bedrijf.nl" type="email" />
+            </div>
+          </div>
+
+          {/* Nieuwsbrief toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f9f9fb', borderRadius: 10 }}>
+            <div>
+              <div style={{ fontSize: 14, color: '#1d1d1f', fontWeight: 500 }}>Nieuwsbrief</div>
+              <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 1 }}>Ontvangt updates per e-mail</div>
+            </div>
+            <Toggle checked={newsletter} onChange={setNewsletter} />
+          </div>
+
+          {saveMsg && (
+            <div style={{ fontSize: 13, fontWeight: 600, color: saveMsg.ok ? '#34c759' : '#ff3b30' }}>
+              {saveMsg.text}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={save} disabled={saving || !dirty} style={{ ...s.btn, opacity: saving || !dirty ? .4 : 1, cursor: saving || !dirty ? 'default' : 'pointer' }}>
+              {saving ? 'Opslaan…' : 'Wijzigingen opslaan'}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Beveiliging kaart */}
+      <div style={s.card}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #f2f2f7' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f' }}>Beveiliging</div>
+        </div>
+        <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: 14, color: '#1d1d1f' }}>Wachtwoord resetten</div>
+            <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 1 }}>Stuurt een tijdelijk wachtwoord per e-mail</div>
+            {resetMsg && <div style={{ fontSize: 12, fontWeight: 600, color: resetMsg.ok ? '#34c759' : '#ff3b30', marginTop: 4 }}>{resetMsg.text}</div>}
+          </div>
+          <button onClick={resetPassword} disabled={resetting} style={{ ...s.btnSm, color: '#ff9500', background: '#fff8f0', flexShrink: 0 }}>
+            {resetting ? 'Versturen…' : 'Reset wachtwoord'}
+          </button>
+        </div>
+      </div>
+
+      {/* Machines */}
       <div style={s.label}>Machines ({klant.machines?.length || 0})</div>
       {(klant.machines || []).length === 0 && <div style={{ color: '#aeaeb2', fontSize: 14 }}>Geen machines gekoppeld.</div>}
       {(klant.machines || []).map(m => (
@@ -175,18 +296,35 @@ function KlantDetail({ klant, onClose }) {
               {m.model && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{m.model}{m.version ? ` · v${m.version}` : ''}</div>}
               {m.serial_number && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>S/N: {m.serial_number}{m.serial_number_confirmed ? ' ✓' : ''}</div>}
             </div>
-            <button onClick={() => restart(m.machine_id)} disabled={!m.online || restarting[m.machine_id]}
+            <button onClick={() => restartMachine(m.machine_id)} disabled={!m.online || restarting[m.machine_id]}
               style={{ ...s.btnSm, background: m.online ? '#fff1f0' : '#f2f2f7', color: m.online ? '#ff3b30' : '#aeaeb2', cursor: m.online && !restarting[m.machine_id] ? 'pointer' : 'not-allowed' }}>
               {restarting[m.machine_id] ? 'Herstarten…' : 'Herstart'}
             </button>
           </div>
-          {msgs[m.machine_id] && (
-            <div style={{ padding: '8px 16px', borderTop: '1px solid #f2f2f7', fontSize: 13, color: msgs[m.machine_id].ok ? '#34c759' : '#ff3b30' }}>
-              {msgs[m.machine_id].text}
+          {machineMsgs[m.machine_id] && (
+            <div style={{ padding: '8px 16px', borderTop: '1px solid #f2f2f7', fontSize: 13, color: machineMsgs[m.machine_id].ok ? '#34c759' : '#ff3b30' }}>
+              {machineMsgs[m.machine_id].text}
             </div>
           )}
         </div>
       ))}
+
+      {/* Danger zone */}
+      <div style={{ border: '1px solid #ffd6d3', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #ffd6d3', background: '#fff8f7' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#ff3b30' }}>Account verwijderen</div>
+        </div>
+        <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.5 }}>
+            Verwijdert het account inclusief alle meldingen en machines.<br />
+            <strong style={{ color: '#ff3b30' }}>Dit kan niet ongedaan worden gemaakt.</strong>
+          </div>
+          <button onClick={deleteAccount} disabled={deleting} style={{ ...s.btnSm, background: '#ff3b30', color: '#fff', flexShrink: 0 }}>
+            {deleting ? 'Verwijderen…' : 'Account verwijderen'}
+          </button>
+        </div>
+      </div>
+
     </div>
   )
 }

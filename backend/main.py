@@ -681,10 +681,51 @@ def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_
         machines = db.exec(select(Machine).where(Machine.customer_id == c.id)).all()
         result.append({
             "id": c.id, "name": c.name, "email": c.email,
+            "newsletter_subscribed": c.newsletter_subscribed,
             "machine_count": len(machines),
             "machines": [{**_machine_dict(m), "online": m.machine_id in connected_machines} for m in machines],
         })
     return result
+
+@app.patch("/api/admin/customers/{cid}")
+def admin_update_customer(cid: int, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    customer = db.get(Customer, cid)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Klant niet gevonden")
+    if "name"  in body: customer.name  = (body["name"] or "").strip()
+    if "email" in body:
+        new_email = (body["email"] or "").strip().lower()
+        if new_email != customer.email:
+            existing = db.exec(select(Customer).where(Customer.email == new_email)).first()
+            if existing:
+                raise HTTPException(status_code=409, detail="E-mailadres al in gebruik")
+            customer.email = new_email
+    if "newsletter_subscribed" in body:
+        customer.newsletter_subscribed = bool(body["newsletter_subscribed"])
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    machines = db.exec(select(Machine).where(Machine.customer_id == customer.id)).all()
+    return {
+        "id": customer.id, "name": customer.name, "email": customer.email,
+        "newsletter_subscribed": customer.newsletter_subscribed,
+        "machine_count": len(machines),
+        "machines": [{**_machine_dict(m), "online": m.machine_id in connected_machines} for m in machines],
+    }
+
+@app.delete("/api/admin/customers/{cid}")
+def admin_delete_customer(cid: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    customer = db.get(Customer, cid)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Klant niet gevonden")
+    tickets = db.exec(select(SupportTicket).where(SupportTicket.customer_id == cid)).all()
+    for t in tickets:
+        db.exec(delete(TicketResponse).where(TicketResponse.ticket_id == t.id))
+        db.delete(t)
+    db.exec(delete(Machine).where(Machine.customer_id == cid))
+    db.delete(customer)
+    db.commit()
+    return {"ok": True}
 
 @app.post("/api/admin/machines/{machine_id}/restart")
 async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
