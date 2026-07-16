@@ -561,20 +561,6 @@ export default function Admin() {
         {tab === 'Klanten'   && 'Zoek klanten op en bekijk hun machines.'}
       </p>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f2f2f7', borderRadius: 12, padding: 4, width: 'fit-content' }}>
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            ...s.btnSm,
-            background: tab === t ? '#fff' : 'transparent',
-            color: tab === t ? '#1d1d1f' : '#6e6e73',
-            boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,.08)' : 'none',
-            borderRadius: 9, padding: '8px 18px',
-          }}>
-            {tabTitle[t]}
-          </button>
-        ))}
-      </div>
-
       {tab === 'Meldingen' && <TicketTab ticketType="service" />}
       {tab === 'Offertes'  && <TicketTab ticketType="offerte" />}
       {tab === 'Klanten'   && <KlantenTab />}

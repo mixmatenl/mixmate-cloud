@@ -551,39 +551,37 @@ async def submit_support(body: dict, customer_id: int = Depends(verify_token), d
     customer_email = body.get("customer_email", "")
 
     if ticket_type == "offerte":
-        subject = f"[Offerte #{ticket.id}] {body.get('category', 'Aanvraag')} — {customer_name}"
+        subject = f"Nieuwe offerte-aanvraag #{ticket.id}"
         email_body = (
             f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
-            f"letter-spacing:-0.5px;'>Nieuwe offerte-aanvraag #{ticket.id}</h2>"
-            f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Via portaal.mixmate.nl</p>"
+            f"letter-spacing:-0.5px;'>Nieuwe offerte-aanvraag</h2>"
+            f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Aanvraag #{ticket.id} via portaal.mixmate.nl</p>"
             "<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;margin-bottom:20px;'>"
             + _email_info_row("Klant", f"{customer_name} &lt;{customer_email}&gt;")
-            + _email_info_row("Interesse", body.get("category", ""))
-            + _email_info_row("Beschrijving", body.get("description", "").replace("\n", "<br>"), last=True)
+            + _email_info_row("Omschrijving", body.get("description", "").replace("\n", "<br>"), last=True)
             + "</table>"
-            + _email_button(f"https://portaal.mixmate.nl/admin", "Bekijk in portaal →")
+            + _email_button("https://portaal.mixmate.nl/admin?tab=Offertes", "Bekijk in portaal →")
         )
     else:
-        subject = f"[Melding #{ticket.id}] {body.get('category', '')} — {body.get('machine_name', '')}"
+        subject = f"Nieuwe servicemelding #{ticket.id}"
         voorkeur = f"{body.get('preferred_date', '')} – {body.get('preferred_time', '')}"
         email_body = (
             f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
-            f"letter-spacing:-0.5px;'>Nieuwe machinemelding #{ticket.id}</h2>"
-            f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Via portaal.mixmate.nl</p>"
+            f"letter-spacing:-0.5px;'>Nieuwe servicemelding</h2>"
+            f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Melding #{ticket.id} via portaal.mixmate.nl</p>"
             "<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;margin-bottom:20px;'>"
-            + _email_info_row("Klant",    f"{customer_name} &lt;{customer_email}&gt;")
-            + _email_info_row("Machine",  f"{body.get('machine_name', '')} &mdash; {body.get('machine_id', '')}")
-            + _email_info_row("Categorie", body.get("category", ""))
-            + _email_info_row("Urgentie",  body.get("urgency", ""))
-            + _email_info_row("Voorkeur",  voorkeur, last=True)
+            + _email_info_row("Klant",   f"{customer_name} &lt;{customer_email}&gt;")
+            + _email_info_row("Machine", f"{body.get('machine_name', '')} &mdash; {body.get('machine_id', '')}")
+            + _email_info_row("Urgentie", body.get("urgency", ""))
+            + _email_info_row("Voorkeur", voorkeur, last=True)
             + "</table>"
             + f"<div style='background:#f5f5f7;border-radius:14px;padding:18px;margin-bottom:20px;'>"
             + f"<p style='margin:0 0 8px;font-size:11px;font-weight:700;color:#6e6e73;"
-            + f"text-transform:uppercase;letter-spacing:1px;'>Beschrijving</p>"
+            + f"text-transform:uppercase;letter-spacing:1px;'>Omschrijving</p>"
             + f"<p style='margin:0;font-size:14px;color:#1d1d1f;line-height:1.6;"
             + f"white-space:pre-wrap;'>{body.get('description', '')}</p>"
             + "</div>"
-            + _email_button("https://portaal.mixmate.nl/admin", "Bekijk in portaal →")
+            + _email_button("https://portaal.mixmate.nl/admin?tab=Meldingen", "Bekijk in portaal →")
         )
 
     await _resend("info@mixmate.nl", subject, _email_html(email_body), reply_to=customer_email)
@@ -677,8 +675,7 @@ async def admin_update_ticket(ticket_id: int, body: dict, customer_id: int = Dep
                 f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
                 f"letter-spacing:-0.5px;'>Afspraak bevestigd</h2>"
                 f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
-                f"Hallo {klant.name}, er is een afspraak ingepland voor uw melding "
-                f"<strong style='color:#1d1d1f;'>#{ticket.id} &mdash; {ticket.category}</strong>.</p>"
+                f"Hallo {klant.name}, er is een afspraak voor u ingepland.</p>"
                 "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
                 " style='background:#f0f6ff;border-radius:16px;margin:0 0 20px;'><tr>"
                 "<td style='padding:24px;text-align:center;'>"
@@ -716,21 +713,19 @@ async def admin_add_response(ticket_id: int, body: dict, customer_id: int = Depe
     klant = db.get(Customer, ticket.customer_id)
     if klant:
         portal_link = "https://portaal.mixmate.nl/meldingen"
-        label = "Bekijk in portaal →"
         email_body = (
             f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
-            f"letter-spacing:-0.5px;'>Reactie van MIXMATE</h2>"
+            f"letter-spacing:-0.5px;'>Bericht van MIXMATE</h2>"
             f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
-            f"Hallo {klant.name}, er is een bericht geplaatst op uw aanvraag "
-            f"<strong style='color:#1d1d1f;'>#{ticket.id} &mdash; {ticket.category}</strong>.</p>"
+            f"Hallo {klant.name}, u heeft een nieuw bericht ontvangen.</p>"
             "<div style='background:#f5f5f7;border-radius:14px;padding:20px;margin-bottom:20px;"
             "border-left:3px solid #1d1d1f;'>"
             f"<p style='margin:0;font-size:15px;color:#1d1d1f;line-height:1.7;"
             f"white-space:pre-wrap;'>{response.message}</p>"
             "</div>"
-            + _email_button(portal_link, label)
+            + _email_button(portal_link, "Bekijk in portaal →")
         )
-        await _resend(klant.email, f"Reactie op uw aanvraag #{ticket.id}", _email_html(email_body))
+        await _resend(klant.email, "Bericht van MIXMATE", _email_html(email_body))
 
     return {"id": response.id, "author_name": response.author_name, "message": response.message, "is_admin": True, "created_at": response.created_at.isoformat()}
 
@@ -811,7 +806,7 @@ async def _do_offerte(body: dict, db):
     )
     await _resend(
         "info@mixmate.nl",
-        f"[Offerte #{ticket.id}] {name}{model_line}",
+        f"Nieuwe offerte-aanvraag #{ticket.id}",
         _email_html(email_body),
         reply_to=email,
     )
