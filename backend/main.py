@@ -729,6 +729,79 @@ async def admin_add_response(ticket_id: int, body: dict, customer_id: int = Depe
     return {"id": response.id, "author_name": response.author_name, "message": response.message, "is_admin": True, "created_at": response.created_at.isoformat()}
 
 
+@app.post("/api/offerte")
+async def submit_offerte_website(body: dict, db: Session = Depends(get_session)):
+    """Publiek endpoint — offerte-aanvragen via de Shopify website (geen auth vereist)."""
+    name  = (body.get("name")  or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    if not name or not email:
+        raise HTTPException(status_code=400, detail="Naam en e-mailadres zijn verplicht")
+
+    # Zoek of maak een klantrecord (zonder wachtwoord — alleen voor tracking)
+    customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    if not customer:
+        customer = Customer(email=email, name=name, password_hash="")
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+
+    lines = [
+        f"Naam: {name}",
+        f"E-mail: {email}",
+    ]
+    if body.get("company"):   lines.append(f"Bedrijf: {body['company']}")
+    if body.get("phone"):     lines.append(f"Telefoon: {body['phone']}")
+    if body.get("cocktails"): lines.append(f"Al cocktails: {body['cocktails']}")
+    if body.get("model"):     lines.append(f"Machine: {body['model']}")
+    if body.get("pumps"):     lines.append(f"Aantal ingrediënten: {body['pumps']}")
+    if body.get("message"):   lines.append(f"\nOpmerkingen:\n{body['message']}")
+
+    ticket = SupportTicket(
+        customer_id  = customer.id,
+        ticket_type  = "offerte",
+        machine_name = body.get("model", ""),
+        category     = "Offerte aanvraag",
+        description  = "\n".join(lines),
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+
+    # Notificatie-e-mail naar info@mixmate.nl
+    model_line = f" &mdash; {body['model']}" if body.get("model") else ""
+    rows = (
+        _email_info_row("Naam",    name)
+        + _email_info_row("E-mail",  email)
+        + (_email_info_row("Bedrijf", body["company"])  if body.get("company")  else "")
+        + (_email_info_row("Telefoon", body["phone"])   if body.get("phone")    else "")
+        + (_email_info_row("Machine",  body["model"])   if body.get("model")    else "")
+        + (_email_info_row("Ingrediënten", body["pumps"]) if body.get("pumps") else "")
+    )
+    email_body = (
+        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+        f"letter-spacing:-0.5px;'>Nieuwe offerte-aanvraag #{ticket.id}</h2>"
+        f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Via mixmate.nl</p>"
+        f"<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;"
+        f"margin-bottom:20px;'>{rows}</table>"
+        + (
+            f"<div style='background:#f5f5f7;border-radius:14px;padding:18px;margin-bottom:20px;'>"
+            f"<p style='margin:0 0 8px;font-size:11px;font-weight:700;color:#6e6e73;"
+            f"text-transform:uppercase;letter-spacing:1px;'>Opmerkingen</p>"
+            f"<p style='margin:0;font-size:14px;color:#1d1d1f;line-height:1.6;"
+            f"white-space:pre-wrap;'>{body['message']}</p></div>"
+            if body.get("message") else ""
+        )
+        + _email_button("https://portaal.mixmate.nl/admin", "Bekijk in portaal →")
+    )
+    await _resend(
+        "info@mixmate.nl",
+        f"[Offerte #{ticket.id}] {name}{model_line}",
+        _email_html(email_body),
+        reply_to=email,
+    )
+    return {"ok": True, "ticket_id": ticket.id}
+
+
 @app.post("/api/machines/{machine_id}/trigger-update")
 async def trigger_update(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id, Machine.customer_id == customer_id)).first()
