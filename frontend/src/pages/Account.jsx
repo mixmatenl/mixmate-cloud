@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
+import { api } from '../api'
 
 function SettingGroup({ label, children }) {
   return (
@@ -20,14 +21,59 @@ function InfoRow({ label, value, noBorder }) {
   )
 }
 
+function Toggle({ checked, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={() => !disabled && onChange(!checked)}
+      style={{
+        width: 51, height: 31, borderRadius: 16, border: 'none', cursor: disabled ? 'default' : 'pointer',
+        background: checked ? '#34c759' : '#e5e5ea',
+        position: 'relative', transition: 'background .2s', flexShrink: 0, padding: 0,
+        opacity: disabled ? .6 : 1,
+      }}
+    >
+      <span style={{
+        position: 'absolute', top: 2, left: checked ? 22 : 2,
+        width: 27, height: 27, borderRadius: '50%',
+        background: '#fff', boxShadow: '0 2px 6px rgba(0,0,0,.18)',
+        transition: 'left .2s',
+      }} />
+    </button>
+  )
+}
+
 function initials(name) {
   if (!name) return '?'
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 }
 
 export default function Account({ user, onLogout }) {
+  const [subscribed, setSubscribed]   = useState(null)
+  const [toggling, setToggling]       = useState(false)
+  const [toggleMsg, setToggleMsg]     = useState(null)
+
+  useEffect(() => {
+    api.accountMe()
+      .then(r => setSubscribed(r.newsletter_subscribed))
+      .catch(() => {})
+  }, [])
+
+  async function handleToggle(val) {
+    setToggling(true)
+    try {
+      const r = await api.toggleNewsletter(val)
+      setSubscribed(r.newsletter_subscribed)
+      setToggleMsg(r.newsletter_subscribed ? 'Aangemeld voor nieuwsbrief.' : 'Afgemeld van nieuwsbrief.')
+    } catch {
+      setToggleMsg('Er ging iets mis.')
+    }
+    setToggling(false)
+    setTimeout(() => setToggleMsg(null), 3000)
+  }
+
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', padding: '32px 24px' }}>
+    <div style={{ maxWidth: 560, margin: '0 auto', padding: '32px 24px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: '#1d1d1f', marginBottom: 32 }}>Account</h1>
 
       {/* Avatar */}
@@ -44,12 +90,31 @@ export default function Account({ user, onLogout }) {
       </div>
 
       <SettingGroup label="Gegevens">
-        <InfoRow label="Naam" value={user?.name || '—'} />
+        <InfoRow label="Naam"        value={user?.name  || '—'} />
         <InfoRow label="E-mailadres" value={user?.email || '—'} noBorder />
       </SettingGroup>
 
       <SettingGroup label="Beveiliging">
         <InfoRow label="Wachtwoord" value="••••••••" noBorder />
+      </SettingGroup>
+
+      <SettingGroup label="Communicatie">
+        <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 15, color: '#1d1d1f', marginBottom: 2 }}>Nieuwsbrief</div>
+            <div style={{ fontSize: 13, color: '#6e6e73' }}>
+              Ontvang updates en nieuws van MIXMATE per e-mail
+            </div>
+            {toggleMsg && (
+              <div style={{ fontSize: 12, color: '#34c759', marginTop: 4, fontWeight: 600 }}>{toggleMsg}</div>
+            )}
+          </div>
+          <Toggle
+            checked={!!subscribed}
+            onChange={handleToggle}
+            disabled={toggling || subscribed === null}
+          />
+        </div>
       </SettingGroup>
 
       <SettingGroup>

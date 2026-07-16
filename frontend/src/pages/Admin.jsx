@@ -50,7 +50,7 @@ function useIsMobile() {
   return mobile
 }
 
-const TABS = ['Meldingen', 'Offertes', 'Klanten']
+const TABS = ['Meldingen', 'Offertes', 'Klanten', 'Nieuwsbrief']
 
 // ── Klanten tab ───────────────────────────────────────────────────────────────
 function KlantenTab() {
@@ -553,6 +553,144 @@ function MiniField({ label, value, mono }) {
   )
 }
 
+// ── Nieuwsbrief tab ───────────────────────────────────────────────────────────
+function NieuwsbriefTab() {
+  const [subject,     setSubject]     = useState('')
+  const [content,     setContent]     = useState('')
+  const [subscribers, setSubscribers] = useState(null)
+  const [sending,     setSending]     = useState(false)
+  const [result,      setResult]      = useState(null)
+  const [confirm,     setConfirm]     = useState(false)
+
+  useEffect(() => {
+    api.adminNewsletterSubscribers()
+      .then(setSubscribers)
+      .catch(() => {})
+  }, [])
+
+  async function send() {
+    setSending(true); setResult(null); setConfirm(false)
+    try {
+      const r = await api.adminNewsletterSend(subject, content)
+      setResult({ ok: true, text: `Verstuurd naar ${r.sent} abonnee${r.sent !== 1 ? 's' : ''}.${r.failed ? ` ${r.failed} mislukt.` : ''}` })
+      setSubject('')
+      setContent('')
+      api.adminNewsletterSubscribers().then(setSubscribers).catch(() => {})
+    } catch (e) {
+      setResult({ ok: false, text: e.message })
+    }
+    setSending(false)
+  }
+
+  const canSend = subject.trim() && content.trim() && subscribers?.count > 0
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Abonnee-kaart */}
+      <div style={{ ...s.card, padding: '20px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: '#f0f6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#007aff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#1d1d1f', letterSpacing: -1, lineHeight: 1 }}>
+              {subscribers === null ? '…' : subscribers.count}
+            </div>
+            <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>
+              {subscribers?.count === 1 ? 'abonnee' : 'abonnees'} aangemeld
+            </div>
+          </div>
+          {subscribers?.count > 0 && (
+            <div style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', maxWidth: 260 }}>
+              {subscribers.subscribers.slice(0, 6).map(s => (
+                <span key={s.email} style={{ fontSize: 11, background: '#f2f2f7', borderRadius: 20, padding: '3px 9px', color: '#3a3a3c', whiteSpace: 'nowrap' }}>
+                  {s.name || s.email}
+                </span>
+              ))}
+              {subscribers.count > 6 && (
+                <span style={{ fontSize: 11, background: '#f2f2f7', borderRadius: 20, padding: '3px 9px', color: '#6e6e73' }}>
+                  +{subscribers.count - 6} meer
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Compose */}
+      <div style={s.card}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f2f2f7' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>Nieuwsbrief opstellen</div>
+        </div>
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <div style={s.label}>Onderwerp</div>
+            <input
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              placeholder="bijv. Nieuws van MIXMATE — zomer 2025"
+              style={{ ...s.inp }}
+            />
+          </div>
+          <div>
+            <div style={s.label}>Inhoud</div>
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              placeholder="Schrijf hier de tekst van uw nieuwsbrief…&#10;&#10;U kunt meerdere alinea's gebruiken door een witregel toe te voegen."
+              rows={10}
+              style={{ ...s.inp, resize: 'vertical', lineHeight: 1.65 }}
+            />
+            <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 6 }}>
+              Lege regels worden automatisch omgezet naar alinea's.
+            </div>
+          </div>
+
+          {result && (
+            <div style={{
+              background: result.ok ? '#f0faf3' : '#fff1f0',
+              border: `1px solid ${result.ok ? '#a3e6b4' : '#ffd6d3'}`,
+              color: result.ok ? '#1a7a3a' : '#ff3b30',
+              borderRadius: 10, padding: '12px 14px', fontSize: 14, fontWeight: 500,
+            }}>
+              {result.text}
+            </div>
+          )}
+
+          {!confirm ? (
+            <button
+              onClick={() => setConfirm(true)}
+              disabled={!canSend}
+              style={{ ...s.btn, opacity: canSend ? 1 : .4, cursor: canSend ? 'pointer' : 'default' }}
+            >
+              Versturen naar {subscribers?.count ?? '…'} abonnee{subscribers?.count !== 1 ? 's' : ''}
+            </button>
+          ) : (
+            <div style={{ background: '#fff8f0', border: '1px solid #ffd6a0', borderRadius: 12, padding: '16px' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', marginBottom: 4 }}>
+                Weet u het zeker?
+              </div>
+              <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 14 }}>
+                De nieuwsbrief wordt direct verstuurd naar {subscribers?.count} abonnee{subscribers?.count !== 1 ? 's' : ''}. Dit kan niet ongedaan worden gemaakt.
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={send} disabled={sending} style={{ ...s.btn, background: '#ff9500', opacity: sending ? .5 : 1 }}>
+                  {sending ? 'Versturen…' : 'Ja, verstuur nu'}
+                </button>
+                <button onClick={() => setConfirm(false)} style={s.btnSm}>Annuleren</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Hoofd component ───────────────────────────────────────────────────────────
 export default function Admin() {
   const location = useLocation()
@@ -589,7 +727,7 @@ export default function Admin() {
     </div>
   )
 
-  const tabTitle = { Meldingen: 'Service meldingen', Offertes: 'Offertes', Klanten: 'Klanten opzoeken' }
+  const tabTitle = { Meldingen: 'Service meldingen', Offertes: 'Offertes', Klanten: 'Klanten opzoeken', Nieuwsbrief: 'Nieuwsbrief' }
 
   return (
     <div style={s.page}>
@@ -598,14 +736,16 @@ export default function Admin() {
         <span style={s.badge('#fff', '#1d1d1f', '#1d1d1f')}>Admin</span>
       </div>
       <p style={s.sub}>
-        {tab === 'Meldingen' && 'Binnenkomende serviceverzoeken van klanten.'}
-        {tab === 'Offertes'  && 'Offerte-aanvragen via de website.'}
-        {tab === 'Klanten'   && 'Zoek klanten op en bekijk hun machines.'}
+        {tab === 'Meldingen'    && 'Binnenkomende serviceverzoeken van klanten.'}
+        {tab === 'Offertes'     && 'Offerte-aanvragen via de website.'}
+        {tab === 'Klanten'      && 'Zoek klanten op en bekijk hun machines.'}
+        {tab === 'Nieuwsbrief'  && 'Verstuur een nieuwsbrief naar aangemelde klanten.'}
       </p>
 
-      {tab === 'Meldingen' && <TicketTab ticketType="service" />}
-      {tab === 'Offertes'  && <TicketTab ticketType="offerte" />}
-      {tab === 'Klanten'   && <KlantenTab />}
+      {tab === 'Meldingen'   && <TicketTab ticketType="service" />}
+      {tab === 'Offertes'    && <TicketTab ticketType="offerte" />}
+      {tab === 'Klanten'     && <KlantenTab />}
+      {tab === 'Nieuwsbrief' && <NieuwsbriefTab />}
     </div>
   )
 }

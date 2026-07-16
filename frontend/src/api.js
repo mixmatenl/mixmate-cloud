@@ -112,6 +112,10 @@ export const api = {
   adminGetResponses:    (id)            => req('GET',    `/api/support/tickets/${id}/responses`),
   resolveTicket:        (id)            => req('PATCH',  `/api/support/tickets/${id}/resolve`),
   setPassword:          (new_password)  => req('POST',   '/api/auth/set-password', { new_password }),
+  accountMe:            ()              => req('GET',    '/api/account/me'),
+  toggleNewsletter:     (subscribed)    => req('PATCH',  '/api/account/newsletter', { subscribed }),
+  adminNewsletterSubscribers: ()        => req('GET',    '/api/admin/newsletter/subscribers'),
+  adminNewsletterSend:  (subject, content) => req('POST', '/api/admin/newsletter/send', { subject, content }),
 
   // Demo sync
   getDemoStatus:     (mid) => req('GET',  `/api/machines/${mid}/demo-status`),

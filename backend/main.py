@@ -41,6 +41,7 @@ class Customer(SQLModel, table=True):
     name: str = ""
     password_hash: str = ""
     must_change_password: bool = Field(default=False)
+    newsletter_subscribed: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     machines: list["Machine"] = Relationship(back_populates="customer")
 
@@ -118,6 +119,7 @@ def create_tables():
         "ALTER TABLE supportticket ADD COLUMN appointment_note VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE supportticket ADD COLUMN ticket_type VARCHAR NOT NULL DEFAULT 'service'",
         "ALTER TABLE customer ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE customer ADD COLUMN newsletter_subscribed BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     for sql in migrations:
         try:
@@ -366,6 +368,25 @@ def change_password(body: dict, customer_id: int = Depends(verify_token), db: Se
     db.add(customer)
     db.commit()
     return {"ok": True}
+
+# ── Account ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/account/me")
+def account_me(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    customer = db.get(Customer, customer_id)
+    return {
+        "name": customer.name,
+        "email": customer.email,
+        "newsletter_subscribed": customer.newsletter_subscribed,
+    }
+
+@app.patch("/api/account/newsletter")
+def toggle_newsletter(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    customer = db.get(Customer, customer_id)
+    customer.newsletter_subscribed = bool(body.get("subscribed"))
+    db.add(customer)
+    db.commit()
+    return {"newsletter_subscribed": customer.newsletter_subscribed}
 
 # ── Wachtwoord vergeten via machine ──────────────────────────────────────────
 
@@ -704,6 +725,42 @@ async def admin_reset_password(customer_id: int, _: int = Depends(verify_admin_u
     )
     await _resend(customer.email, "Uw wachtwoord is gereset — MIXMATE", _email_html(body))
     return {"ok": True}
+
+@app.get("/api/admin/newsletter/subscribers")
+def admin_newsletter_subscribers(_: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    subs = db.exec(select(Customer).where(Customer.newsletter_subscribed == True)).all()
+    return {"count": len(subs), "subscribers": [{"name": c.name, "email": c.email} for c in subs]}
+
+@app.post("/api/admin/newsletter/send")
+async def admin_newsletter_send(body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    subject = (body.get("subject") or "").strip()
+    content = (body.get("content") or "").strip()
+    if not subject or not content:
+        raise HTTPException(status_code=400, detail="Onderwerp en inhoud zijn verplicht")
+    subs = db.exec(select(Customer).where(Customer.newsletter_subscribed == True)).all()
+    if not subs:
+        raise HTTPException(status_code=400, detail="Geen abonnees gevonden")
+    content_html = content.replace("\n\n", "</p><p style='margin:0 0 14px;font-size:15px;color:#1d1d1f;line-height:1.7;'>").replace("\n", "<br>")
+    unsubscribe_note = (
+        "<p style='margin:24px 0 0;font-size:12px;color:#aeaeb2;line-height:1.6;'>"
+        "U ontvangt deze e-mail omdat u zich heeft aangemeld voor de MIXMATE nieuwsbrief. "
+        "U kunt zich afmelden via het <a href='https://portaal.mixmate.nl/account' "
+        "style='color:#aeaeb2;'>MIXMATE portaal</a>.</p>"
+    )
+    email_body = (
+        f"<p style='margin:0 0 14px;font-size:15px;color:#1d1d1f;line-height:1.7;'>{content_html}</p>"
+        + unsubscribe_note
+    )
+    sent = 0
+    failed = 0
+    for c in subs:
+        try:
+            await _resend(c.email, subject, _email_html(email_body))
+            sent += 1
+        except Exception as exc:
+            print(f"[NEWSLETTER FAIL] {c.email}: {exc}", flush=True)
+            failed += 1
+    return {"sent": sent, "failed": failed}
 
 @app.get("/api/admin/tickets")
 def admin_list_tickets(customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
