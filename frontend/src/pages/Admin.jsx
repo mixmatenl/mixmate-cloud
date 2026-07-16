@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { api } from '../api'
 
-// ── Stijlen ───────────────────────────────────────────────────────────────────
 const s = {
   page:   { maxWidth: 900, margin: '0 auto', padding: '32px 24px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
   h1:     { fontSize: 26, fontWeight: 800, color: '#1d1d1f', letterSpacing: -.5, margin: '0 0 4px' },
@@ -15,19 +15,31 @@ const s = {
   badge:  (color, bg, border) => ({ fontSize: 11, fontWeight: 700, color, background: bg, border: `1px solid ${border}`, borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' }),
 }
 
-const STATUS_INFO = {
+const SERVICE_STATUS = {
   open:           { label: 'Open',             color: '#ff9500', bg: '#fff8f0', border: '#ffd6a0' },
   ingepland:      { label: 'Afspraak gepland', color: '#007aff', bg: '#f0f6ff', border: '#a8d0ff' },
-  in_behandeling: { label: 'In behandeling',  color: '#5856d6', bg: '#f3f2ff', border: '#c4c2f5' },
+  in_behandeling: { label: 'In behandeling',   color: '#5856d6', bg: '#f3f2ff', border: '#c4c2f5' },
   opgelost:       { label: 'Opgelost',         color: '#34c759', bg: '#f0faf3', border: '#a3e6b4' },
 }
 
-function StatusBadge({ status }) {
-  const info = STATUS_INFO[status] || STATUS_INFO.open
+const OFFERTE_STATUS = {
+  open:           { label: 'Open',                    color: '#ff9500', bg: '#fff8f0', border: '#ffd6a0' },
+  in_behandeling: { label: 'In behandeling',          color: '#5856d6', bg: '#f3f2ff', border: '#c4c2f5' },
+  ingepland:      { label: 'Adviesgesprek gepland',   color: '#007aff', bg: '#f0f6ff', border: '#a8d0ff' },
+  prijsvoorstel:  { label: 'Prijsvoorstel verstuurd', color: '#30b0c7', bg: '#f0fafe', border: '#a0dcee' },
+  opgelost:       { label: 'Afgesloten',              color: '#34c759', bg: '#f0faf3', border: '#a3e6b4' },
+}
+
+function statusInfo(ticket) {
+  const map = (ticket.ticket_type || 'service') === 'offerte' ? OFFERTE_STATUS : SERVICE_STATUS
+  return map[ticket.status] || map.open
+}
+
+function StatusBadge({ ticket }) {
+  const info = statusInfo(ticket)
   return <span style={s.badge(info.color, info.bg, info.border)}>{info.label}</span>
 }
 
-// ── Mobile hook ───────────────────────────────────────────────────────────────
 function useIsMobile() {
   const [mobile, setMobile] = React.useState(typeof window !== 'undefined' && window.innerWidth < 720)
   React.useEffect(() => {
@@ -38,15 +50,14 @@ function useIsMobile() {
   return mobile
 }
 
-// ── Tabs ──────────────────────────────────────────────────────────────────────
 const TABS = ['Meldingen', 'Offertes', 'Klanten']
 
 // ── Klanten tab ───────────────────────────────────────────────────────────────
 function KlantenTab() {
-  const [q,         setQ]         = useState('')
-  const [results,   setResults]   = useState(null)
-  const [loading,   setLoading]   = useState(false)
-  const [selected,  setSelected]  = useState(null)
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState(null)
   const isMobile = useIsMobile()
   const timer = useRef(null)
 
@@ -63,7 +74,6 @@ function KlantenTab() {
 
   useEffect(() => { search('') }, [])
 
-  // Op mobiel: toon detail fullscreen als geselecteerd
   if (isMobile && selected) {
     return (
       <div>
@@ -100,7 +110,6 @@ function KlantenTab() {
           ))}
         </div>
       </div>
-
       {selected && !isMobile && <KlantDetail klant={selected} onClose={() => setSelected(null)} />}
     </div>
   )
@@ -108,7 +117,7 @@ function KlantenTab() {
 
 function KlantDetail({ klant, onClose }) {
   const [restarting, setRestarting] = useState({})
-  const [msgs,       setMsgs]       = useState({})
+  const [msgs, setMsgs] = useState({})
 
   async function restart(machineId) {
     setRestarting(r => ({ ...r, [machineId]: true }))
@@ -131,32 +140,22 @@ function KlantDetail({ klant, onClose }) {
         </div>
         <button onClick={onClose} style={s.btnSm}>Sluiten</button>
       </div>
-
-      <div style={{ ...s.label }}>Machines ({klant.machines?.length || 0})</div>
-
-      {(klant.machines || []).length === 0 && (
-        <div style={{ color: '#aeaeb2', fontSize: 14 }}>Geen machines gekoppeld.</div>
-      )}
-
+      <div style={s.label}>Machines ({klant.machines?.length || 0})</div>
+      {(klant.machines || []).length === 0 && <div style={{ color: '#aeaeb2', fontSize: 14 }}>Geen machines gekoppeld.</div>}
       {(klant.machines || []).map(m => (
-        <div key={m.machine_id} style={{ ...s.card }}>
+        <div key={m.machine_id} style={s.card}>
           <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{m.name}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: m.online ? '#34c759' : '#aeaeb2' }}>
-                  {m.online ? '● Online' : '○ Offline'}
-                </span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: m.online ? '#34c759' : '#aeaeb2' }}>{m.online ? '● Online' : '○ Offline'}</span>
               </div>
               <div style={{ fontSize: 12, color: '#6e6e73', fontFamily: 'monospace' }}>{m.machine_id}</div>
               {m.model && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{m.model}{m.version ? ` · v${m.version}` : ''}</div>}
               {m.serial_number && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>S/N: {m.serial_number}{m.serial_number_confirmed ? ' ✓' : ''}</div>}
             </div>
-            <button
-              onClick={() => restart(m.machine_id)}
-              disabled={!m.online || restarting[m.machine_id]}
-              style={{ ...s.btnSm, background: m.online ? '#fff1f0' : '#f2f2f7', color: m.online ? '#ff3b30' : '#aeaeb2', cursor: m.online && !restarting[m.machine_id] ? 'pointer' : 'not-allowed' }}
-            >
+            <button onClick={() => restart(m.machine_id)} disabled={!m.online || restarting[m.machine_id]}
+              style={{ ...s.btnSm, background: m.online ? '#fff1f0' : '#f2f2f7', color: m.online ? '#ff3b30' : '#aeaeb2', cursor: m.online && !restarting[m.machine_id] ? 'pointer' : 'not-allowed' }}>
               {restarting[m.machine_id] ? 'Herstarten…' : 'Herstart'}
             </button>
           </div>
@@ -171,11 +170,11 @@ function KlantDetail({ klant, onClose }) {
   )
 }
 
-// ── Gedeelde ticket lijst + detail (voor Meldingen en Offertes) ───────────────
+// ── Ticket lijst + detail ─────────────────────────────────────────────────────
 function TicketTab({ ticketType }) {
-  const [tickets,  setTickets]  = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [filter,   setFilter]   = useState('open')
+  const [tickets, setTickets] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('open')
   const [selected, setSelected] = useState(null)
   const isMobile = useIsMobile()
 
@@ -191,11 +190,16 @@ function TicketTab({ ticketType }) {
     setSelected(t => t?.id === updated.id ? { ...t, ...updated } : t)
   }
 
+  const isOfferte = ticketType === 'offerte'
+
+  const activeStatuses = isOfferte
+    ? ['in_behandeling', 'ingepland', 'prijsvoorstel']
+    : ['ingepland', 'in_behandeling']
+
   const filtered = filter === 'alle' ? tickets : tickets.filter(t =>
-    t.status === filter || (filter === 'actief' && (t.status === 'ingepland' || t.status === 'in_behandeling'))
+    filter === 'actief' ? activeStatuses.includes(t.status) : t.status === filter
   )
 
-  // Mobiel: detail fullscreen
   if (isMobile && selected) {
     return (
       <div>
@@ -208,11 +212,15 @@ function TicketTab({ ticketType }) {
     )
   }
 
+  const filterBtns = isOfferte
+    ? [['open','Open'], ['actief','Actief'], ['prijsvoorstel','Voorstel'], ['opgelost','Afgesloten'], ['alle','Alle']]
+    : [['open','Open'], ['actief','Actief'], ['opgelost','Opgelost'], ['alle','Alle']]
+
   return (
     <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: selected ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
       <div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          {[['open', 'Open'], ['actief', 'Actief'], ['opgelost', 'Opgelost'], ['alle', 'Alle']].map(([val, lbl]) => (
+          {filterBtns.map(([val, lbl]) => (
             <button key={val} onClick={() => setFilter(val)} style={{
               ...s.btnSm,
               background: filter === val ? '#1d1d1f' : '#f2f2f7',
@@ -221,7 +229,7 @@ function TicketTab({ ticketType }) {
               {lbl}
               <span style={{ marginLeft: 6, background: filter === val ? 'rgba(255,255,255,.2)' : '#e5e5ea', borderRadius: 10, padding: '1px 6px', fontSize: 11 }}>
                 {val === 'alle' ? tickets.length
-                  : val === 'actief' ? tickets.filter(t => t.status === 'ingepland' || t.status === 'in_behandeling').length
+                  : val === 'actief' ? tickets.filter(t => activeStatuses.includes(t.status)).length
                   : tickets.filter(t => t.status === val).length}
               </span>
             </button>
@@ -230,15 +238,15 @@ function TicketTab({ ticketType }) {
 
         <div style={s.card}>
           {loading && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2' }}>Laden…</div>}
-          {!loading && filtered.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen {ticketType === 'offerte' ? 'offertes' : 'meldingen'}.</div>}
+          {!loading && filtered.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen {isOfferte ? 'offertes' : 'meldingen'}.</div>}
           {filtered.map(t => (
             <div key={t.id} onClick={() => setSelected(selected?.id === t.id ? null : t)}
               style={{ ...s.row, background: selected?.id === t.id ? '#f0f6ff' : undefined, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{t.category}</span>
-                  <StatusBadge status={t.status} />
-                  {t.urgency?.includes('Urgent') && <span style={s.badge('#ff3b30', '#fff1f0', '#ffd6d3')}>Urgent</span>}
+                  <StatusBadge ticket={t} />
+                  {t.urgency?.includes('Urgent') && <span style={s.badge('#ff3b30','#fff1f0','#ffd6d3')}>Urgent</span>}
                 </div>
                 <div style={{ fontSize: 12, color: '#6e6e73' }}>
                   {t.customer_name}
@@ -265,15 +273,21 @@ function TicketTab({ ticketType }) {
   )
 }
 
+// ── Ticket detail (service vs offerte) ────────────────────────────────────────
 function TicketDetail({ ticket, onClose, onUpdate }) {
-  const [status,      setStatus]      = useState(ticket.status)
-  const [apptAt,      setApptAt]      = useState(ticket.appointment_at ? ticket.appointment_at.slice(0, 16) : '')
-  const [apptNote,    setApptNote]    = useState(ticket.appointment_note || '')
-  const [saving,      setSaving]      = useState(false)
-  const [savedMsg,    setSavedMsg]    = useState(null)
-  const [message,     setMessage]     = useState('')
-  const [sending,     setSending]     = useState(false)
-  const [responses,   setResponses]   = useState(null)
+  const isOfferte = (ticket.ticket_type || 'service') === 'offerte'
+  const statusMap = isOfferte ? OFFERTE_STATUS : SERVICE_STATUS
+
+  const [status,    setStatus]    = useState(ticket.status)
+  const [apptAt,    setApptAt]    = useState(ticket.appointment_at ? ticket.appointment_at.slice(0, 16) : '')
+  const [apptNote,  setApptNote]  = useState(ticket.appointment_note || '')
+  const [saving,    setSaving]    = useState(false)
+  const [savedMsg,  setSavedMsg]  = useState(null)
+  const [message,   setMessage]   = useState('')
+  const [sending,   setSending]   = useState(false)
+  const [responses, setResponses] = useState(null)
+  const [prijs,     setPrijs]     = useState('')
+  const [sendingPrijs, setSendingPrijs] = useState(false)
 
   useEffect(() => {
     api.adminGetResponses(ticket.id).then(setResponses).catch(() => setResponses([]))
@@ -284,11 +298,14 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
     try {
       const updated = await api.adminUpdateTicket(ticket.id, {
         status,
-        appointment_at:   apptAt   || null,
+        appointment_at:   apptAt || null,
         appointment_note: apptNote,
       })
       onUpdate(updated)
-      setSavedMsg({ ok: true, text: 'Opgeslagen.' + (apptAt ? ' Klant ontvangt een e-mail.' : '') })
+      const emailNote = apptAt
+        ? isOfferte ? ' Klant ontvangt uitnodiging voor adviesgesprek.' : ' Klant ontvangt afspraakbevestiging.'
+        : ''
+      setSavedMsg({ ok: true, text: 'Opgeslagen.' + emailNote })
     } catch (e) { setSavedMsg({ ok: false, text: e.message }) }
     setSaving(false)
     setTimeout(() => setSavedMsg(null), 4000)
@@ -306,40 +323,77 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
     setSending(false)
   }
 
+  async function verstuurPrijsvoorstel() {
+    if (!message.trim() && !prijs.trim()) return
+    setSendingPrijs(true)
+    try {
+      const tekst = [
+        prijs.trim() ? `Prijsvoorstel: ${prijs.trim()}` : '',
+        message.trim(),
+      ].filter(Boolean).join('\n\n')
+
+      const r = await api.adminAddResponse(ticket.id, tekst)
+      setResponses(rs => [...(rs || []), r])
+      setMessage('')
+      setPrijs('')
+
+      const updated = await api.adminUpdateTicket(ticket.id, { status: 'prijsvoorstel', appointment_at: apptAt || null, appointment_note: apptNote })
+      onUpdate({ ...updated, response_count: (ticket.response_count || 0) + 1 })
+      setStatus('prijsvoorstel')
+      setSavedMsg({ ok: true, text: 'Prijsvoorstel verstuurd per e-mail.' })
+      setTimeout(() => setSavedMsg(null), 5000)
+    } catch (e) { setSavedMsg({ ok: false, text: e.message }) }
+    setSendingPrijs(false)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>Melding #{ticket.id} — {ticket.category}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>
+            {isOfferte ? 'Offerte' : 'Melding'} #{ticket.id} — {ticket.category}
+          </div>
           <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>{ticket.customer_name} · {ticket.customer_email}</div>
         </div>
         <button onClick={onClose} style={s.btnSm}>Sluiten</button>
       </div>
 
-      {/* Machine + beschrijving */}
+      {/* Info kaart */}
       <div style={s.card}>
         <div style={{ padding: '12px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, borderBottom: '1px solid #f2f2f7' }}>
-          <MiniField label="Machine"     value={ticket.machine_name} />
-          <MiniField label="Serienummer" value={ticket.machine_serial} mono />
-          <MiniField label="Urgentie"    value={ticket.urgency} />
-          <MiniField label="Voorkeur"    value={`${ticket.preferred_date} ${ticket.preferred_time}`} />
+          {isOfferte ? (
+            <>
+              <MiniField label="Model"     value={ticket.machine_name} />
+              <MiniField label="Bedrijf"   value={ticket.customer_company} />
+              <MiniField label="Telefoon"  value={ticket.customer_phone} />
+            </>
+          ) : (
+            <>
+              <MiniField label="Machine"     value={ticket.machine_name} />
+              <MiniField label="Serienummer" value={ticket.machine_serial} mono />
+              <MiniField label="Urgentie"    value={ticket.urgency} />
+              <MiniField label="Voorkeur"    value={`${ticket.preferred_date || ''} ${ticket.preferred_time || ''}`.trim()} />
+            </>
+          )}
         </div>
         <div style={{ padding: '12px 16px' }}>
-          <div style={{ ...s.label }}>Beschrijving</div>
+          <div style={s.label}>Beschrijving</div>
           <p style={{ fontSize: 14, color: '#3a3a3c', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' }}>{ticket.description}</p>
         </div>
       </div>
 
-      {/* Status + afspraak */}
+      {/* Status + actie kaart */}
       <div style={s.card}>
-        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Status */}
           <div>
             <div style={s.label}>Status</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {Object.entries(STATUS_INFO).map(([val, info]) => (
+              {Object.entries(statusMap).map(([val, info]) => (
                 <button key={val} onClick={() => setStatus(val)} style={{
                   ...s.btnSm,
-                  background: status === val ? info.bg : '#f2f2f7',
+                  background: status === val ? info.bg    : '#f2f2f7',
                   color:      status === val ? info.color : '#1d1d1f',
                   border:     status === val ? `1px solid ${info.border}` : '1px solid transparent',
                   fontWeight: status === val ? 700 : 600,
@@ -350,14 +404,48 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
             </div>
           </div>
 
+          {/* Offerte: Prijsvoorstel versturen */}
+          {isOfferte && (
+            <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ ...s.label, marginBottom: 0 }}>Prijsvoorstel versturen</div>
+              <input
+                value={prijs}
+                onChange={e => setPrijs(e.target.value)}
+                placeholder="Prijs (bijv. € 4.950 excl. btw)"
+                style={{ ...s.inp, background: '#fff' }}
+              />
+              <textarea
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                placeholder="Toelichting bij het voorstel (optioneel)…"
+                rows={3}
+                style={{ ...s.inp, resize: 'none', background: '#fff' }}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) verstuurPrijsvoorstel() }}
+              />
+              <button
+                onClick={verstuurPrijsvoorstel}
+                disabled={sendingPrijs || (!prijs.trim() && !message.trim())}
+                style={{ ...s.btn, background: '#30b0c7', opacity: sendingPrijs || (!prijs.trim() && !message.trim()) ? .4 : 1 }}
+              >
+                {sendingPrijs ? 'Versturen…' : 'Verstuur prijsvoorstel per e-mail'}
+              </button>
+            </div>
+          )}
+
+          {/* Afspraak / adviesgesprek */}
           <div>
-            <div style={s.label}>Afspraakdatum en -tijd</div>
+            <div style={s.label}>{isOfferte ? 'Adviesgesprek inplannen' : 'Afspraakdatum en -tijd'}</div>
             <input type="datetime-local" value={apptAt} onChange={e => setApptAt(e.target.value)} style={{ ...s.inp, width: 'auto' }} />
           </div>
 
           <div>
-            <div style={s.label}>Opmerking bij afspraak</div>
-            <input value={apptNote} onChange={e => setApptNote(e.target.value)} placeholder="bijv. Monteur Jan Smit komt langs" style={s.inp} />
+            <div style={s.label}>{isOfferte ? 'Opmerking bij gesprek' : 'Opmerking bij afspraak'}</div>
+            <input
+              value={apptNote}
+              onChange={e => setApptNote(e.target.value)}
+              placeholder={isOfferte ? 'bijv. Teams-link of locatie' : 'bijv. Monteur Jan Smit komt langs'}
+              style={s.inp}
+            />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -369,14 +457,14 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
         </div>
       </div>
 
-      {/* Reacties */}
+      {/* Reacties — voor service; voor offerte alleen als er al reacties zijn of men wil antwoorden */}
       <div style={s.card}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #f2f2f7' }}>
-          <div style={s.label}>Reacties</div>
+          <div style={s.label}>Berichten aan klant</div>
         </div>
         <div style={{ maxHeight: 260, overflowY: 'auto', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {responses === null && <div style={{ color: '#aeaeb2', fontSize: 13, padding: 8 }}>Laden…</div>}
-          {responses?.length === 0 && <div style={{ color: '#aeaeb2', fontSize: 13, padding: 8 }}>Nog geen reacties.</div>}
+          {responses?.length === 0 && <div style={{ color: '#aeaeb2', fontSize: 13, padding: 8 }}>Nog geen berichten.</div>}
           {(responses || []).map(r => (
             <div key={r.id} style={{ alignSelf: r.is_admin ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
               <div style={{ fontSize: 11, color: '#aeaeb2', marginBottom: 3, textAlign: r.is_admin ? 'right' : 'left' }}>
@@ -393,18 +481,21 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
             </div>
           ))}
         </div>
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #f2f2f7', display: 'flex', gap: 10 }}>
-          <textarea
-            value={message} onChange={e => setMessage(e.target.value)}
-            placeholder="Schrijf een reactie naar de klant…"
-            rows={2}
-            style={{ ...s.inp, resize: 'none', flex: 1 }}
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendResponse() }}
-          />
-          <button onClick={sendResponse} disabled={sending || !message.trim()} style={{ ...s.btn, flexShrink: 0, opacity: sending || !message.trim() ? .4 : 1 }}>
-            {sending ? '…' : 'Stuur'}
-          </button>
-        </div>
+        {/* Extra bericht (alleen voor service, of aanvullend voor offerte) */}
+        {!isOfferte && (
+          <div style={{ padding: '12px 16px', borderTop: '1px solid #f2f2f7', display: 'flex', gap: 10 }}>
+            <textarea
+              value={message} onChange={e => setMessage(e.target.value)}
+              placeholder="Schrijf een reactie naar de klant…"
+              rows={2}
+              style={{ ...s.inp, resize: 'none', flex: 1 }}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendResponse() }}
+            />
+            <button onClick={sendResponse} disabled={sending || !message.trim()} style={{ ...s.btn, flexShrink: 0, opacity: sending || !message.trim() ? .4 : 1 }}>
+              {sending ? '…' : 'Stuur'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -422,9 +513,11 @@ function MiniField({ label, value, mono }) {
 
 // ── Hoofd component ───────────────────────────────────────────────────────────
 export default function Admin() {
-  const [tab,      setTab]      = useState('Meldingen')
-  const [isAdmin,  setIsAdmin]  = useState(null)
-  const [loading,  setLoading]  = useState(true)
+  const location = useLocation()
+  const initialTab = new URLSearchParams(location.search).get('tab') || 'Meldingen'
+  const [tab, setTab] = useState(TABS.includes(initialTab) ? initialTab : 'Meldingen')
+  const [isAdmin, setIsAdmin] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     api.adminMe()
@@ -432,6 +525,12 @@ export default function Admin() {
       .catch(() => setIsAdmin(false))
       .finally(() => setLoading(false))
   }, [])
+
+  // Sync tab als URL-param verandert (navigatie via sidebar)
+  useEffect(() => {
+    const t = new URLSearchParams(location.search).get('tab')
+    if (t && TABS.includes(t)) setTab(t)
+  }, [location.search])
 
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
@@ -448,15 +547,20 @@ export default function Admin() {
     </div>
   )
 
+  const tabTitle = { Meldingen: 'Service meldingen', Offertes: 'Offertes', Klanten: 'Klanten opzoeken' }
+
   return (
     <div style={s.page}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-        <h1 style={s.h1}>Beheerportaal</h1>
+        <h1 style={s.h1}>{tabTitle[tab]}</h1>
         <span style={s.badge('#fff', '#1d1d1f', '#1d1d1f')}>Admin</span>
       </div>
-      <p style={s.sub}>Klanten, machines en servicemeldingen beheren.</p>
+      <p style={s.sub}>
+        {tab === 'Meldingen' && 'Binnenkomende serviceverzoeken van klanten.'}
+        {tab === 'Offertes'  && 'Offerte-aanvragen via de website.'}
+        {tab === 'Klanten'   && 'Zoek klanten op en bekijk hun machines.'}
+      </p>
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f2f2f7', borderRadius: 12, padding: 4, width: 'fit-content' }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
@@ -466,7 +570,7 @@ export default function Admin() {
             boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,.08)' : 'none',
             borderRadius: 9, padding: '8px 18px',
           }}>
-            {t}
+            {tabTitle[t]}
           </button>
         ))}
       </div>
