@@ -156,20 +156,8 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
   const [resetting, setResetting] = useState(false)
   const [resetMsg, setResetMsg]   = useState(null)
   const [deleting, setDeleting]   = useState(false)
-  const [restarting, setRestarting]     = useState({})
-  const [machineMsgs, setMachineMsgs]   = useState({})
-  const [demoStatus, setDemoStatus]     = useState({})   // { [machineId]: true|false|null }
-  const [demoLoading, setDemoLoading]   = useState({})
-
-  useEffect(() => {
-    for (const m of (initialKlant.machines || [])) {
-      if (m.online) {
-        api.adminGetDemoStatus(m.machine_id)
-          .then(r => setDemoStatus(d => ({ ...d, [m.machine_id]: !!r.slideshow_active })))
-          .catch(() => {})
-      }
-    }
-  }, [initialKlant.id])
+  const [restarting, setRestarting]   = useState({})
+  const [machineMsgs, setMachineMsgs] = useState({})
 
   const dirty = name !== klant.name || email !== klant.email || newsletter !== !!klant.newsletter_subscribed
 
@@ -207,24 +195,6 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
       onDelete(klant.id)
       onClose()
     } catch (e) { alert(e.message); setDeleting(false) }
-  }
-
-  async function toggleDemo(machineId) {
-    const active = demoStatus[machineId]
-    setDemoLoading(d => ({ ...d, [machineId]: true }))
-    try {
-      if (active) {
-        await api.adminDeactivateDemo(machineId)
-      } else {
-        await api.adminActivateDemo(machineId)
-      }
-      setDemoStatus(d => ({ ...d, [machineId]: !active }))
-      setMachineMsgs(m => ({ ...m, [machineId]: { ok: true, text: active ? 'Demo gestopt.' : 'Demo gestart.' } }))
-    } catch (e) {
-      setMachineMsgs(m => ({ ...m, [machineId]: { ok: false, text: e.message } }))
-    }
-    setDemoLoading(d => ({ ...d, [machineId]: false }))
-    setTimeout(() => setMachineMsgs(m => { const n = { ...m }; delete n[machineId]; return n }), 4000)
   }
 
   async function restartMachine(machineId) {
@@ -318,35 +288,18 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
         <div key={m.machine_id} style={s.card}>
           <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{m.name}</span>
                 <span style={{ fontSize: 11, fontWeight: 700, color: m.online ? '#34c759' : '#aeaeb2' }}>{m.online ? '● Online' : '○ Offline'}</span>
-                {demoStatus[m.machine_id] && (
-                  <span style={{ fontSize: 10, fontWeight: 700, color: '#5856d6', background: '#f3f2ff', border: '1px solid #c4c2f5', borderRadius: 20, padding: '2px 7px' }}>DEMO</span>
-                )}
               </div>
               <div style={{ fontSize: 12, color: '#6e6e73', fontFamily: 'monospace' }}>{m.machine_id}</div>
               {m.model && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{m.model}{m.version ? ` · v${m.version}` : ''}</div>}
               {m.serial_number && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>S/N: {m.serial_number}{m.serial_number_confirmed ? ' ✓' : ''}</div>}
             </div>
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <button
-                onClick={() => toggleDemo(m.machine_id)}
-                disabled={!m.online || demoLoading[m.machine_id]}
-                style={{
-                  ...s.btnSm,
-                  background: demoStatus[m.machine_id] ? '#f3f2ff' : m.online ? '#f5f5f7' : '#f2f2f7',
-                  color: demoStatus[m.machine_id] ? '#5856d6' : m.online ? '#1d1d1f' : '#aeaeb2',
-                  cursor: m.online && !demoLoading[m.machine_id] ? 'pointer' : 'not-allowed',
-                  opacity: m.online ? 1 : .5,
-                }}>
-                {demoLoading[m.machine_id] ? 'Bezig…' : demoStatus[m.machine_id] ? 'Demo stoppen' : 'Demo starten'}
-              </button>
-              <button onClick={() => restartMachine(m.machine_id)} disabled={!m.online || restarting[m.machine_id]}
-                style={{ ...s.btnSm, background: m.online ? '#fff1f0' : '#f2f2f7', color: m.online ? '#ff3b30' : '#aeaeb2', cursor: m.online && !restarting[m.machine_id] ? 'pointer' : 'not-allowed' }}>
-                {restarting[m.machine_id] ? 'Herstarten…' : 'Herstart'}
-              </button>
-            </div>
+            <button onClick={() => restartMachine(m.machine_id)} disabled={!m.online || restarting[m.machine_id]}
+              style={{ ...s.btnSm, background: m.online ? '#fff1f0' : '#f2f2f7', color: m.online ? '#ff3b30' : '#aeaeb2', cursor: m.online && !restarting[m.machine_id] ? 'pointer' : 'not-allowed' }}>
+              {restarting[m.machine_id] ? 'Herstarten…' : 'Herstart'}
+            </button>
           </div>
           {machineMsgs[m.machine_id] && (
             <div style={{ padding: '8px 16px', borderTop: '1px solid #f2f2f7', fontSize: 13, color: machineMsgs[m.machine_id].ok ? '#34c759' : '#ff3b30' }}>
