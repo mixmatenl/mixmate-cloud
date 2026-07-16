@@ -1080,6 +1080,27 @@ async def deactivate_demo(machine_id: str, customer_id: int = Depends(verify_tok
     conn = _get_conn(machine_id, customer_id, db)
     return await conn.request({"type": "deactivate_demo"}, timeout=15)
 
+@app.get("/api/admin/machines/{machine_id}/demo-status")
+async def admin_get_demo_status(machine_id: str, _: int = Depends(verify_admin_user)):
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(status_code=503, detail="Machine is offline")
+    return await conn.request({"type": "get_demo_status"}, timeout=5)
+
+@app.post("/api/admin/machines/{machine_id}/demo/activate")
+async def admin_activate_demo(machine_id: str, _: int = Depends(verify_admin_user)):
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(status_code=503, detail="Machine is offline")
+    return await conn.request({"type": "activate_demo"}, timeout=30)
+
+@app.post("/api/admin/machines/{machine_id}/demo/deactivate")
+async def admin_deactivate_demo(machine_id: str, _: int = Depends(verify_admin_user)):
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(status_code=503, detail="Machine is offline")
+    return await conn.request({"type": "deactivate_demo"}, timeout=15)
+
 @app.get("/api/machines/{machine_id}/flush-log")
 def get_flush_log(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _check_machine_access(machine_id, customer_id, db)

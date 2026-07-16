@@ -78,7 +78,9 @@ const FEATURES = [
   },
 ]
 
-export default function MachineDetail({ onLogout }) {
+const ADMIN_EMAILS = ['r.muller@mixmate.nl', 'info@mixmate.nl', 'h.louwrink@mixmate.nl']
+
+export default function MachineDetail({ user, onLogout }) {
   const { machineId } = useParams()
   const navigate = useNavigate()
   const [tab,             setTab]             = useState('Overzicht')
@@ -371,7 +373,7 @@ export default function MachineDetail({ onLogout }) {
         {tab === 'Catalogus'   && status?.online && <Catalogus   machineId={machineId} />}
         {tab === 'Pompen'      && status?.online && <Pompen      machineId={machineId} />}
         {tab === 'Spoelen'     && <SpoelTab    machineId={machineId} status={status} blocked={blocked} onToggleBlock={toggleBlock} toggling={toggling} />}
-        {tab === 'Instellingen'&& <Instellingen machineId={machineId} status={status} onRename={name => setStatus(s => ({...s, name}))} onUnpair={() => navigate('/')} demoActive={demoSlideshow} onDemoToggle={() => api.getDemoStatus(machineId).then(s => setDemoSlideshow(s.slideshow_active)).catch(()=>{})} />}
+        {tab === 'Instellingen'&& <Instellingen machineId={machineId} status={status} onRename={name => setStatus(s => ({...s, name}))} onUnpair={() => navigate('/')} demoActive={demoSlideshow} onDemoToggle={() => api.getDemoStatus(machineId).then(s => setDemoSlideshow(s.slideshow_active)).catch(()=>{})} isAdmin={!!(user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()))} />}
         {tab === 'Info'        && <InfoTab     machineId={machineId} status={status} />}
       </div>
     </div>
@@ -1450,7 +1452,7 @@ function TeamBeheer({ machineId }) {
   )
 }
 
-function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDemoToggle }) {
+function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDemoToggle, isAdmin }) {
   const [name,         setName]        = useState(status?.name || '')
   const [serial,       setSerial]      = useState(status?.serial_number || '')
   const [serialSaving, setSerialSaving]= useState(false)
@@ -1597,7 +1599,7 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
         </div>
       </Group>
 
-      <Group label="Demo modus">
+      {isAdmin && <Group label="Demo modus">
         <div style={{ padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: demoMsg ? 12 : 0 }}>
             <div>
@@ -1629,7 +1631,7 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
             }}>{demoMsg.text}</div>
           )}
         </div>
-      </Group>
+      </Group>}
 
       <TeamBeheer machineId={machineId} />
 
