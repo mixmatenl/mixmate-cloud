@@ -665,7 +665,9 @@ async def admin_update_ticket(ticket_id: int, body: dict, customer_id: int = Dep
         klant = db.get(Customer, ticket.customer_id)
         if klant:
             afspraak_dt  = datetime.fromisoformat(body["appointment_at"])
-            afspraak_str = afspraak_dt.strftime("%A %d %B om %H:%M").capitalize()
+            _DAGEN   = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
+            _MAANDEN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december']
+            afspraak_str = f"{_DAGEN[afspraak_dt.weekday()]} {afspraak_dt.day} {_MAANDEN[afspraak_dt.month - 1]} om {afspraak_dt.strftime('%H:%M')}"
             note_html    = (
                 f"<p style='margin:12px 0 0;font-size:14px;color:#374151;line-height:1.6;'>"
                 f"{body.get('appointment_note','')}</p>"
@@ -687,7 +689,7 @@ async def admin_update_ticket(ticket_id: int, body: dict, customer_id: int = Dep
                 "</td></tr></table>"
                 + _email_button("https://portaal.mixmate.nl/meldingen", "Voortgang bekijken →")
             )
-            await _resend(klant.email, f"Afspraak bevestigd — melding #{ticket.id}", _email_html(email_body))
+            await _resend(klant.email, "Afspraak bevestigd — MIXMATE", _email_html(email_body))
 
     return _ticket_dict(ticket)
 
