@@ -1757,10 +1757,10 @@ def _email_base(content: str) -> str:
 
       <!-- Header -->
       <tr><td style="background:#1d1d1f;border-radius:16px 16px 0 0;padding:28px 36px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.5px">MIXMATE</span>
-          <span style="color:#6e6e73;font-size:13px;padding-left:12px;border-left:1px solid #3a3a3c">Glazenwinkel</span>
-        </div>
+        <table cellpadding="0" cellspacing="0"><tr>
+          <td style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.5px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">MIXMATE</td>
+          <td style="padding-left:14px;color:#6e6e73;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">Glazenwinkel</td>
+        </tr></table>
       </td></tr>
 
       <!-- Body -->
