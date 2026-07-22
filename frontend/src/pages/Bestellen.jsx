@@ -107,6 +107,11 @@ export default function Bestellen({ user }) {
                 return (
                   <Card key={p.id} style={{ padding: '16px 18px', border: `1.5px solid ${selected ? '#1d1d1f' : 'transparent'}`, transition: 'border-color .15s' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                      {p.image_url && (
+                        <div style={{ width: 72, height: 72, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+                          <img src={p.image_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f' }}>{p.name}</div>
                         {p.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4, lineHeight: 1.5 }}>{p.description}</div>}

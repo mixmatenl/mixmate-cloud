@@ -1,3 +1,9 @@
+## [1.3.3] - 2026-07-22
+### Nieuw
+- Producten: afbeelding uploaden (max 2 MB) of externe URL invoeren
+- Productlijst toont thumbnail naast naam en prijs
+- Bestelpagina toont productafbeelding naast omschrijving
+
 ## [1.3.2] - 2026-07-22
 ### Verbeterd
 - Glazen bestellen alleen mogelijk voor ingelogde klanten (via portaal)

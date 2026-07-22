@@ -1615,7 +1615,7 @@ def save_shop_settings(data: dict, db: Session = Depends(get_session), _=Depends
 def get_products_public(db: Session = Depends(get_session)):
     products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.id)).all()
     # Strip inkoopprijs uit publieke response
-    return [{"id": p.id, "name": p.name, "description": p.description, "price_excl": p.price_excl, "unit": p.unit, "min_order": p.min_order, "active": p.active} for p in products]
+    return [{"id": p.id, "name": p.name, "description": p.description, "price_excl": p.price_excl, "unit": p.unit, "min_order": p.min_order, "active": p.active, "image_url": p.image_url} for p in products]
 
 @app.get("/api/shop/products")
 def get_products(db: Session = Depends(get_session), _=Depends(verify_admin_user)):

@@ -328,10 +328,22 @@ function ProductForm({ product, onSave, onCancel }) {
     unit: product?.unit ?? 'stuk',
     min_order: product?.min_order ?? 1,
     active: product?.active ?? true,
+    image_url: product?.image_url ?? '',
   })
   const [saving, setSaving] = useState(false)
+  const [imgLoading, setImgLoading] = useState(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  function handleImage(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) { alert('Afbeelding mag maximaal 2 MB zijn.'); return }
+    setImgLoading(true)
+    const reader = new FileReader()
+    reader.onload = ev => { set('image_url', ev.target.result); setImgLoading(false) }
+    reader.readAsDataURL(file)
+  }
 
   async function submit(e) {
     e.preventDefault()
@@ -353,6 +365,51 @@ function ProductForm({ product, onSave, onCancel }) {
         {product ? 'Product bewerken' : 'Nieuw product'}
       </div>
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+        {/* Afbeelding upload */}
+        <div>
+          <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Afbeelding</div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <label style={{ cursor: 'pointer', flexShrink: 0 }}>
+              <div style={{
+                width: 96, height: 96, borderRadius: 12, border: '1.5px dashed #c7c7cc',
+                background: form.image_url ? 'transparent' : '#f9f9f9',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', position: 'relative',
+              }}>
+                {form.image_url ? (
+                  <img src={form.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : imgLoading ? (
+                  <span style={{ fontSize: 12, color: '#aeaeb2' }}>Laden…</span>
+                ) : (
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="1.5" strokeLinecap="round">
+                    <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                )}
+              </div>
+              <input type="file" accept="image/*" onChange={handleImage} style={{ display: 'none' }} />
+            </label>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.5, marginBottom: 8 }}>
+                Klik op het vlak om een afbeelding te uploaden (max. 2 MB). Of plak een externe URL hieronder.
+              </div>
+              <input
+                type="url"
+                value={form.image_url.startsWith('data:') ? '' : form.image_url}
+                onChange={e => set('image_url', e.target.value)}
+                placeholder="https://… (optioneel)"
+                style={{ ...inp, fontSize: 13 }}
+              />
+              {form.image_url && (
+                <button type="button" onClick={() => set('image_url', '')}
+                  style={{ marginTop: 6, fontSize: 12, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+                  Afbeelding verwijderen
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <input required value={form.name} onChange={e => set('name', e.target.value)} placeholder="Naam *" style={inp} />
         <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Omschrijving" rows={3} style={{ ...inp, resize: 'vertical' }} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -429,6 +486,14 @@ function Producten() {
           <div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Nog geen producten.</div>
         ) : products.map((p, i) => (
           <div key={p.id} style={{ padding: '12px 16px', borderBottom: i < products.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 10, background: '#f2f2f7', flexShrink: 0, overflow: 'hidden' }}>
+              {p.image_url
+                ? <img src={p.image_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="1.5" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  </div>
+              }
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: p.active ? '#1d1d1f' : '#aeaeb2' }}>{p.name}</div>
               <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>
