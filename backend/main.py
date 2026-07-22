@@ -1648,7 +1648,7 @@ def delete_product(product_id: int, db: Session = Depends(get_session), _=Depend
     return {"ok": True}
 
 @app.post("/api/shop/orders")
-def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+async def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     settings = _get_shop_settings(db)
     items_data = data.get("items", [])
     if not items_data:
