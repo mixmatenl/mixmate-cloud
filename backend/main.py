@@ -42,6 +42,12 @@ class Customer(SQLModel, table=True):
     password_hash: str = ""
     must_change_password: bool = Field(default=False)
     newsletter_subscribed: bool = Field(default=False)
+    company: str = ""
+    phone: str = ""
+    address_line1: str = ""
+    postal_code: str = ""
+    city: str = ""
+    country: str = "Nederland"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     machines: list["Machine"] = Relationship(back_populates="customer")
 
@@ -186,6 +192,12 @@ def create_tables():
         "ALTER TABLE glassorder ADD COLUMN refund_amount REAL NOT NULL DEFAULT 0.0",
         "ALTER TABLE glassorder ADD COLUMN refund_reason VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE glassorder ADD COLUMN refund_at TIMESTAMP",
+        "ALTER TABLE customer ADD COLUMN company VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE customer ADD COLUMN phone VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE customer ADD COLUMN address_line1 VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE customer ADD COLUMN postal_code VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE customer ADD COLUMN city VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE customer ADD COLUMN country VARCHAR NOT NULL DEFAULT 'Nederland'",
     ]
     for sql in migrations:
         try:
@@ -439,12 +451,23 @@ def change_password(body: dict, customer_id: int = Depends(verify_token), db: Se
 
 @app.get("/api/account/me")
 def account_me(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    customer = db.get(Customer, customer_id)
+    c = db.get(Customer, customer_id)
     return {
-        "name": customer.name,
-        "email": customer.email,
-        "newsletter_subscribed": customer.newsletter_subscribed,
+        "name": c.name, "email": c.email,
+        "newsletter_subscribed": c.newsletter_subscribed,
+        "company": c.company or "", "phone": c.phone or "",
+        "address_line1": c.address_line1 or "", "postal_code": c.postal_code or "",
+        "city": c.city or "", "country": c.country or "Nederland",
     }
+
+@app.patch("/api/account/profile")
+def update_profile(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    c = db.get(Customer, customer_id)
+    for k in ("company", "phone", "address_line1", "postal_code", "city", "country"):
+        if k in body:
+            setattr(c, k, body[k])
+    db.add(c); db.commit(); db.refresh(c)
+    return {"ok": True}
 
 @app.patch("/api/account/newsletter")
 def toggle_newsletter(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
@@ -1631,21 +1654,22 @@ def delete_product(product_id: int, db: Session = Depends(get_session), _=Depend
     return {"ok": True}
 
 @app.post("/api/shop/orders")
-def place_order(data: dict, db: Session = Depends(get_session)):
+def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     settings = _get_shop_settings(db)
     items_data = data.get("items", [])
     if not items_data:
         raise HTTPException(400, "Geen producten geselecteerd")
 
+    customer = db.get(Customer, customer_id)
     order = GlassOrder(
-        customer_name=data.get("customer_name",""),
-        customer_company=data.get("customer_company",""),
-        customer_email=data.get("customer_email",""),
-        customer_phone=data.get("customer_phone",""),
-        address_line1=data.get("address_line1",""),
-        postal_code=data.get("postal_code",""),
-        city=data.get("city",""),
-        country=data.get("country","Nederland"),
+        customer_name=customer.name,
+        customer_email=customer.email,
+        customer_company=data.get("customer_company") or customer.company or "",
+        customer_phone=data.get("customer_phone") or customer.phone or "",
+        address_line1=data.get("address_line1") or customer.address_line1 or "",
+        postal_code=data.get("postal_code") or customer.postal_code or "",
+        city=data.get("city") or customer.city or "",
+        country=data.get("country") or customer.country or "Nederland",
         notes=data.get("notes",""),
         btw_rate_snapshot=settings.btw_rate,
     )

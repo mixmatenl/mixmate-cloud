@@ -48,14 +48,34 @@ function initials(name) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 }
 
+const inp = {
+  width: '100%', border: '1px solid #e5e5ea', borderRadius: 10,
+  padding: '11px 13px', fontSize: 15, fontFamily: 'inherit',
+  outline: 'none', background: '#fff', color: '#1d1d1f', boxSizing: 'border-box',
+}
+
 export default function Account({ user, onLogout }) {
   const [subscribed, setSubscribed]   = useState(null)
   const [toggling, setToggling]       = useState(false)
   const [toggleMsg, setToggleMsg]     = useState(null)
 
+  const [profile, setProfile]         = useState(null)
+  const [saving, setSaving]           = useState(false)
+  const [savedMsg, setSavedMsg]       = useState(null)
+
   useEffect(() => {
     api.accountMe()
-      .then(r => setSubscribed(r.newsletter_subscribed))
+      .then(r => {
+        setSubscribed(r.newsletter_subscribed)
+        setProfile({
+          company:      r.company      || '',
+          phone:        r.phone        || '',
+          address_line1: r.address_line1 || '',
+          postal_code:  r.postal_code  || '',
+          city:         r.city         || '',
+          country:      r.country      || 'Nederland',
+        })
+      })
       .catch(() => {})
   }, [])
 
@@ -70,6 +90,21 @@ export default function Account({ user, onLogout }) {
     }
     setToggling(false)
     setTimeout(() => setToggleMsg(null), 3000)
+  }
+
+  function setField(k, v) { setProfile(p => ({ ...p, [k]: v })) }
+
+  async function saveProfile(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await api.updateProfile(profile)
+      setSavedMsg('Opgeslagen')
+      setTimeout(() => setSavedMsg(null), 2500)
+    } catch {
+      setSavedMsg('Er ging iets mis.')
+    }
+    setSaving(false)
   }
 
   return (
@@ -93,6 +128,61 @@ export default function Account({ user, onLogout }) {
         <InfoRow label="Naam"        value={user?.name  || '—'} />
         <InfoRow label="E-mailadres" value={user?.email || '—'} noBorder />
       </SettingGroup>
+
+      {/* Bedrijfsgegevens – bewerkbaar */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', letterSpacing: .3, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 }}>
+          Bedrijfsgegevens
+        </div>
+        <div style={{ fontSize: 13, color: '#aeaeb2', marginBottom: 12, paddingLeft: 4 }}>
+          Deze gegevens worden automatisch ingevuld bij het plaatsen van een bestelling.
+        </div>
+        {profile ? (
+          <form onSubmit={saveProfile} style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)', padding: '16px 16px 12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Bedrijfsnaam</div>
+                  <input value={profile.company} onChange={e => setField('company', e.target.value)} placeholder="Bedrijfsnaam" style={inp} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Telefoonnummer</div>
+                  <input type="tel" value={profile.phone} onChange={e => setField('phone', e.target.value)} placeholder="+31 6 00000000" style={inp} />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Afleveradres</div>
+                <input value={profile.address_line1} onChange={e => setField('address_line1', e.target.value)} placeholder="Straatnaam en huisnummer" style={inp} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Postcode</div>
+                  <input value={profile.postal_code} onChange={e => setField('postal_code', e.target.value)} placeholder="1234 AB" style={inp} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Stad</div>
+                  <input value={profile.city} onChange={e => setField('city', e.target.value)} placeholder="Amsterdam" style={inp} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+                <button type="submit" disabled={saving} style={{
+                  background: savedMsg === 'Opgeslagen' ? '#34c759' : '#1d1d1f', color: '#fff',
+                  border: 'none', borderRadius: 10, padding: '10px 20px',
+                  fontSize: 14, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit', opacity: saving ? .7 : 1, transition: 'background .2s',
+                }}>
+                  {saving ? 'Opslaan…' : savedMsg === 'Opgeslagen' ? '✓ Opgeslagen' : 'Opslaan'}
+                </button>
+                {savedMsg && savedMsg !== 'Opgeslagen' && (
+                  <span style={{ fontSize: 13, color: '#ff3b30' }}>{savedMsg}</span>
+                )}
+              </div>
+            </div>
+          </form>
+        ) : (
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, color: '#aeaeb2', fontSize: 14 }}>Laden…</div>
+        )}
+      </div>
 
       <SettingGroup label="Beveiliging">
         <InfoRow label="Wachtwoord" value="••••••••" noBorder />

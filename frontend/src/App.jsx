@@ -303,7 +303,6 @@ export default function App() {
   if (!token) {
     return (
       <Routes>
-        <Route path="/bestellen" element={<Bestellen />} />
         <Route path="*" element={<Login onLogin={onLogin} />} />
       </Routes>
     )
@@ -320,9 +319,9 @@ export default function App() {
         <Route path="/meldingen" element={<Meldingen />} />
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
-        <Route path="/admin"    element={<Admin />} />
-        <Route path="/webshop"  element={<Webshop />} />
-        <Route path="/bestellen" element={<Bestellen />} />
+        <Route path="/admin"     element={<Admin />} />
+        <Route path="/webshop"   element={<Webshop />} />
+        <Route path="/bestellen" element={<Bestellen user={user} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />

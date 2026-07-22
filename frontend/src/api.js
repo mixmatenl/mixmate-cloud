@@ -119,6 +119,7 @@ export const api = {
   setPassword:          (new_password)  => req('POST',   '/api/auth/set-password', { new_password }),
   accountMe:            ()              => req('GET',    '/api/account/me'),
   toggleNewsletter:     (subscribed)    => req('PATCH',  '/api/account/newsletter', { subscribed }),
+  updateProfile:        (data)          => req('PATCH',  '/api/account/profile', data),
   adminNewsletterSubscribers: ()        => req('GET',    '/api/admin/newsletter/subscribers'),
   adminNewsletterSend:  (subject, content) => req('POST', '/api/admin/newsletter/send', { subject, content }),
 
@@ -150,13 +151,6 @@ export const api = {
   setRefund:          (id, amount, reason) => req('POST', `/api/shop/orders/${id}/refund`, { refund_amount: amount, refund_reason: reason }),
   getShopReport:      (year, month) => req('GET',  `/api/shop/report?year=${year}&month=${month}`),
 
-  // Webshop – publiek bestellen (geen auth)
-  placeShopOrder: (data) => fetch((import.meta.env.VITE_API_URL || '') + '/api/shop/orders', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  }).then(async r => {
-    if (!r.ok) { const e = await r.json().catch(() => ({ detail: 'Fout' })); throw new Error(e.detail || 'Fout') }
-    return r.json()
-  }),
+  // Webshop – bestellen (auth vereist)
+  placeShopOrder: (data) => req('POST', '/api/shop/orders', data),
 }

@@ -1,3 +1,14 @@
+## [1.3.2] - 2026-07-22
+### Verbeterd
+- Glazen bestellen alleen mogelijk voor ingelogde klanten (via portaal)
+- Naam en e-mail worden automatisch uit account ingevuld bij bestelling
+- Klanten kunnen bedrijf, telefoon en afleveradres opslaan in hun account (Mijn account)
+- Opgeslagen gegevens worden automatisch vooringevuld bij iedere bestelling
+- Bestellen toegevoegd aan sidebar onder "Winkel"
+- Backend: Customer-model uitgebreid met company, phone, address_line1, postal_code, city, country
+- Backend: PATCH /api/account/profile endpoint voor opslaan klantgegevens
+- Backend: /api/shop/orders vereist nu authenticatie
+
 ## [1.3.1] - 2026-07-22
 ### Verbeterd
 - Inkoopprijs veld toegevoegd aan producten (alleen zichtbaar voor beheerders)
