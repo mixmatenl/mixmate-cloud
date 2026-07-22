@@ -127,4 +127,34 @@ export const api = {
   exitDemoSlideshow: (mid) => req('POST', `/api/machines/${mid}/demo/exit-slideshow`),
   activateDemo:      (mid) => req('POST', `/api/machines/${mid}/demo/activate`),
   deactivateDemo:    (mid) => req('POST', `/api/machines/${mid}/demo/deactivate`),
+
+  // Webshop – instellingen
+  getShopSettings:  ()       => req('GET',   '/api/shop/settings'),
+  saveShopSettings: (data)   => req('POST',  '/api/shop/settings', data),
+
+  // Webshop – producten (admin)
+  getShopProducts:      ()           => req('GET',    '/api/shop/products'),
+  createShopProduct:    (data)       => req('POST',   '/api/shop/products', data),
+  updateShopProduct:    (id, data)   => req('PATCH',  `/api/shop/products/${id}`, data),
+  deleteShopProduct:    (id)         => req('DELETE', `/api/shop/products/${id}`),
+
+  // Webshop – producten (publiek, geen auth)
+  getShopProductsPublic: () => fetch((import.meta.env.VITE_API_URL || '') + '/api/shop/products/public').then(r => r.json()),
+
+  // Webshop – bestellingen
+  getShopOrders:      (status)     => req('GET',   `/api/shop/orders${status ? `?status=${status}` : ''}`),
+  getShopOrder:       (id)         => req('GET',   `/api/shop/orders/${id}`),
+  updateOrderStatus:  (id, status) => req('PATCH', `/api/shop/orders/${id}/status`, { status }),
+  sendInvoice:        (id)         => req('POST',  `/api/shop/orders/${id}/send-invoice`),
+  getInvoiceHtml:     (id)         => req('GET',   `/api/shop/orders/${id}/invoice`),
+
+  // Webshop – publiek bestellen (geen auth)
+  placeShopOrder: (data) => fetch((import.meta.env.VITE_API_URL || '') + '/api/shop/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(async r => {
+    if (!r.ok) { const e = await r.json().catch(() => ({ detail: 'Fout' })); throw new Error(e.detail || 'Fout') }
+    return r.json()
+  }),
 }

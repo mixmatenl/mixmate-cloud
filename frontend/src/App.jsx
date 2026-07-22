@@ -8,6 +8,8 @@ import Account from './pages/Account.jsx'
 import Rapporten from './pages/Rapporten.jsx'
 import Meldingen from './pages/Meldingen.jsx'
 import Admin from './pages/Admin.jsx'
+import Webshop from './pages/Webshop.jsx'
+import Bestellen from './pages/Bestellen.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 import { api } from './api.js'
@@ -301,6 +303,7 @@ export default function App() {
   if (!token) {
     return (
       <Routes>
+        <Route path="/bestellen" element={<Bestellen />} />
         <Route path="*" element={<Login onLogin={onLogin} />} />
       </Routes>
     )
@@ -317,7 +320,9 @@ export default function App() {
         <Route path="/meldingen" element={<Meldingen />} />
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
-        <Route path="/admin"   element={<Admin />} />
+        <Route path="/admin"    element={<Admin />} />
+        <Route path="/webshop"  element={<Webshop />} />
+        <Route path="/bestellen" element={<Bestellen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />

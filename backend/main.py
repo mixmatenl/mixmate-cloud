@@ -110,6 +110,65 @@ class SupportTicket(SQLModel, table=True):
     appointment_note: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+# ── Webshop ───────────────────────────────────────────────────────────────────
+
+class ShopSettings(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    company_name: str = ""
+    address_line1: str = ""
+    address_line2: str = ""
+    postal_code: str = ""
+    city: str = ""
+    country: str = "Nederland"
+    kvk: str = ""
+    btw_number: str = ""
+    iban: str = ""
+    email: str = ""
+    phone: str = ""
+    website: str = ""
+    btw_rate: float = 21.0
+    invoice_prefix: str = "INV"
+    next_invoice_number: int = 1
+    payment_days: int = 14
+    invoice_note: str = ""
+
+class GlassProduct(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = ""
+    description: str = ""
+    price_excl: float = 0.0
+    unit: str = "stuk"
+    min_order: int = 1
+    image_url: str = ""
+    active: bool = True
+    sort_order: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class GlassOrder(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    customer_name: str = ""
+    customer_company: str = ""
+    customer_email: str = ""
+    customer_phone: str = ""
+    address_line1: str = ""
+    postal_code: str = ""
+    city: str = ""
+    country: str = "Nederland"
+    notes: str = ""
+    invoice_number: str = ""
+    invoice_sent_at: Optional[datetime] = None
+    btw_rate_snapshot: float = 21.0
+    status: str = "nieuw"              # nieuw | bevestigd | verzonden | afgeleverd | geannuleerd
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class GlassOrderItem(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    order_id: int = Field(foreign_key="glassorder.id", index=True)
+    product_id: int
+    product_name: str = ""
+    price_excl: float = 0.0
+    quantity: int = 1
+
 def create_tables():
     SQLModel.metadata.create_all(engine)
     # Voeg nieuwe kolommen toe aan bestaande tabellen als ze nog niet bestaan
@@ -1494,6 +1553,289 @@ def _machine_dict(m: Machine) -> dict:
         "paired":                   m.paired,
         "last_seen":                m.last_seen.isoformat() if m.last_seen else None,
     }
+
+# ── Webshop ───────────────────────────────────────────────────────────────────
+
+def _get_shop_settings(db: Session) -> ShopSettings:
+    s = db.exec(select(ShopSettings)).first()
+    if not s:
+        s = ShopSettings()
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+    return s
+
+@app.get("/api/shop/settings")
+def get_shop_settings(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    return _get_shop_settings(db)
+
+@app.post("/api/shop/settings")
+def save_shop_settings(data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    s = _get_shop_settings(db)
+    allowed = {"company_name","address_line1","address_line2","postal_code","city","country",
+               "kvk","btw_number","iban","email","phone","website","btw_rate",
+               "invoice_prefix","payment_days","invoice_note"}
+    for k, v in data.items():
+        if k in allowed:
+            setattr(s, k, v)
+    db.add(s); db.commit(); db.refresh(s)
+    return s
+
+@app.get("/api/shop/products/public")
+def get_products_public(db: Session = Depends(get_session)):
+    products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.sort_order, GlassProduct.id)).all()
+    return products
+
+@app.get("/api/shop/products")
+def get_products(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    return db.exec(select(GlassProduct).order_by(GlassProduct.sort_order, GlassProduct.id)).all()
+
+@app.post("/api/shop/products")
+def create_product(data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    p = GlassProduct(
+        name=data.get("name",""),
+        description=data.get("description",""),
+        price_excl=float(data.get("price_excl", 0)),
+        unit=data.get("unit","stuk"),
+        min_order=int(data.get("min_order", 1)),
+        image_url=data.get("image_url",""),
+        active=data.get("active", True),
+        sort_order=int(data.get("sort_order", 0)),
+    )
+    db.add(p); db.commit(); db.refresh(p)
+    return p
+
+@app.patch("/api/shop/products/{product_id}")
+def update_product(product_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    p = db.get(GlassProduct, product_id)
+    if not p: raise HTTPException(404, "Product niet gevonden")
+    for k in ("name","description","price_excl","unit","min_order","image_url","active","sort_order"):
+        if k in data:
+            setattr(p, k, data[k])
+    db.add(p); db.commit(); db.refresh(p)
+    return p
+
+@app.delete("/api/shop/products/{product_id}")
+def delete_product(product_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    p = db.get(GlassProduct, product_id)
+    if not p: raise HTTPException(404, "Product niet gevonden")
+    db.delete(p); db.commit()
+    return {"ok": True}
+
+@app.post("/api/shop/orders")
+def place_order(data: dict, db: Session = Depends(get_session)):
+    settings = _get_shop_settings(db)
+    items_data = data.get("items", [])
+    if not items_data:
+        raise HTTPException(400, "Geen producten geselecteerd")
+
+    order = GlassOrder(
+        customer_name=data.get("customer_name",""),
+        customer_company=data.get("customer_company",""),
+        customer_email=data.get("customer_email",""),
+        customer_phone=data.get("customer_phone",""),
+        address_line1=data.get("address_line1",""),
+        postal_code=data.get("postal_code",""),
+        city=data.get("city",""),
+        country=data.get("country","Nederland"),
+        notes=data.get("notes",""),
+        btw_rate_snapshot=settings.btw_rate,
+    )
+    db.add(order); db.commit(); db.refresh(order)
+
+    for item in items_data:
+        product = db.get(GlassProduct, int(item["product_id"]))
+        if not product or not product.active:
+            continue
+        qty = max(1, int(item.get("quantity", 1)))
+        oi = GlassOrderItem(
+            order_id=order.id,
+            product_id=product.id,
+            product_name=product.name,
+            price_excl=product.price_excl,
+            quantity=qty,
+        )
+        db.add(oi)
+    db.commit()
+
+    # Bevestigingsmail naar klant
+    _send_order_confirmation(order, items_data, db)
+
+    return {"ok": True, "order_id": order.id}
+
+@app.get("/api/shop/orders")
+def get_orders(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    orders = db.exec(select(GlassOrder).order_by(GlassOrder.created_at.desc())).all()
+    result = []
+    for o in orders:
+        items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == o.id)).all()
+        total_excl = sum(i.price_excl * i.quantity for i in items)
+        result.append({**o.model_dump(), "items": [i.model_dump() for i in items], "total_excl": total_excl})
+    return result
+
+@app.get("/api/shop/orders/{order_id}")
+def get_order(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    o = db.get(GlassOrder, order_id)
+    if not o: raise HTTPException(404, "Bestelling niet gevonden")
+    items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order_id)).all()
+    return {**o.model_dump(), "items": [i.model_dump() for i in items]}
+
+@app.patch("/api/shop/orders/{order_id}/status")
+def update_order_status(order_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    o = db.get(GlassOrder, order_id)
+    if not o: raise HTTPException(404, "Bestelling niet gevonden")
+    o.status = data.get("status", o.status)
+    db.add(o); db.commit(); db.refresh(o)
+    return {"ok": True}
+
+@app.post("/api/shop/orders/{order_id}/invoice")
+def send_invoice(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    o = db.get(GlassOrder, order_id)
+    if not o: raise HTTPException(404, "Bestelling niet gevonden")
+    items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order_id)).all()
+    settings = _get_shop_settings(db)
+
+    if not o.invoice_number:
+        year = datetime.utcnow().year
+        num = settings.next_invoice_number
+        o.invoice_number = f"{settings.invoice_prefix}-{year}-{num:04d}"
+        settings.next_invoice_number = num + 1
+        db.add(settings)
+
+    o.invoice_sent_at = datetime.utcnow()
+    db.add(o); db.commit(); db.refresh(o)
+
+    html = _build_invoice_html(o, items, settings)
+    _send_invoice_email(o, html, settings)
+
+    return {"ok": True, "invoice_number": o.invoice_number, "html": html}
+
+def _build_invoice_html(order: GlassOrder, items: list, settings: ShopSettings) -> str:
+    total_excl = sum(i.price_excl * i.quantity for i in items)
+    btw_amount = total_excl * settings.btw_rate / 100
+    total_incl = total_excl + btw_amount
+    due_date = (order.invoice_sent_at or datetime.utcnow()) + timedelta(days=settings.payment_days)
+
+    rows = ""
+    for item in items:
+        subtotal = item.price_excl * item.quantity
+        rows += f"""
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0">{item.product_name}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;text-align:center">{item.quantity}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;text-align:right">€ {item.price_excl:,.2f}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;text-align:right">€ {subtotal:,.2f}</td>
+        </tr>"""
+
+    address_parts = [settings.address_line1]
+    if settings.address_line2: address_parts.append(settings.address_line2)
+    address_parts += [f"{settings.postal_code} {settings.city}", settings.country]
+    company_address = "<br>".join(p for p in address_parts if p.strip())
+
+    customer_address = settings.address_line1
+    customer_city = f"{order.postal_code} {order.city}".strip()
+
+    return f"""<!DOCTYPE html>
+<html lang="nl">
+<head><meta charset="UTF-8"><title>Factuur {order.invoice_number}</title>
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1d1d1f;margin:0;padding:0;background:#f5f5f7}}
+  .page{{max-width:720px;margin:0 auto;background:#fff;padding:48px 56px}}
+  h1{{font-size:28px;font-weight:800;margin:0 0 4px;color:#1d1d1f}}
+  table{{width:100%;border-collapse:collapse}}
+  th{{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6e6e73;padding:8px 0;border-bottom:2px solid #1d1d1f;text-align:left}}
+  th:last-child,th:nth-child(3),th:nth-child(2){{text-align:right}}
+  th:nth-child(2){{text-align:center}}
+  .total-row td{{padding:8px 0;font-weight:600}}
+  .grand-total td{{padding:12px 0;font-size:17px;font-weight:800;border-top:2px solid #1d1d1f}}
+  @media print{{body{{background:#fff}}.page{{padding:0}}}}
+</style></head>
+<body><div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:48px">
+    <div>
+      <h1>{settings.company_name or "MIXMATE"}</h1>
+      <div style="font-size:13px;color:#6e6e73;margin-top:6px;line-height:1.6">{company_address}</div>
+      {f'<div style="font-size:13px;color:#6e6e73">KVK: {settings.kvk}</div>' if settings.kvk else ''}
+      {f'<div style="font-size:13px;color:#6e6e73">BTW: {settings.btw_number}</div>' if settings.btw_number else ''}
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6e6e73;margin-bottom:4px">Factuur</div>
+      <div style="font-size:22px;font-weight:800;color:#1d1d1f">{order.invoice_number}</div>
+      <div style="font-size:13px;color:#6e6e73;margin-top:6px">Datum: {(order.invoice_sent_at or datetime.utcnow()).strftime('%d-%m-%Y')}</div>
+      <div style="font-size:13px;color:#6e6e73">Vervaldatum: {due_date.strftime('%d-%m-%Y')}</div>
+    </div>
+  </div>
+
+  <div style="background:#f5f5f7;border-radius:12px;padding:20px 24px;margin-bottom:40px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6e6e73;margin-bottom:10px">Factuuradres</div>
+    <div style="font-weight:600;color:#1d1d1f">{order.customer_company or order.customer_name}</div>
+    {f'<div style="color:#1d1d1f">{order.customer_name}</div>' if order.customer_company else ''}
+    {f'<div style="color:#6e6e73;font-size:14px">{order.address_line1}</div>' if order.address_line1 else ''}
+    {f'<div style="color:#6e6e73;font-size:14px">{customer_city}</div>' if customer_city.strip() else ''}
+    <div style="color:#6e6e73;font-size:14px">{order.country}</div>
+    <div style="color:#6e6e73;font-size:14px;margin-top:4px">{order.customer_email}</div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>Omschrijving</th><th style="text-align:center">Aantal</th>
+      <th style="text-align:right">Prijs excl. BTW</th><th style="text-align:right">Subtotaal</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+    <tfoot>
+      <tr class="total-row"><td colspan="3" style="text-align:right;padding-top:16px">Subtotaal excl. BTW</td><td style="text-align:right;padding-top:16px">€ {total_excl:,.2f}</td></tr>
+      <tr class="total-row"><td colspan="3" style="text-align:right">BTW {settings.btw_rate:.0f}%</td><td style="text-align:right">€ {btw_amount:,.2f}</td></tr>
+      <tr class="grand-total"><td colspan="3" style="text-align:right">Totaal incl. BTW</td><td style="text-align:right">€ {total_incl:,.2f}</td></tr>
+    </tfoot>
+  </table>
+
+  {f'<div style="margin-top:32px;padding:16px 20px;background:#f5f5f7;border-radius:10px;font-size:14px;color:#1d1d1f"><strong>Betalingsinformatie</strong><br>Graag het bedrag van <strong>€ {total_incl:,.2f}</strong> binnen {settings.payment_days} dagen overmaken naar <strong>{settings.iban}</strong> onder vermelding van factuurnummer <strong>{order.invoice_number}</strong>.</div>' if settings.iban else ''}
+  {f'<div style="margin-top:20px;font-size:13px;color:#6e6e73;line-height:1.6">{settings.invoice_note}</div>' if settings.invoice_note else ''}
+
+  <div style="margin-top:48px;padding-top:24px;border-top:1px solid #f0f0f0;font-size:12px;color:#aeaeb2;text-align:center">
+    {settings.company_name or "MIXMATE"}{f" · {settings.email}" if settings.email else ""}{f" · {settings.phone}" if settings.phone else ""}{f" · {settings.website}" if settings.website else ""}
+  </div>
+</div></body></html>"""
+
+import resend as _resend
+
+def _send_invoice_email(order: GlassOrder, html: str, settings: ShopSettings):
+    api_key = os.getenv("RESEND_API_KEY", "")
+    if not api_key:
+        return
+    _resend.api_key = api_key
+    from_email = os.getenv("RESEND_FROM", "facturen@mixmate.nl")
+    try:
+        _resend.Emails.send({
+            "from": from_email,
+            "to": [order.customer_email],
+            "reply_to": settings.email or from_email,
+            "subject": f"Factuur {order.invoice_number} — {settings.company_name or 'MIXMATE'}",
+            "html": html,
+        })
+    except Exception as e:
+        print(f"[INVOICE EMAIL] Verzenden mislukt: {e}", flush=True)
+
+def _send_order_confirmation(order: GlassOrder, items_data: list, db: Session):
+    api_key = os.getenv("RESEND_API_KEY", "")
+    if not api_key:
+        return
+    _resend.api_key = api_key
+    from_email = os.getenv("RESEND_FROM", "bestellingen@mixmate.nl")
+    try:
+        _resend.Emails.send({
+            "from": from_email,
+            "to": [order.customer_email],
+            "subject": "Uw bestelling is ontvangen — MIXMATE",
+            "html": f"""<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px">
+              <h2 style="margin:0 0 8px">Bestelling ontvangen</h2>
+              <p style="color:#6e6e73">Beste {order.customer_name},</p>
+              <p>Bedankt voor uw bestelling. Wij nemen zo snel mogelijk contact met u op om de levering te bevestigen.</p>
+              <p style="color:#6e6e73;font-size:13px">Met vriendelijke groet,<br>MIXMATE</p>
+            </div>""",
+        })
+    except Exception as e:
+        print(f"[ORDER CONFIRM] Verzenden mislukt: {e}", flush=True)
 
 # ── Statische frontend serveren ───────────────────────────────────────────────
 

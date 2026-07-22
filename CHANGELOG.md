@@ -1,3 +1,18 @@
+## [1.3.0] - 2026-07-22
+### Nieuw
+- Webshop module: glazen als fysiek product verkopen via het portaal
+- Admin pagina `/webshop` met drie tabs: Bestellingen, Producten, Instellingen
+- Bestellingen beheren: status bijwerken (nieuw → verwerkt → verzonden → geannuleerd)
+- Factuur genereren en versturen per e-mail via Resend
+- Factuurpreview openen als HTML in nieuw tabblad (print-naar-PDF)
+- Producten aanmaken/bewerken/verwijderen met prijs excl. BTW, eenheid, minimumafname
+- Instelbare bedrijfsgegevens (naam, adres, IBAN, KVK, BTW-nummer)
+- Instelbare BTW-percentage en factuurprefix/nummering
+- Publieke bestelpagina op `/bestellen` (geen inlog vereist)
+- Klantgegevens formulier: naam, bedrijf, e-mail, telefoon, afleveradres, opmerkingen
+- Backend: `ShopSettings`, `GlassProduct`, `GlassOrder`, `GlassOrderItem` tabellen
+- Automatische bevestigingsmail naar klant bij bestelling
+
 ## [1.2.1] - 2026-07-02
 ### Verbeterd
 - Portaal gebruikt `slide_index` van Pi backend — gegarandeerd synchroon met kiosk
