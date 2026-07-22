@@ -283,9 +283,12 @@ function OrderModal({ order: initial, onClose, onRefresh, onDelete }) {
 }
 
 function Bestellingen() {
-  const [orders, setOrders]     = useState(null)
-  const [selected, setSelected] = useState(null)
-  const [filter, setFilter]     = useState('alle')
+  const [orders, setOrders]       = useState(null)
+  const [selected, setSelected]   = useState(null)
+  const [filter, setFilter]       = useState('alle')
+  const [selectMode, setSelectMode] = useState(false)
+  const [checked, setChecked]     = useState(new Set())
+  const [deleting, setDeleting]   = useState(false)
 
   const load = useCallback(async () => {
     try { setOrders(await api.getShopOrders()) } catch {}
@@ -295,9 +298,30 @@ function Bestellingen() {
 
   const filtered = orders?.filter(o => filter === 'alle' || o.status === filter) ?? []
 
+  function toggleCheck(id) {
+    setChecked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+
+  function toggleAll() {
+    if (checked.size === filtered.length) setChecked(new Set())
+    else setChecked(new Set(filtered.map(o => o.id)))
+  }
+
+  async function deleteSelected() {
+    if (!confirm(`${checked.size} bestelling(en) verwijderen?`)) return
+    setDeleting(true)
+    for (const id of checked) {
+      try { await api.deleteOrder(id) } catch {}
+    }
+    setChecked(new Set())
+    setSelectMode(false)
+    setDeleting(false)
+    load()
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
         {[['alle', 'Alle'], ...Object.entries(STATUS_LABELS).map(([k, v]) => [k, v.label])].map(([key, label]) => (
           <button key={key} onClick={() => setFilter(key)} style={{
             padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: filter === key ? 600 : 400,
@@ -307,7 +331,28 @@ function Bestellingen() {
             cursor: 'pointer', fontFamily: 'inherit',
           }}>{label}</button>
         ))}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {selectMode && checked.size > 0 && (
+            <button onClick={deleteSelected} disabled={deleting} style={{
+              padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+              border: '1.5px solid #ff3b30', background: '#ff3b30', color: '#fff',
+              cursor: 'pointer', fontFamily: 'inherit', opacity: deleting ? .6 : 1,
+            }}>{deleting ? 'Verwijderen…' : `${checked.size} verwijderen`}</button>
+          )}
+          <button onClick={() => { setSelectMode(s => !s); setChecked(new Set()) }} style={{
+            padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: 400,
+            border: '1.5px solid #e5e5ea', background: selectMode ? '#f2f2f7' : '#fff',
+            color: '#6e6e73', cursor: 'pointer', fontFamily: 'inherit',
+          }}>{selectMode ? 'Annuleren' : 'Selecteren'}</button>
+        </div>
       </div>
+
+      {selectMode && filtered.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '0 4px' }}>
+          <input type="checkbox" checked={checked.size === filtered.length} onChange={toggleAll} style={{ width: 16, height: 16, cursor: 'pointer' }} />
+          <span style={{ fontSize: 13, color: '#6e6e73' }}>Alles selecteren ({filtered.length})</span>
+        </div>
+      )}
 
       <Card>
         {orders === null ? (
@@ -315,7 +360,16 @@ function Bestellingen() {
         ) : filtered.length === 0 ? (
           <div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen bestellingen.</div>
         ) : filtered.map(o => (
-          <OrderRow key={o.id} order={o} onOpen={setSelected} />
+          <div key={o.id} style={{ display: 'flex', alignItems: 'center' }}>
+            {selectMode && (
+              <div style={{ padding: '0 0 0 16px' }}>
+                <input type="checkbox" checked={checked.has(o.id)} onChange={() => toggleCheck(o.id)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
+              </div>
+            )}
+            <div style={{ flex: 1 }}>
+              <OrderRow order={o} onOpen={selectMode ? null : setSelected} />
+            </div>
+          </div>
         ))}
       </Card>
 
