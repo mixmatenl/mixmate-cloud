@@ -145,8 +145,10 @@ export const api = {
   getShopOrders:      (status)     => req('GET',   `/api/shop/orders${status ? `?status=${status}` : ''}`),
   getShopOrder:       (id)         => req('GET',   `/api/shop/orders/${id}`),
   updateOrderStatus:  (id, status) => req('PATCH', `/api/shop/orders/${id}/status`, { status }),
-  sendInvoice:        (id)         => req('POST',  `/api/shop/orders/${id}/send-invoice`),
+  sendInvoice:        (id)         => req('POST',  `/api/shop/orders/${id}/invoice`),
   getInvoiceHtml:     (id)         => req('GET',   `/api/shop/orders/${id}/invoice`),
+  setRefund:          (id, amount, reason) => req('POST', `/api/shop/orders/${id}/refund`, { refund_amount: amount, refund_reason: reason }),
+  getShopReport:      (year, month) => req('GET',  `/api/shop/report?year=${year}&month=${month}`),
 
   // Webshop – publiek bestellen (geen auth)
   placeShopOrder: (data) => fetch((import.meta.env.VITE_API_URL || '') + '/api/shop/orders', {

@@ -137,11 +137,11 @@ class GlassProduct(SQLModel, table=True):
     name: str = ""
     description: str = ""
     price_excl: float = 0.0
+    purchase_price: float = 0.0
     unit: str = "stuk"
     min_order: int = 1
     image_url: str = ""
     active: bool = True
-    sort_order: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class GlassOrder(SQLModel, table=True):
@@ -159,6 +159,9 @@ class GlassOrder(SQLModel, table=True):
     invoice_sent_at: Optional[datetime] = None
     btw_rate_snapshot: float = 21.0
     status: str = "nieuw"              # nieuw | bevestigd | verzonden | afgeleverd | geannuleerd
+    refund_amount: float = 0.0
+    refund_reason: str = ""
+    refund_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class GlassOrderItem(SQLModel, table=True):
@@ -179,6 +182,10 @@ def create_tables():
         "ALTER TABLE supportticket ADD COLUMN ticket_type VARCHAR NOT NULL DEFAULT 'service'",
         "ALTER TABLE customer ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE customer ADD COLUMN newsletter_subscribed BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE glassproduct ADD COLUMN purchase_price REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE glassorder ADD COLUMN refund_amount REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE glassorder ADD COLUMN refund_reason VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE glassorder ADD COLUMN refund_at TIMESTAMP",
     ]
     for sql in migrations:
         try:
@@ -1583,12 +1590,13 @@ def save_shop_settings(data: dict, db: Session = Depends(get_session), _=Depends
 
 @app.get("/api/shop/products/public")
 def get_products_public(db: Session = Depends(get_session)):
-    products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.sort_order, GlassProduct.id)).all()
-    return products
+    products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.id)).all()
+    # Strip inkoopprijs uit publieke response
+    return [{"id": p.id, "name": p.name, "description": p.description, "price_excl": p.price_excl, "unit": p.unit, "min_order": p.min_order, "active": p.active} for p in products]
 
 @app.get("/api/shop/products")
 def get_products(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
-    return db.exec(select(GlassProduct).order_by(GlassProduct.sort_order, GlassProduct.id)).all()
+    return db.exec(select(GlassProduct).order_by(GlassProduct.id)).all()
 
 @app.post("/api/shop/products")
 def create_product(data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
@@ -1596,11 +1604,11 @@ def create_product(data: dict, db: Session = Depends(get_session), _=Depends(ver
         name=data.get("name",""),
         description=data.get("description",""),
         price_excl=float(data.get("price_excl", 0)),
+        purchase_price=float(data.get("purchase_price", 0)),
         unit=data.get("unit","stuk"),
         min_order=int(data.get("min_order", 1)),
         image_url=data.get("image_url",""),
         active=data.get("active", True),
-        sort_order=int(data.get("sort_order", 0)),
     )
     db.add(p); db.commit(); db.refresh(p)
     return p
@@ -1609,7 +1617,7 @@ def create_product(data: dict, db: Session = Depends(get_session), _=Depends(ver
 def update_product(product_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     p = db.get(GlassProduct, product_id)
     if not p: raise HTTPException(404, "Product niet gevonden")
-    for k in ("name","description","price_excl","unit","min_order","image_url","active","sort_order"):
+    for k in ("name","description","price_excl","purchase_price","unit","min_order","image_url","active"):
         if k in data:
             setattr(p, k, data[k])
     db.add(p); db.commit(); db.refresh(p)
@@ -1687,6 +1695,75 @@ def update_order_status(order_id: int, data: dict, db: Session = Depends(get_ses
     o.status = data.get("status", o.status)
     db.add(o); db.commit(); db.refresh(o)
     return {"ok": True}
+
+@app.post("/api/shop/orders/{order_id}/refund")
+def set_refund(order_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    o = db.get(GlassOrder, order_id)
+    if not o: raise HTTPException(404, "Bestelling niet gevonden")
+    o.refund_amount = float(data.get("refund_amount", 0))
+    o.refund_reason = data.get("refund_reason", "")
+    o.refund_at = datetime.utcnow() if o.refund_amount > 0 else None
+    db.add(o); db.commit(); db.refresh(o)
+    return {"ok": True}
+
+@app.get("/api/shop/report")
+def get_shop_report(year: int, month: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    from calendar import monthrange
+    _, last_day = monthrange(year, month)
+    start = datetime(year, month, 1)
+    end   = datetime(year, month, last_day, 23, 59, 59)
+
+    orders = db.exec(
+        select(GlassOrder)
+        .where(GlassOrder.created_at >= start)
+        .where(GlassOrder.created_at <= end)
+        .where(GlassOrder.status != "geannuleerd")
+        .order_by(GlassOrder.created_at)
+    ).all()
+
+    rows = []
+    for o in orders:
+        items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == o.id)).all()
+        total_excl = sum(i.price_excl * i.quantity for i in items)
+        btw_amount = total_excl * o.btw_rate_snapshot / 100
+        total_incl = total_excl + btw_amount
+        refund = o.refund_amount or 0.0
+        rows.append({
+            "id": o.id,
+            "date": o.created_at.strftime("%Y-%m-%d"),
+            "invoice_number": o.invoice_number,
+            "customer": o.customer_company or o.customer_name,
+            "status": o.status,
+            "total_excl": round(total_excl, 2),
+            "btw_rate": o.btw_rate_snapshot,
+            "btw_amount": round(btw_amount, 2),
+            "total_incl": round(total_incl, 2),
+            "refund_amount": round(refund, 2),
+            "refund_reason": o.refund_reason or "",
+            "net_incl": round(total_incl - refund, 2),
+        })
+
+    total_excl   = round(sum(r["total_excl"] for r in rows), 2)
+    total_btw    = round(sum(r["btw_amount"] for r in rows), 2)
+    total_incl   = round(sum(r["total_incl"] for r in rows), 2)
+    total_refund = round(sum(r["refund_amount"] for r in rows), 2)
+    net_incl     = round(total_incl - total_refund, 2)
+    net_excl     = round(total_excl - round(sum(r["refund_amount"] / (1 + r["btw_rate"] / 100) for r in rows), 2), 2)
+    net_btw      = round(net_incl - net_excl, 2)
+
+    return {
+        "year": year, "month": month,
+        "orders": rows,
+        "totals": {
+            "total_excl": total_excl,
+            "total_btw": total_btw,
+            "total_incl": total_incl,
+            "total_refund": total_refund,
+            "net_incl": net_incl,
+            "net_excl": net_excl,
+            "net_btw": net_btw,
+        }
+    }
 
 @app.post("/api/shop/orders/{order_id}/invoice")
 def send_invoice(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):

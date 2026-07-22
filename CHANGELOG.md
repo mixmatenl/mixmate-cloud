@@ -1,3 +1,10 @@
+## [1.3.1] - 2026-07-22
+### Verbeterd
+- Inkoopprijs veld toegevoegd aan producten (alleen zichtbaar voor beheerders)
+- Volgorde-veld verwijderd uit producten
+- Terugbetaling registreren per bestelling (bedrag + reden), wordt meegenomen in rapportage
+- Maandrapportage tab: omzet excl./incl. BTW, terugbetalingen, netto BTW-afdracht, print/PDF
+
 ## [1.3.0] - 2026-07-22
 ### Nieuw
 - Webshop module: glazen als fysiek product verkopen via het portaal

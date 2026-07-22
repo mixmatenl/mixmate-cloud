@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { api } from '../api.js'
 
-const TABS = ['Bestellingen', 'Producten', 'Instellingen']
+const TABS = ['Bestellingen', 'Producten', 'Rapportage', 'Instellingen']
 
 const STATUS_LABELS = {
   nieuw:       { label: 'Nieuw',       color: '#007aff', bg: '#e8f4ff' },
@@ -74,9 +74,16 @@ function OrderModal({ order: initial, onClose, onRefresh }) {
   const [savingStatus, setSavingStatus] = useState(false)
   const [invoiceHtml, setInvoiceHtml]   = useState(null)
 
+  // Terugbetaling
+  const [showRefund, setShowRefund]   = useState(false)
+  const [refundAmt, setRefundAmt]     = useState(initial.refund_amount || '')
+  const [refundReason, setRefundReason] = useState(initial.refund_reason || '')
+  const [savingRefund, setSavingRefund] = useState(false)
+
   const total_excl = order.items?.reduce((s, i) => s + i.price_excl * i.quantity, 0) ?? 0
   const btw = total_excl * (order.btw_rate_snapshot / 100)
   const total_incl = total_excl + btw
+  const refund = order.refund_amount || 0
 
   async function sendInvoice() {
     setSending(true)
@@ -96,6 +103,17 @@ function OrderModal({ order: initial, onClose, onRefresh }) {
     setSavingStatus(false)
   }
 
+  async function saveRefund() {
+    setSavingRefund(true)
+    try {
+      await api.setRefund(order.id, parseFloat(refundAmt) || 0, refundReason)
+      setOrder(o => ({ ...o, refund_amount: parseFloat(refundAmt) || 0, refund_reason: refundReason }))
+      setShowRefund(false)
+      onRefresh()
+    } catch (e) { alert(e.message) }
+    setSavingRefund(false)
+  }
+
   function openInvoicePreview() {
     const w = window.open('', '_blank')
     w.document.write(invoiceHtml || '<p>Laad eerst de factuur</p>')
@@ -103,7 +121,7 @@ function OrderModal({ order: initial, onClose, onRefresh }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(4px)', padding: '0 0 0 0' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
       <div style={{ background: '#f2f2f7', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 640, maxHeight: '90vh', overflow: 'auto', padding: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
@@ -154,7 +172,7 @@ function OrderModal({ order: initial, onClose, onRefresh }) {
           </Card>
         </div>
 
-        {/* Producten */}
+        {/* Producten + bedragen */}
         <div style={{ marginBottom: 16 }}>
           <SectionLabel>Producten</SectionLabel>
           <Card>
@@ -171,11 +189,53 @@ function OrderModal({ order: initial, onClose, onRefresh }) {
               <span style={{ fontSize: 13, color: '#6e6e73' }}>BTW {order.btw_rate_snapshot}%</span>
               <span style={{ fontSize: 13, color: '#6e6e73' }}>€ {btw.toFixed(2).replace('.', ',')}</span>
             </div>
-            <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ padding: '10px 16px', borderBottom: refund > 0 ? '1px solid #f2f2f7' : 'none', display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>Totaal incl. BTW</span>
               <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>€ {total_incl.toFixed(2).replace('.', ',')}</span>
             </div>
+            {refund > 0 && (
+              <>
+                <div style={{ padding: '10px 16px', borderBottom: '1px solid #f2f2f7', display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, color: '#ff3b30' }}>Terugbetaald{order.refund_reason ? ` – ${order.refund_reason}` : ''}</span>
+                  <span style={{ fontSize: 13, color: '#ff3b30', fontWeight: 600 }}>− € {refund.toFixed(2).replace('.', ',')}</span>
+                </div>
+                <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>Netto ontvangen</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#34c759' }}>€ {(total_incl - refund).toFixed(2).replace('.', ',')}</span>
+                </div>
+              </>
+            )}
           </Card>
+        </div>
+
+        {/* Terugbetaling */}
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={() => setShowRefund(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ff3b30', fontFamily: 'inherit', padding: '0 4px', fontWeight: 500 }}>
+            {showRefund ? '↑ Verbergen' : (refund > 0 ? `✎ Terugbetaling aanpassen (€ ${refund.toFixed(2).replace('.', ',')})` : '+ Terugbetaling registreren')}
+          </button>
+          {showRefund && (
+            <Card style={{ padding: 16, marginTop: 8 }}>
+              <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 12 }}>
+                Vul het bedrag in dat terugbetaald is aan de klant. Dit wordt meegenomen in de maandrapportage.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Bedrag (€)</div>
+                  <input type="number" min="0" step="0.01" value={refundAmt} onChange={e => setRefundAmt(e.target.value)} placeholder="0,00" style={inp} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Reden</div>
+                  <input value={refundReason} onChange={e => setRefundReason(e.target.value)} placeholder="Bijv. beschadigde levering" style={inp} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={saveRefund} disabled={savingRefund} style={{ background: '#ff3b30', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 600, cursor: savingRefund ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: savingRefund ? .7 : 1 }}>
+                  {savingRefund ? 'Opslaan…' : 'Opslaan'}
+                </button>
+                <button onClick={() => setShowRefund(false)} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '9px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Annuleren</button>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* Factuur acties */}
@@ -224,7 +284,6 @@ function Bestellingen() {
 
   return (
     <div>
-      {/* Filter */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
         {[['alle', 'Alle'], ...Object.entries(STATUS_LABELS).map(([k, v]) => [k, v.label])].map(([key, label]) => (
           <button key={key} onClick={() => setFilter(key)} style={{
@@ -265,10 +324,10 @@ function ProductForm({ product, onSave, onCancel }) {
     name: product?.name ?? '',
     description: product?.description ?? '',
     price_excl: product?.price_excl ?? '',
+    purchase_price: product?.purchase_price ?? '',
     unit: product?.unit ?? 'stuk',
     min_order: product?.min_order ?? 1,
     active: product?.active ?? true,
-    sort_order: product?.sort_order ?? 0,
   })
   const [saving, setSaving] = useState(false)
 
@@ -277,8 +336,14 @@ function ProductForm({ product, onSave, onCancel }) {
   async function submit(e) {
     e.preventDefault()
     setSaving(true)
-    try { await onSave({ ...form, price_excl: parseFloat(form.price_excl) || 0, min_order: parseInt(form.min_order) || 1 }) }
-    catch (e) { alert(e.message) }
+    try {
+      await onSave({
+        ...form,
+        price_excl: parseFloat(form.price_excl) || 0,
+        purchase_price: parseFloat(form.purchase_price) || 0,
+        min_order: parseInt(form.min_order) || 1,
+      })
+    } catch (e) { alert(e.message) }
     setSaving(false)
   }
 
@@ -292,22 +357,22 @@ function ProductForm({ product, onSave, onCancel }) {
         <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Omschrijving" rows={3} style={{ ...inp, resize: 'vertical' }} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
-            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Prijs excl. BTW (€)</div>
+            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Verkoopprijs excl. BTW (€)</div>
             <input required type="number" min="0" step="0.01" value={form.price_excl} onChange={e => set('price_excl', e.target.value)} placeholder="0,00" style={inp} />
           </div>
           <div>
-            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Eenheid</div>
-            <input value={form.unit} onChange={e => set('unit', e.target.value)} placeholder="stuk, doos, set…" style={inp} />
+            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Inkoopprijs excl. BTW (€)</div>
+            <input type="number" min="0" step="0.01" value={form.purchase_price} onChange={e => set('purchase_price', e.target.value)} placeholder="0,00" style={inp} />
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
-            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Min. afname</div>
-            <input type="number" min="1" value={form.min_order} onChange={e => set('min_order', e.target.value)} style={inp} />
+            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Eenheid</div>
+            <input value={form.unit} onChange={e => set('unit', e.target.value)} placeholder="stuk, doos, set…" style={inp} />
           </div>
           <div>
-            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Volgorde</div>
-            <input type="number" value={form.sort_order} onChange={e => set('sort_order', e.target.value)} style={inp} />
+            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Min. afname</div>
+            <input type="number" min="1" value={form.min_order} onChange={e => set('min_order', e.target.value)} style={inp} />
           </div>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14, color: '#1d1d1f' }}>
@@ -367,7 +432,7 @@ function Producten() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: p.active ? '#1d1d1f' : '#aeaeb2' }}>{p.name}</div>
               <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>
-                € {p.price_excl.toFixed(2).replace('.', ',')} excl. BTW · {p.unit}
+                Verkoop € {p.price_excl.toFixed(2).replace('.', ',')} · Inkoop € {(p.purchase_price || 0).toFixed(2).replace('.', ',')} · {p.unit}
                 {p.min_order > 1 && ` · min. ${p.min_order}`}
                 {!p.active && ' · verborgen'}
               </div>
@@ -377,6 +442,145 @@ function Producten() {
           </div>
         ))}
       </Card>
+    </div>
+  )
+}
+
+// ── Rapportage ────────────────────────────────────────────────────────────────
+
+const MAANDEN = ['Januari','Februari','Maart','April','Mei','Juni','Juli','Augustus','September','Oktober','November','December']
+
+function Rapportage() {
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [report, setReport] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  async function load() {
+    setLoading(true); setReport(null)
+    try { setReport(await api.getShopReport(year, month)) } catch (e) { alert(e.message) }
+    setLoading(false)
+  }
+
+  function printReport() {
+    window.print()
+  }
+
+  const t = report?.totals
+
+  return (
+    <div>
+      {/* Periode selectie */}
+      <Card style={{ padding: 16, marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Jaar</div>
+            <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={{ ...inp, width: 'auto' }}>
+              {[now.getFullYear() - 1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Maand</div>
+            <select value={month} onChange={e => setMonth(parseInt(e.target.value))} style={{ ...inp, width: 'auto' }}>
+              {MAANDEN.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+            </select>
+          </div>
+          <button onClick={load} disabled={loading} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: loading ? .7 : 1 }}>
+            {loading ? 'Laden…' : 'Rapport ophalen'}
+          </button>
+          {report && (
+            <button onClick={printReport} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Afdrukken / PDF
+            </button>
+          )}
+        </div>
+      </Card>
+
+      {report && (
+        <>
+          {/* Samenvatting */}
+          <div style={{ marginBottom: 20 }}>
+            <SectionLabel>Samenvatting — {MAANDEN[month - 1]} {year}</SectionLabel>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+              {[
+                ['Omzet excl. BTW', `€ ${t.total_excl.toFixed(2).replace('.', ',')}`, '#1d1d1f'],
+                ['BTW af te dragen', `€ ${t.total_btw.toFixed(2).replace('.', ',')}`, '#ff9500'],
+                ['Omzet incl. BTW', `€ ${t.total_incl.toFixed(2).replace('.', ',')}`, '#007aff'],
+                ['Terugbetalingen', `− € ${t.total_refund.toFixed(2).replace('.', ',')}`, '#ff3b30'],
+                ['Netto excl. BTW', `€ ${t.net_excl.toFixed(2).replace('.', ',')}`, '#34c759'],
+                ['Netto BTW', `€ ${t.net_btw.toFixed(2).replace('.', ',')}`, '#5856d6'],
+                ['Netto incl. BTW', `€ ${t.net_incl.toFixed(2).replace('.', ',')}`, '#34c759'],
+              ].map(([label, value, color]) => (
+                <Card key={label} style={{ padding: '14px 16px' }}>
+                  <div style={{ fontSize: 11, color: '#aeaeb2', fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3, marginBottom: 6 }}>{label}</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color }}>{value}</div>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* BTW toelichting */}
+          <Card style={{ padding: '12px 16px', marginBottom: 20, background: '#fff8ee', borderRadius: 12 }}>
+            <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.6 }}>
+              <strong style={{ color: '#ff9500' }}>Belastingaangifte:</strong>{' '}
+              Netto omzet excl. BTW: <strong>€ {t.net_excl.toFixed(2).replace('.', ',')}</strong> — Netto BTW af te dragen: <strong>€ {t.net_btw.toFixed(2).replace('.', ',')}</strong>
+              {t.total_refund > 0 && <> (na aftrek van € {t.total_refund.toFixed(2).replace('.', ',')} aan terugbetalingen)</>}.
+            </div>
+          </Card>
+
+          {/* Bestellingenlijst */}
+          <div style={{ marginBottom: 20 }}>
+            <SectionLabel>Bestellingen ({report.orders.length})</SectionLabel>
+            {report.orders.length === 0 ? (
+              <Card><div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen bestellingen in deze periode.</div></Card>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.05)' }}>
+                  <thead>
+                    <tr style={{ background: '#f2f2f7' }}>
+                      {['Datum','Factuur','Klant','Status','Excl. BTW','BTW','Incl. BTW','Terugbet.','Netto incl.'].map(h => (
+                        <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.orders.map((r, i) => (
+                      <tr key={r.id} style={{ borderTop: '1px solid #f2f2f7', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                        <td style={{ padding: '10px 12px', color: '#1d1d1f', whiteSpace: 'nowrap' }}>{new Date(r.date).toLocaleDateString('nl-NL')}</td>
+                        <td style={{ padding: '10px 12px', color: '#aeaeb2', whiteSpace: 'nowrap' }}>{r.invoice_number || '—'}</td>
+                        <td style={{ padding: '10px 12px', color: '#1d1d1f' }}>{r.customer}</td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_LABELS[r.status]?.color, background: STATUS_LABELS[r.status]?.bg, borderRadius: 6, padding: '2px 8px' }}>
+                            {STATUS_LABELS[r.status]?.label || r.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 12px', color: '#1d1d1f', whiteSpace: 'nowrap' }}>€ {r.total_excl.toFixed(2).replace('.', ',')}</td>
+                        <td style={{ padding: '10px 12px', color: '#6e6e73', whiteSpace: 'nowrap' }}>€ {r.btw_amount.toFixed(2).replace('.', ',')}</td>
+                        <td style={{ padding: '10px 12px', fontWeight: 600, color: '#1d1d1f', whiteSpace: 'nowrap' }}>€ {r.total_incl.toFixed(2).replace('.', ',')}</td>
+                        <td style={{ padding: '10px 12px', color: r.refund_amount > 0 ? '#ff3b30' : '#aeaeb2', whiteSpace: 'nowrap' }}>
+                          {r.refund_amount > 0 ? `− € ${r.refund_amount.toFixed(2).replace('.', ',')}` : '—'}
+                        </td>
+                        <td style={{ padding: '10px 12px', fontWeight: 700, color: '#34c759', whiteSpace: 'nowrap' }}>€ {r.net_incl.toFixed(2).replace('.', ',')}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: '2px solid #1d1d1f', background: '#f2f2f7' }}>
+                      <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, color: '#1d1d1f' }}>Totaal</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#1d1d1f', whiteSpace: 'nowrap' }}>€ {t.total_excl.toFixed(2).replace('.', ',')}</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#6e6e73', whiteSpace: 'nowrap' }}>€ {t.total_btw.toFixed(2).replace('.', ',')}</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#1d1d1f', whiteSpace: 'nowrap' }}>€ {t.total_incl.toFixed(2).replace('.', ',')}</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#ff3b30', whiteSpace: 'nowrap' }}>
+                        {t.total_refund > 0 ? `− € ${t.total_refund.toFixed(2).replace('.', ',')}` : '—'}
+                      </td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#34c759', whiteSpace: 'nowrap' }}>€ {t.net_incl.toFixed(2).replace('.', ',')}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -476,8 +680,7 @@ export default function Webshop() {
   const [tab, setTab] = useState('Bestellingen')
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px' }}>
-      {/* Header */}
+    <div style={{ maxWidth: 820, margin: '0 auto', padding: '24px' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1d1d1f', margin: '0 0 4px' }}>Webshop</h1>
         <p style={{ fontSize: 14, color: '#aeaeb2', margin: 0 }}>
@@ -485,7 +688,6 @@ export default function Webshop() {
         </p>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 24, background: '#fff', borderRadius: 12, padding: 4, boxShadow: '0 1px 3px rgba(0,0,0,.05)' }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
@@ -499,7 +701,15 @@ export default function Webshop() {
 
       {tab === 'Bestellingen' && <Bestellingen />}
       {tab === 'Producten'    && <Producten />}
+      {tab === 'Rapportage'   && <Rapportage />}
       {tab === 'Instellingen' && <Instellingen />}
+
+      <style>{`
+        @media print {
+          body > * { display: none !important; }
+          #root > * > * > * > div { display: none !important; }
+        }
+      `}</style>
     </div>
   )
 }
