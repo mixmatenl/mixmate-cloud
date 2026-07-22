@@ -1862,14 +1862,47 @@ async def _send_status_email(order: GlassOrder, status: str):
     await _resend(to=order.customer_email, subject=subject, html=_email_base(content))
 
 @app.patch("/api/shop/orders/{order_id}/payment")
-def update_payment_status(order_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+async def update_payment_status(order_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     o = db.get(GlassOrder, order_id)
     if not o: raise HTTPException(404, "Bestelling niet gevonden")
+    old_ps = o.payment_status
     ps = data.get("payment_status", o.payment_status)
     o.payment_status = ps
     o.paid_at = datetime.utcnow() if ps == "betaald" and not o.paid_at else (None if ps != "betaald" else o.paid_at)
     db.add(o); db.commit(); db.refresh(o)
+    if ps == "betaald" and old_ps != "betaald" and o.customer_email:
+        asyncio.create_task(_send_payment_confirmation(o))
     return {"ok": True, "payment_status": o.payment_status, "paid_at": o.paid_at}
+
+async def _send_payment_confirmation(order: GlassOrder):
+    paid_date = order.paid_at.strftime("%-d %B %Y") if order.paid_at else ""
+    content = f"""
+      <div style="width:48px;height:48px;border-radius:50%;background:#edfaf1;text-align:center;line-height:48px;margin:0 0 20px;font-size:22px">✓</div>
+      <h1 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;letter-spacing:-0.3px">Betaling ontvangen</h1>
+      <p style="margin:0 0 28px;font-size:14px;color:#6e6e73">MIXMATE Glazenwinkel</p>
+
+      <p style="margin:0 0 12px;font-size:15px;color:#1d1d1f">Beste {order.customer_name},</p>
+      <p style="margin:0 0 24px;font-size:15px;color:#3a3a3c;line-height:1.6">
+        Wij hebben uw betaling succesvol ontvangen en verwerkt. Hartelijk dank!
+      </p>
+
+      <div style="background:#edfaf1;border-radius:10px;padding:18px 20px;margin:0 0 28px">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          {"<tr><td style='font-size:13px;color:#6e6e73;padding:3px 0'>Factuurnummer</td><td style='font-size:14px;font-weight:600;color:#1d1d1f;text-align:right'>" + order.invoice_number + "</td></tr>" if order.invoice_number else ""}
+          <tr><td style="font-size:13px;color:#6e6e73;padding:3px 0">Betaaldatum</td><td style="font-size:14px;font-weight:600;color:#1d1d1f;text-align:right">{paid_date}</td></tr>
+          <tr><td style="font-size:13px;color:#6e6e73;padding:3px 0">Status</td><td style="font-size:14px;font-weight:600;color:#34c759;text-align:right">Betaald</td></tr>
+        </table>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #f2f2f7;margin:24px 0">
+      <p style="margin:0;font-size:14px;color:#6e6e73;line-height:1.6">Met vriendelijke groet,<br>
+      <strong style="color:#1d1d1f">Het MIXMATE team</strong></p>
+    """
+    await _resend(
+        to=order.customer_email,
+        subject="Betaling ontvangen — MIXMATE",
+        html=_email_base(content),
+    )
 
 @app.get("/api/shop/my-orders")
 def get_my_orders(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
