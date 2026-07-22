@@ -652,8 +652,35 @@ function Rapportage() {
 
 // ── Instellingen ──────────────────────────────────────────────────────────────
 
+function SettingsSection({ label, children }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <SectionLabel>{label}</SectionLabel>
+      <Card style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {children}
+      </Card>
+    </div>
+  )
+}
+
+function SettingsField({ label, name, type = 'text', placeholder, value, onChange }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>{label}</div>
+      <input
+        name={name}
+        type={type}
+        value={value ?? ''}
+        onChange={onChange}
+        placeholder={placeholder}
+        style={inp}
+      />
+    </div>
+  )
+}
+
 function Instellingen() {
-  const [form, setForm]   = useState(null)
+  const [form, setForm]     = useState(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
 
@@ -661,7 +688,10 @@ function Instellingen() {
     api.getShopSettings().then(setForm).catch(() => {})
   }, [])
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  function handleChange(e) {
+    const { name, value, type } = e.target
+    setForm(f => ({ ...f, [name]: type === 'number' ? parseFloat(value) : value }))
+  }
 
   async function submit(e) {
     e.preventDefault()
@@ -676,56 +706,40 @@ function Instellingen() {
 
   if (!form) return <div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Laden…</div>
 
-  const Section = ({ label, children }) => (
-    <div style={{ marginBottom: 28 }}>
-      <SectionLabel>{label}</SectionLabel>
-      <Card style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {children}
-      </Card>
-    </div>
-  )
-
-  const Field = ({ label, k, type = 'text', placeholder }) => (
-    <div>
-      <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>{label}</div>
-      <input type={type} value={form[k] ?? ''} onChange={e => set(k, type === 'number' ? parseFloat(e.target.value) : e.target.value)} placeholder={placeholder} style={inp} />
-    </div>
-  )
-
   return (
     <form onSubmit={submit}>
-      <Section label="Bedrijfsgegevens">
-        <Field label="Bedrijfsnaam" k="company_name" placeholder="MIXMATE B.V." />
-        <Field label="Adres regel 1" k="address_line1" placeholder="Straatnaam 1" />
-        <Field label="Adres regel 2" k="address_line2" placeholder="Verdieping, unit…" />
+      <SettingsSection label="Bedrijfsgegevens">
+        <SettingsField label="Bedrijfsnaam"   name="company_name"  value={form.company_name}  onChange={handleChange} placeholder="MIXMATE B.V." />
+        <SettingsField label="Adres regel 1"  name="address_line1" value={form.address_line1} onChange={handleChange} placeholder="Straatnaam 1" />
+        <SettingsField label="Adres regel 2"  name="address_line2" value={form.address_line2} onChange={handleChange} placeholder="Verdieping, unit…" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
-          <Field label="Postcode" k="postal_code" placeholder="1234 AB" />
-          <Field label="Stad" k="city" placeholder="Amsterdam" />
+          <SettingsField label="Postcode" name="postal_code" value={form.postal_code} onChange={handleChange} placeholder="1234 AB" />
+          <SettingsField label="Stad"     name="city"        value={form.city}        onChange={handleChange} placeholder="Amsterdam" />
         </div>
-        <Field label="Land" k="country" placeholder="Nederland" />
+        <SettingsField label="Land"         name="country"    value={form.country}    onChange={handleChange} placeholder="Nederland" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="KVK-nummer" k="kvk" placeholder="12345678" />
-          <Field label="BTW-nummer" k="btw_number" placeholder="NL123456789B01" />
+          <SettingsField label="KVK-nummer"  name="kvk"        value={form.kvk}        onChange={handleChange} placeholder="12345678" />
+          <SettingsField label="BTW-nummer"  name="btw_number" value={form.btw_number} onChange={handleChange} placeholder="NL123456789B01" />
         </div>
-        <Field label="IBAN" k="iban" placeholder="NL00 BANK 0000 0000 00" />
+        <SettingsField label="IBAN"          name="iban"       value={form.iban}       onChange={handleChange} placeholder="NL00 BANK 0000 0000 00" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="E-mailadres" k="email" placeholder="info@bedrijf.nl" />
-          <Field label="Telefoonnummer" k="phone" placeholder="+31 6 00000000" />
+          <SettingsField label="E-mailadres"    name="email" value={form.email} onChange={handleChange} placeholder="info@bedrijf.nl" />
+          <SettingsField label="Telefoonnummer" name="phone" value={form.phone} onChange={handleChange} placeholder="+31 6 00000000" />
         </div>
-        <Field label="Website" k="website" placeholder="www.mixmate.nl" />
-      </Section>
+        <SettingsField label="Website" name="website" value={form.website} onChange={handleChange} placeholder="www.mixmate.nl" />
+      </SettingsSection>
 
-      <Section label="Factuurinstellingen">
+      <SettingsSection label="Factuurinstellingen">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="BTW-percentage (%)" k="btw_rate" type="number" placeholder="21" />
-          <Field label="Betaaltermijn (dagen)" k="payment_days" type="number" placeholder="14" />
+          <SettingsField label="BTW-percentage (%)"    name="btw_rate"     type="number" value={form.btw_rate}     onChange={handleChange} placeholder="21" />
+          <SettingsField label="Betaaltermijn (dagen)" name="payment_days" type="number" value={form.payment_days} onChange={handleChange} placeholder="14" />
         </div>
-        <Field label="Factuurprefix" k="invoice_prefix" placeholder="INV" />
+        <SettingsField label="Factuurprefix" name="invoice_prefix" value={form.invoice_prefix} onChange={handleChange} placeholder="INV" />
         <div>
           <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Voetnoot factuur</div>
-          <textarea value={form.invoice_note ?? ''} onChange={e => set('invoice_note', e.target.value)} placeholder="Bijv. betalingsvoorwaarden, bedankje…" rows={3} style={{ ...inp, resize: 'vertical' }} />
+          <textarea name="invoice_note" value={form.invoice_note ?? ''} onChange={handleChange} placeholder="Bijv. betalingsvoorwaarden, bedankje…" rows={3} style={{ ...inp, resize: 'vertical' }} />
         </div>
-      </Section>
+      </SettingsSection>
 
       <button type="submit" disabled={saving} style={{
         background: saved ? '#34c759' : '#1d1d1f', color: '#fff', border: 'none',
