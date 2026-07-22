@@ -189,6 +189,7 @@ def create_tables():
         "ALTER TABLE customer ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE customer ADD COLUMN newsletter_subscribed BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE glassproduct ADD COLUMN purchase_price REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE glassproduct ALTER COLUMN sort_order SET DEFAULT 0",
         "ALTER TABLE glassorder ADD COLUMN refund_amount REAL NOT NULL DEFAULT 0.0",
         "ALTER TABLE glassorder ADD COLUMN refund_reason VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE glassorder ADD COLUMN refund_at TIMESTAMP",
