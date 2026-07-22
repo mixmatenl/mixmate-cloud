@@ -1747,21 +1747,69 @@ _STATUS_EMAIL_BODY = {
     ),
 }
 
+def _email_base(content: str) -> str:
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:40px 0">
+  <tr><td align="center">
+    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto">
+
+      <!-- Header -->
+      <tr><td style="background:#1d1d1f;border-radius:16px 16px 0 0;padding:28px 36px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.5px">MIXMATE</span>
+          <span style="color:#6e6e73;font-size:13px;padding-left:12px;border-left:1px solid #3a3a3c">Glazenwinkel</span>
+        </div>
+      </td></tr>
+
+      <!-- Body -->
+      <tr><td style="background:#ffffff;padding:36px 36px 28px">
+        {content}
+      </td></tr>
+
+      <!-- Footer -->
+      <tr><td style="background:#f5f5f7;border-radius:0 0 16px 16px;padding:20px 36px;text-align:center">
+        <p style="margin:0;font-size:12px;color:#aeaeb2;line-height:1.6">
+          MIXMATE &bull; Nijenkerckestraat 14, 7482 ZZ Haaksbergen<br>
+          <a href="https://mixmate.nl" style="color:#aeaeb2;text-decoration:none">mixmate.nl</a>
+        </p>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body></html>"""
+
 async def _send_status_email(order: GlassOrder, status: str):
     subject = _STATUS_EMAIL_SUBJECTS.get(status)
     body = _STATUS_EMAIL_BODY.get(status)
     if not subject or not body:
         return
     heading, detail = body
-    html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;color:#1d1d1f">
-      <div style="font-size:22px;font-weight:700;margin-bottom:4px">{heading}</div>
-      <div style="color:#aeaeb2;font-size:14px;margin-bottom:24px">MIXMATE Glassenwinkel</div>
-      <p>Beste {order.customer_name},</p>
-      <p>{detail}</p>
-      {"<p>Factuurnummer: <strong>" + order.invoice_number + "</strong></p>" if order.invoice_number else ""}
-      <p style="color:#6e6e73;font-size:13px">Met vriendelijke groet,<br><strong>Het MIXMATE team</strong></p>
-    </div>"""
-    await _resend(to=order.customer_email, subject=subject, html=html)
+
+    icons = {
+        "bevestigd":   ("✓", "#34c759", "#edfaf1"),
+        "verzonden":   ("→", "#007aff", "#edf4ff"),
+        "afgeleverd":  ("✓", "#34c759", "#edfaf1"),
+        "geannuleerd": ("✕", "#ff3b30", "#fff1f0"),
+    }
+    icon, color, bg = icons.get(status, ("·", "#6e6e73", "#f5f5f7"))
+
+    content = f"""
+      <div style="width:48px;height:48px;border-radius:50%;background:{bg};display:flex;align-items:center;justify-content:center;margin:0 0 20px">
+        <span style="font-size:22px;color:{color};font-weight:700">{icon}</span>
+      </div>
+      <h1 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;letter-spacing:-0.3px">{heading}</h1>
+      <p style="margin:0 0 24px;font-size:14px;color:#6e6e73">MIXMATE Glazenwinkel</p>
+      <p style="margin:0 0 12px;font-size:15px;color:#1d1d1f">Beste {order.customer_name},</p>
+      <p style="margin:0 0 24px;font-size:15px;color:#3a3a3c;line-height:1.6">{detail}</p>
+      {"<div style='background:#f5f5f7;border-radius:10px;padding:14px 18px;font-size:14px;color:#6e6e73;margin-bottom:24px'>Factuurnummer: <strong style=color:#1d1d1f>" + order.invoice_number + "</strong></div>" if order.invoice_number else ""}
+      <hr style="border:none;border-top:1px solid #f2f2f7;margin:24px 0">
+      <p style="margin:0;font-size:14px;color:#6e6e73;line-height:1.6">Met vriendelijke groet,<br>
+      <strong style="color:#1d1d1f">Het MIXMATE team</strong></p>
+    """
+    await _resend(to=order.customer_email, subject=subject, html=_email_base(content))
 
 @app.delete("/api/shop/orders/{order_id}")
 def delete_order(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
@@ -1961,47 +2009,80 @@ async def _send_invoice_email(order: GlassOrder, html: str, settings: ShopSettin
     )
 
 async def _send_order_confirmation(order: GlassOrder, items: list):
-    klant_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;color:#1d1d1f">
-      <div style="font-size:22px;font-weight:700;margin-bottom:4px">Bestelling ontvangen</div>
-      <div style="color:#aeaeb2;font-size:14px;margin-bottom:24px">MIXMATE Glassenwinkel</div>
+    total_excl = sum(i.price_excl * i.quantity for i in items)
 
-      <p>Beste {order.customer_name},</p>
-      <p>Bedankt voor uw bestelling. Wij hebben uw aanvraag ontvangen en zullen deze zo spoedig mogelijk beoordelen.</p>
+    rows = "".join(f"""
+      <tr>
+        <td style="padding:12px 0;border-bottom:1px solid #f2f2f7;font-size:14px;color:#1d1d1f">{i.product_name}</td>
+        <td style="padding:12px 0;border-bottom:1px solid #f2f2f7;font-size:14px;color:#6e6e73;text-align:center">{i.quantity}×</td>
+        <td style="padding:12px 0;border-bottom:1px solid #f2f2f7;font-size:14px;color:#1d1d1f;text-align:right;font-weight:600">€ {(i.price_excl * i.quantity):,.2f}</td>
+      </tr>""" for i in items)
 
-      <div style="background:#fff8ee;border-left:3px solid #ff9500;padding:14px 16px;border-radius:6px;margin:20px 0;font-size:14px;color:#6e6e73">
-        <strong style="color:#1d1d1f">Let op:</strong> Bestellingen worden door ons handmatig goedgekeurd.
-        U ontvangt een bevestiging per e-mail zodra uw bestelling is verwerkt.
-        Dit kan enkele werkdagen duren.
+    klant_content = f"""
+      <h1 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;letter-spacing:-0.3px">Bestelling ontvangen</h1>
+      <p style="margin:0 0 28px;font-size:14px;color:#6e6e73">MIXMATE Glazenwinkel</p>
+
+      <p style="margin:0 0 8px;font-size:15px;color:#1d1d1f">Beste {order.customer_name},</p>
+      <p style="margin:0 0 24px;font-size:15px;color:#3a3a3c;line-height:1.6">
+        Bedankt voor uw bestelling. Wij hebben uw aanvraag ontvangen en zullen deze zo spoedig mogelijk beoordelen.
+      </p>
+
+      <div style="background:#fff8ee;border-radius:10px;padding:16px 18px;margin:0 0 28px;font-size:14px;line-height:1.6">
+        <strong style="color:#ff9500">Let op &mdash;</strong>
+        <span style="color:#6e6e73"> Bestellingen worden door ons handmatig goedgekeurd. U ontvangt een bevestiging zodra uw bestelling is verwerkt. Dit kan enkele werkdagen duren.</span>
       </div>
 
-      <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px">
-        <tr style="border-bottom:2px solid #f2f2f7">
-          <th style="text-align:left;padding:8px 0;color:#6e6e73;font-weight:600">Product</th>
-          <th style="text-align:right;padding:8px 0;color:#6e6e73;font-weight:600">Aantal</th>
-          <th style="text-align:right;padding:8px 0;color:#6e6e73;font-weight:600">Prijs excl. BTW</th>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px">
+        <tr>
+          <th style="padding:0 0 10px;font-size:12px;font-weight:600;color:#aeaeb2;text-transform:uppercase;letter-spacing:0.5px;text-align:left;border-bottom:2px solid #f2f2f7">Product</th>
+          <th style="padding:0 0 10px;font-size:12px;font-weight:600;color:#aeaeb2;text-transform:uppercase;letter-spacing:0.5px;text-align:center;border-bottom:2px solid #f2f2f7">Aantal</th>
+          <th style="padding:0 0 10px;font-size:12px;font-weight:600;color:#aeaeb2;text-transform:uppercase;letter-spacing:0.5px;text-align:right;border-bottom:2px solid #f2f2f7">Bedrag</th>
         </tr>
-        {"".join(f'<tr style="border-bottom:1px solid #f2f2f7"><td style="padding:8px 0">{i.product_name}</td><td style="text-align:right;padding:8px 0">{i.quantity}</td><td style="text-align:right;padding:8px 0">€ {(i.price_excl * i.quantity):.2f}</td></tr>' for i in items)}
+        {rows}
+        <tr>
+          <td colspan="2" style="padding:14px 0 0;font-size:14px;font-weight:600;color:#6e6e73">Totaal excl. BTW</td>
+          <td style="padding:14px 0 0;font-size:16px;font-weight:700;color:#1d1d1f;text-align:right">€ {total_excl:,.2f}</td>
+        </tr>
       </table>
 
-      <p style="color:#6e6e73;font-size:13px">Met vriendelijke groet,<br><strong>Het MIXMATE team</strong></p>
-    </div>"""
+      <hr style="border:none;border-top:1px solid #f2f2f7;margin:24px 0">
+      <p style="margin:0;font-size:14px;color:#6e6e73;line-height:1.6">Met vriendelijke groet,<br>
+      <strong style="color:#1d1d1f">Het MIXMATE team</strong></p>
+    """
 
-    admin_html = f"""<div style="font-family:sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1d1d1f">
-      <div style="font-size:18px;font-weight:700;margin-bottom:16px">Nieuwe bestelling ontvangen</div>
-      <p><strong>Klant:</strong> {order.customer_name} ({order.customer_email})</p>
-      {"<p><strong>Bedrijf:</strong> " + order.customer_company + "</p>" if order.customer_company else ""}
-      {"<p><strong>Adres:</strong> " + order.address_line1 + ", " + order.postal_code + " " + order.city + "</p>" if order.address_line1 else ""}
-      {"<p><strong>Telefoon:</strong> " + order.customer_phone + "</p>" if order.customer_phone else ""}
-      {"<p><strong>Opmerking:</strong> " + order.notes + "</p>" if order.notes else ""}
-      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
-        {"".join(f'<tr style="border-bottom:1px solid #f2f2f7"><td style="padding:6px 0">{i.product_name}</td><td style="text-align:right;padding:6px 0">{i.quantity}×</td><td style="text-align:right;padding:6px 0">€ {(i.price_excl * i.quantity):.2f}</td></tr>' for i in items)}
+    admin_content = f"""
+      <h1 style="margin:0 0 20px;font-size:20px;font-weight:700;color:#1d1d1f">🆕 Nieuwe bestelling</h1>
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+        {"<tr><td style='padding:6px 0;font-size:13px;color:#aeaeb2;width:110px'>Klant</td><td style='padding:6px 0;font-size:14px;color:#1d1d1f;font-weight:600'>" + order.customer_name + "</td></tr>"}
+        {"<tr><td style='padding:6px 0;font-size:13px;color:#aeaeb2'>Bedrijf</td><td style='padding:6px 0;font-size:14px;color:#1d1d1f'>" + order.customer_company + "</td></tr>" if order.customer_company else ""}
+        {"<tr><td style='padding:6px 0;font-size:13px;color:#aeaeb2'>E-mail</td><td style='padding:6px 0;font-size:14px;color:#007aff'><a href='mailto:" + order.customer_email + "' style='color:#007aff;text-decoration:none'>" + order.customer_email + "</a></td></tr>"}
+        {"<tr><td style='padding:6px 0;font-size:13px;color:#aeaeb2'>Telefoon</td><td style='padding:6px 0;font-size:14px;color:#1d1d1f'>" + order.customer_phone + "</td></tr>" if order.customer_phone else ""}
+        {"<tr><td style='padding:6px 0;font-size:13px;color:#aeaeb2'>Adres</td><td style='padding:6px 0;font-size:14px;color:#1d1d1f'>" + order.address_line1 + ", " + order.postal_code + " " + order.city + "</td></tr>" if order.address_line1 else ""}
+        {"<tr><td style='padding:6px 0;font-size:13px;color:#aeaeb2'>Opmerking</td><td style='padding:6px 0;font-size:14px;color:#6e6e73;font-style:italic'>" + order.notes + "</td></tr>" if order.notes else ""}
       </table>
-      <p style="font-size:13px;color:#6e6e73">Bekijk en verwerk de bestelling in het <a href="https://portaal.mixmate.nl/webshop">MIXMATE portaal</a>.</p>
-    </div>"""
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px">
+        <tr>
+          <th style="padding:0 0 10px;font-size:12px;color:#aeaeb2;text-align:left;border-bottom:2px solid #f2f2f7">Product</th>
+          <th style="padding:0 0 10px;font-size:12px;color:#aeaeb2;text-align:center;border-bottom:2px solid #f2f2f7">Aantal</th>
+          <th style="padding:0 0 10px;font-size:12px;color:#aeaeb2;text-align:right;border-bottom:2px solid #f2f2f7">Bedrag</th>
+        </tr>
+        {"".join(f'<tr><td style="padding:10px 0;border-bottom:1px solid #f2f2f7;font-size:14px">{i.product_name}</td><td style="padding:10px 0;border-bottom:1px solid #f2f2f7;font-size:14px;text-align:center">{i.quantity}×</td><td style="padding:10px 0;border-bottom:1px solid #f2f2f7;font-size:14px;text-align:right;font-weight:600">€ {(i.price_excl * i.quantity):,.2f}</td></tr>' for i in items)}
+        <tr>
+          <td colspan="2" style="padding:14px 0 0;font-size:14px;font-weight:600;color:#6e6e73">Totaal excl. BTW</td>
+          <td style="padding:14px 0 0;font-size:16px;font-weight:700;color:#1d1d1f;text-align:right">€ {total_excl:,.2f}</td>
+        </tr>
+      </table>
+
+      <a href="https://portaal.mixmate.nl/webshop" style="display:inline-block;background:#1d1d1f;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:10px">
+        Bekijken in portaal →
+      </a>
+    """
 
     admin_email = os.getenv("ADMIN_EMAIL", "info@mixmate.nl")
-    await _resend(to=order.customer_email, subject="Uw bestelling is ontvangen — MIXMATE", html=klant_html)
-    await _resend(to=admin_email, subject=f"Nieuwe bestelling: {order.customer_name}", html=admin_html)
+    await _resend(to=order.customer_email, subject="Uw bestelling is ontvangen — MIXMATE", html=_email_base(klant_content))
+    await _resend(to=admin_email, subject=f"Nieuwe bestelling: {order.customer_name}", html=_email_base(admin_content))
 
 # ── Statische frontend serveren ───────────────────────────────────────────────
 
