@@ -1767,10 +1767,11 @@ async def _send_status_email(order: GlassOrder, status: str):
 def delete_order(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     o = db.get(GlassOrder, order_id)
     if not o: raise HTTPException(404, "Bestelling niet gevonden")
-    db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order_id)).all()
     for item in db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order_id)).all():
         db.delete(item)
-    db.delete(o); db.commit()
+    db.flush()
+    db.delete(o)
+    db.commit()
     return {"ok": True}
 
 @app.post("/api/shop/orders/{order_id}/refund")
