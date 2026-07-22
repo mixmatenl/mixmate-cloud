@@ -28,8 +28,13 @@ export default function Bestellen({ user }) {
   const [sending, setSending]       = useState(false)
   const [err, setErr]               = useState('')
 
+  const [series, setSeries] = useState([])
+
   useEffect(() => {
     api.getShopProductsPublic().then(setProducts).catch(() => {})
+    api.getShopSeriesPublic().then(setSeries).catch(() => {})
+    const saved = sessionStorage.getItem('reorder_quantities')
+    if (saved) { try { setQuantities(JSON.parse(saved)) } catch {} sessionStorage.removeItem('reorder_quantities') }
     api.accountMe().then(r => {
       setForm({
         customer_company:  r.company       || '',
@@ -99,51 +104,79 @@ export default function Bestellen({ user }) {
         <>
           {activeProducts.length === 0 ? (
             <Card><div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen producten beschikbaar.</div></Card>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
-              {activeProducts.map(p => {
-                const qty = quantities[p.id] || 0
-                const selected = qty >= p.min_order
-                return (
-                  <Card key={p.id} style={{ padding: '16px 18px', border: `1.5px solid ${selected ? '#1d1d1f' : 'transparent'}`, transition: 'border-color .15s' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                      {p.image_url && (
-                        <div style={{ width: 72, height: 72, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
-                          <img src={p.image_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </div>
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f' }}>{p.name}</div>
-                        {p.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4, lineHeight: 1.5 }}>{p.description}</div>}
-                        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>
-                            € {p.price_excl.toFixed(2).replace('.', ',')}
-                            <span style={{ fontSize: 12, fontWeight: 400, color: '#aeaeb2' }}> excl. BTW / {p.unit}</span>
-                          </span>
-                          {p.min_order > 1 && (
-                            <span style={{ fontSize: 12, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '2px 8px', fontWeight: 600 }}>
-                              min. {p.min_order}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                        <button onClick={() => setQty(p.id, qty - 1)} style={{ width: 32, height: 32, borderRadius: 10, border: '1.5px solid #e5e5ea', background: '#f2f2f7', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1d1d1f' }}>−</button>
-                        <input type="number" min="0" value={qty || ''} onChange={e => setQty(p.id, e.target.value)} placeholder="0"
-                          style={{ width: 52, textAlign: 'center', border: '1.5px solid #e5e5ea', borderRadius: 10, padding: '6px 0', fontSize: 15, fontFamily: 'inherit', outline: 'none' }} />
-                        <button onClick={() => setQty(p.id, qty + 1)} style={{ width: 32, height: 32, borderRadius: 10, border: '1.5px solid #e5e5ea', background: '#f2f2f7', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1d1d1f' }}>+</button>
-                      </div>
-                    </div>
-                    {qty > 0 && qty < p.min_order && (
-                      <div style={{ marginTop: 10, fontSize: 12, color: '#ff9500', fontWeight: 500 }}>
-                        Minimum afname is {p.min_order} {p.unit}
+          ) : (() => {
+            // Groepeer per serie; producten zonder serie onderaan
+            const seriesGroups = series.map(s => ({ series: s, products: activeProducts.filter(p => p.series_id === s.id) })).filter(g => g.products.length > 0)
+            const unsorted = activeProducts.filter(p => !p.series_id)
+
+            function ProductCard({ p }) {
+              const qty = quantities[p.id] || 0
+              const selected = qty >= p.min_order
+              return (
+                <Card style={{ padding: '16px 18px', border: `1.5px solid ${selected ? '#1d1d1f' : 'transparent'}`, transition: 'border-color .15s' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    {p.image_url && (
+                      <div style={{ width: 72, height: 72, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+                        <img src={p.image_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </div>
                     )}
-                  </Card>
-                )
-              })}
-            </div>
-          )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f' }}>{p.name}</div>
+                      {p.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4, lineHeight: 1.5 }}>{p.description}</div>}
+                      <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>
+                          € {p.price_excl.toFixed(2).replace('.', ',')}
+                          <span style={{ fontSize: 12, fontWeight: 400, color: '#aeaeb2' }}> excl. BTW / {p.unit}</span>
+                        </span>
+                        {p.min_order > 1 && (
+                          <span style={{ fontSize: 12, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '2px 8px', fontWeight: 600 }}>
+                            min. {p.min_order}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <button onClick={() => setQty(p.id, qty - 1)} style={{ width: 32, height: 32, borderRadius: 10, border: '1.5px solid #e5e5ea', background: '#f2f2f7', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1d1d1f' }}>−</button>
+                      <input type="number" min="0" value={qty || ''} onChange={e => setQty(p.id, e.target.value)} placeholder="0"
+                        style={{ width: 52, textAlign: 'center', border: '1.5px solid #e5e5ea', borderRadius: 10, padding: '6px 0', fontSize: 15, fontFamily: 'inherit', outline: 'none' }} />
+                      <button onClick={() => setQty(p.id, qty + 1)} style={{ width: 32, height: 32, borderRadius: 10, border: '1.5px solid #e5e5ea', background: '#f2f2f7', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1d1d1f' }}>+</button>
+                    </div>
+                  </div>
+                  {qty > 0 && qty < p.min_order && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: '#ff9500', fontWeight: 500 }}>
+                      Minimum afname is {p.min_order} {p.unit}
+                    </div>
+                  )}
+                </Card>
+              )
+            }
+
+            return (
+              <div style={{ marginBottom: 24 }}>
+                {seriesGroups.map(g => (
+                  <div key={g.series.id} style={{ marginBottom: 24 }}>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f', letterSpacing: -.2 }}>{g.series.name}</div>
+                      {g.series.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>{g.series.description}</div>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {g.products.map(p => <ProductCard key={p.id} p={p} />)}
+                    </div>
+                  </div>
+                ))}
+                {unsorted.length > 0 && (
+                  <div style={{ marginBottom: 24 }}>
+                    {seriesGroups.length > 0 && (
+                      <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f', letterSpacing: -.2, marginBottom: 10 }}>Overig</div>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {unsorted.map(p => <ProductCard key={p.id} p={p} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           <button onClick={() => setStep('gegevens')} disabled={selectedItems.length === 0} style={{
             width: '100%', padding: '16px', borderRadius: 14, border: 'none',

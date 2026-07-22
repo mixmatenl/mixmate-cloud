@@ -10,6 +10,7 @@ import Meldingen from './pages/Meldingen.jsx'
 import Admin from './pages/Admin.jsx'
 import Webshop from './pages/Webshop.jsx'
 import Bestellen from './pages/Bestellen.jsx'
+import MijnBestellingen from './pages/MijnBestellingen.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 import { api } from './api.js'
@@ -322,6 +323,7 @@ export default function App() {
         <Route path="/admin"     element={<Admin />} />
         <Route path="/webshop"   element={<Webshop />} />
         <Route path="/bestellen" element={<Bestellen user={user} />} />
+        <Route path="/mijn-bestellingen" element={<MijnBestellingen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />

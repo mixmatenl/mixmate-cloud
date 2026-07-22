@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { api } from '../api.js'
 
-const TABS = ['Bestellingen', 'Producten', 'Rapportage', 'Instellingen']
+const TABS = ['Bestellingen', 'Producten', 'Series', 'Rapportage', 'Instellingen']
+
+const PAYMENT_LABELS = {
+  openstaand: { label: 'Openstaand', color: '#ff9500', bg: '#fff8ee' },
+  betaald:    { label: 'Betaald',    color: '#34c759', bg: '#edfaf1' },
+  te_laat:    { label: 'Te laat',    color: '#ff3b30', bg: '#fff1f0' },
+}
 
 const STATUS_LABELS = {
   nieuw:       { label: 'Nieuw',       color: '#007aff', bg: '#e8f4ff' },
@@ -37,14 +43,15 @@ function SectionLabel({ children }) {
 
 function OrderRow({ order, onOpen }) {
   const st = STATUS_LABELS[order.status] || STATUS_LABELS.nieuw
+  const pt = PAYMENT_LABELS[order.payment_status] || PAYMENT_LABELS.openstaand
   const total_excl = order.total_excl ?? 0
   const btw = total_excl * (order.btw_rate_snapshot / 100)
   const total_incl = total_excl + btw
 
   return (
     <div
-      onClick={() => onOpen(order)}
-      style={{ padding: '14px 16px', borderBottom: '1px solid #f2f2f7', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
+      onClick={() => onOpen && onOpen(order)}
+      style={{ padding: '14px 16px', borderBottom: '1px solid #f2f2f7', display: 'flex', alignItems: 'center', gap: 10, cursor: onOpen ? 'pointer' : 'default' }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>
@@ -58,10 +65,13 @@ function OrderRow({ order, onOpen }) {
       <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', flexShrink: 0 }}>
         € {total_incl.toFixed(2).replace('.', ',')}
       </div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: st.color, background: st.bg, borderRadius: 8, padding: '3px 9px', flexShrink: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: pt.color, background: pt.bg, borderRadius: 8, padding: '3px 8px', flexShrink: 0 }}>
+        {pt.label}
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: st.color, background: st.bg, borderRadius: 8, padding: '3px 8px', flexShrink: 0 }}>
         {st.label}
       </div>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+      {onOpen && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>}
     </div>
   )
 }
@@ -72,6 +82,8 @@ function OrderModal({ order: initial, onClose, onRefresh, onDelete }) {
   const [sent, setSent]         = useState(false)
   const [status, setStatus]     = useState(initial.status)
   const [savingStatus, setSavingStatus] = useState(false)
+  const [paymentStatus, setPaymentStatus] = useState(initial.payment_status || 'openstaand')
+  const [savingPayment, setSavingPayment] = useState(false)
   const [invoiceHtml, setInvoiceHtml]   = useState(null)
 
   // Terugbetaling
@@ -101,6 +113,12 @@ function OrderModal({ order: initial, onClose, onRefresh, onDelete }) {
     setStatus(s); setSavingStatus(true)
     try { await api.updateOrderStatus(order.id, s); onRefresh() } catch {}
     setSavingStatus(false)
+  }
+
+  async function changePaymentStatus(ps) {
+    setPaymentStatus(ps); setSavingPayment(true)
+    try { await api.updatePaymentStatus(order.id, ps); onRefresh() } catch {}
+    setSavingPayment(false)
   }
 
   async function saveRefund() {
@@ -147,6 +165,27 @@ function OrderModal({ order: initial, onClose, onRefresh, onDelete }) {
               }}>{val.label}</button>
             ))}
           </div>
+        </div>
+
+        {/* Betaalstatus */}
+        <div style={{ marginBottom: 16 }}>
+          <SectionLabel>Betaalstatus</SectionLabel>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {Object.entries(PAYMENT_LABELS).map(([key, val]) => (
+              <button key={key} onClick={() => changePaymentStatus(key)} style={{
+                padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: paymentStatus === key ? 600 : 400,
+                border: `1.5px solid ${paymentStatus === key ? val.color : '#e5e5ea'}`,
+                background: paymentStatus === key ? val.bg : '#fff',
+                color: paymentStatus === key ? val.color : '#6e6e73',
+                cursor: 'pointer', fontFamily: 'inherit', opacity: savingPayment ? .6 : 1,
+              }}>{val.label}</button>
+            ))}
+          </div>
+          {order.paid_at && (
+            <div style={{ marginTop: 6, fontSize: 12, color: '#aeaeb2' }}>
+              Betaald op {new Date(order.paid_at).toLocaleDateString('nl-NL')}
+            </div>
+          )}
         </div>
 
         {/* Klantgegevens */}
@@ -837,6 +876,139 @@ function Instellingen() {
   )
 }
 
+// ── Series ────────────────────────────────────────────────────────────────────
+
+function SeriesForm({ series, onSave, onCancel }) {
+  const [form, setForm] = useState(series || { name: '', description: '', sort_order: 0 })
+  const [saving, setSaving] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      if (series?.id) await api.updateShopSeries(series.id, form)
+      else await api.createShopSeries(form)
+      onSave()
+    } catch (e) { alert(e.message) }
+    setSaving(false)
+  }
+
+  return (
+    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 6 }}>Naam serie</div>
+        <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required placeholder="bijv. Melodia" style={inp} />
+      </div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 6 }}>Omschrijving</div>
+        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Korte beschrijving van de serie…" rows={2} style={{ ...inp, resize: 'vertical' }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="submit" disabled={saving} style={{ flex: 1, background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '11px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? .7 : 1 }}>
+          {saving ? 'Opslaan…' : series?.id ? 'Opslaan' : 'Serie toevoegen'}
+        </button>
+        <button type="button" onClick={onCancel} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '11px 18px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Annuleren</button>
+      </div>
+    </form>
+  )
+}
+
+function Series() {
+  const [series, setSeries]   = useState(null)
+  const [editing, setEditing] = useState(null) // null | 'new' | series-object
+  const [products, setProducts] = useState([])
+
+  const load = useCallback(async () => {
+    const [s, p] = await Promise.all([api.getShopSeries(), api.getShopProducts()])
+    setSeries(s); setProducts(p)
+  }, [])
+
+  useEffect(() => { load() }, [])
+
+  async function del(s) {
+    if (!confirm(`Serie "${s.name}" verwijderen? Producten worden niet verwijderd.`)) return
+    await api.deleteShopSeries(s.id)
+    load()
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>Glazenseries</div>
+        {editing === null && (
+          <button onClick={() => setEditing('new')} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            + Nieuwe serie
+          </button>
+        )}
+      </div>
+
+      {editing === 'new' && (
+        <Card style={{ padding: 20, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', marginBottom: 14 }}>Nieuwe serie</div>
+          <SeriesForm onSave={() => { setEditing(null); load() }} onCancel={() => setEditing(null)} />
+        </Card>
+      )}
+
+      {series === null ? (
+        <div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Laden…</div>
+      ) : series.length === 0 && editing !== 'new' ? (
+        <Card><div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Nog geen series. Voeg er een toe.</div></Card>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {series.map(s => {
+            const count = products.filter(p => p.series_id === s.id).length
+            return editing?.id === s.id ? (
+              <Card key={s.id} style={{ padding: 20 }}>
+                <SeriesForm series={s} onSave={() => { setEditing(null); load() }} onCancel={() => setEditing(null)} />
+              </Card>
+            ) : (
+              <Card key={s.id} style={{ padding: '16px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>{s.name}</div>
+                    {s.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4, lineHeight: 1.5 }}>{s.description}</div>}
+                    <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 6 }}>{count} product{count !== 1 ? 'en' : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setEditing(s)} style={{ fontSize: 13, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Bewerken</button>
+                    <button onClick={() => del(s)} style={{ fontSize: 13, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Verwijder</button>
+                  </div>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ marginTop: 32 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 12 }}>Producten per serie</div>
+        <Card>
+          {products.map(p => {
+            const cur = series?.find(s => s.id === p.series_id)
+            return (
+              <div key={p.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f2f2f7', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, fontSize: 14, color: '#1d1d1f' }}>{p.name}</div>
+                <select
+                  value={p.series_id || ''}
+                  onChange={async e => {
+                    const sid = e.target.value ? parseInt(e.target.value) : null
+                    await api.updateShopProduct(p.id, { series_id: sid })
+                    load()
+                  }}
+                  style={{ fontSize: 13, border: '1px solid #e5e5ea', borderRadius: 8, padding: '5px 10px', fontFamily: 'inherit', color: '#1d1d1f', background: '#fff', cursor: 'pointer' }}
+                >
+                  <option value="">— Geen serie —</option>
+                  {series?.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )
+          })}
+        </Card>
+      </div>
+    </div>
+  )
+}
+
 // ── Hoofd component ───────────────────────────────────────────────────────────
 
 export default function Webshop() {
@@ -864,6 +1036,7 @@ export default function Webshop() {
 
       {tab === 'Bestellingen' && <Bestellingen />}
       {tab === 'Producten'    && <Producten />}
+      {tab === 'Series'       && <Series />}
       {tab === 'Rapportage'   && <Rapportage />}
       {tab === 'Instellingen' && <Instellingen />}
 

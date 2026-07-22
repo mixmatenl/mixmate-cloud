@@ -143,6 +143,13 @@ export default function Layout({ user, onLogout, children }) {
               label="Glazen bestellen"
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>}
             />
+            <NavRow
+              active={path === '/mijn-bestellingen'}
+              to="/mijn-bestellingen"
+              color="#8e8e93"
+              label="Mijn bestellingen"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
+            />
           </NavGroup>
         </>
       )}

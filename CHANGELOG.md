@@ -1,3 +1,12 @@
+## [1.3.5] - 2026-07-22
+### Nieuw
+- Betaalstatus per bestelling: Openstaand / Betaald / Te laat (instelbaar door beheerder in bestelmodal)
+- Betaalstatus zichtbaar als badge in bestellingenoverzicht
+- Glazenseries beheren: eigen tab in webshop-beheer, producten koppelen aan serie
+- Bestelpagina toont producten gegroepeerd per serie
+- Klanten kunnen eigen bestellingen terugzien via "Mijn bestellingen" in de sidebar
+- Opnieuw bestellen vanuit bestelgeschiedenis (herstelt aantallen automatisch)
+
 ## [1.3.4] - 2026-07-22
 ### Verbeterd
 - Automatische e-mail bij statuswijziging: bevestiging bij "bevestigd", verzendnotificatie bij "verzonden"

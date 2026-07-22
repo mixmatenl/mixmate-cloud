@@ -138,8 +138,15 @@ class ShopSettings(SQLModel, table=True):
     payment_days: int = 14
     invoice_note: str = ""
 
+class GlassSeries(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = ""
+    description: str = ""
+    sort_order: int = 0
+
 class GlassProduct(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    series_id: Optional[int] = Field(default=None, foreign_key="glassseries.id")
     name: str = ""
     description: str = ""
     price_excl: float = 0.0
@@ -165,6 +172,8 @@ class GlassOrder(SQLModel, table=True):
     invoice_sent_at: Optional[datetime] = None
     btw_rate_snapshot: float = 21.0
     status: str = "nieuw"              # nieuw | bevestigd | verzonden | afgeleverd | geannuleerd
+    payment_status: str = "openstaand"  # openstaand | betaald | te_laat
+    paid_at: Optional[datetime] = None
     refund_amount: float = 0.0
     refund_reason: str = ""
     refund_at: Optional[datetime] = None
@@ -199,6 +208,9 @@ def create_tables():
         "ALTER TABLE customer ADD COLUMN postal_code VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE customer ADD COLUMN city VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE customer ADD COLUMN country VARCHAR NOT NULL DEFAULT 'Nederland'",
+        "ALTER TABLE glassorder ADD COLUMN payment_status VARCHAR NOT NULL DEFAULT 'openstaand'",
+        "ALTER TABLE glassorder ADD COLUMN paid_at TIMESTAMP",
+        "ALTER TABLE glassproduct ADD COLUMN series_id INTEGER REFERENCES glassseries(id)",
     ]
     for sql in migrations:
         try:
@@ -1589,6 +1601,43 @@ def _get_shop_settings(db: Session) -> ShopSettings:
         db.refresh(s)
     return s
 
+# ── Series ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/shop/series")
+def get_series(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    return db.exec(select(GlassSeries).order_by(GlassSeries.sort_order)).all()
+
+@app.get("/api/shop/series/public")
+def get_series_public(db: Session = Depends(get_session)):
+    return db.exec(select(GlassSeries).order_by(GlassSeries.sort_order)).all()
+
+@app.post("/api/shop/series")
+def create_series(data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    s = GlassSeries(name=data.get("name",""), description=data.get("description",""), sort_order=data.get("sort_order",0))
+    db.add(s); db.commit(); db.refresh(s)
+    return s
+
+@app.patch("/api/shop/series/{series_id}")
+def update_series(series_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    s = db.get(GlassSeries, series_id)
+    if not s: raise HTTPException(404)
+    for k in ("name","description","sort_order"):
+        if k in data: setattr(s, k, data[k])
+    db.add(s); db.commit(); db.refresh(s)
+    return s
+
+@app.delete("/api/shop/series/{series_id}")
+def delete_series(series_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    s = db.get(GlassSeries, series_id)
+    if not s: raise HTTPException(404)
+    # ontkoppel producten
+    for p in db.exec(select(GlassProduct).where(GlassProduct.series_id == series_id)).all():
+        p.series_id = None; db.add(p)
+    db.delete(s); db.commit()
+    return {"ok": True}
+
+# ── Shop settings ─────────────────────────────────────────────────────────────
+
 @app.get("/api/shop/settings")
 def get_shop_settings(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     return _get_shop_settings(db)
@@ -1607,9 +1656,9 @@ def save_shop_settings(data: dict, db: Session = Depends(get_session), _=Depends
 
 @app.get("/api/shop/products/public")
 def get_products_public(db: Session = Depends(get_session)):
-    products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.id)).all()
+    products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.series_id.nulls_last(), GlassProduct.id)).all()
     # Strip inkoopprijs uit publieke response
-    return [{"id": p.id, "name": p.name, "description": p.description, "price_excl": p.price_excl, "unit": p.unit, "min_order": p.min_order, "active": p.active, "image_url": p.image_url} for p in products]
+    return [{"id": p.id, "name": p.name, "description": p.description, "price_excl": p.price_excl, "unit": p.unit, "min_order": p.min_order, "active": p.active, "image_url": p.image_url, "series_id": p.series_id} for p in products]
 
 @app.get("/api/shop/products")
 def get_products(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
@@ -1626,6 +1675,7 @@ def create_product(data: dict, db: Session = Depends(get_session), _=Depends(ver
         min_order=int(data.get("min_order", 1)),
         image_url=data.get("image_url",""),
         active=data.get("active", True),
+        series_id=data.get("series_id") or None,
     )
     db.add(p); db.commit(); db.refresh(p)
     return p
@@ -1634,7 +1684,7 @@ def create_product(data: dict, db: Session = Depends(get_session), _=Depends(ver
 def update_product(product_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     p = db.get(GlassProduct, product_id)
     if not p: raise HTTPException(404, "Product niet gevonden")
-    for k in ("name","description","price_excl","purchase_price","unit","min_order","image_url","active"):
+    for k in ("name","description","price_excl","purchase_price","unit","min_order","image_url","active","series_id"):
         if k in data:
             setattr(p, k, data[k])
     db.add(p); db.commit(); db.refresh(p)
@@ -1810,6 +1860,27 @@ async def _send_status_email(order: GlassOrder, status: str):
       <strong style="color:#1d1d1f">Het MIXMATE team</strong></p>
     """
     await _resend(to=order.customer_email, subject=subject, html=_email_base(content))
+
+@app.patch("/api/shop/orders/{order_id}/payment")
+def update_payment_status(order_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    o = db.get(GlassOrder, order_id)
+    if not o: raise HTTPException(404, "Bestelling niet gevonden")
+    ps = data.get("payment_status", o.payment_status)
+    o.payment_status = ps
+    o.paid_at = datetime.utcnow() if ps == "betaald" and not o.paid_at else (None if ps != "betaald" else o.paid_at)
+    db.add(o); db.commit(); db.refresh(o)
+    return {"ok": True, "payment_status": o.payment_status, "paid_at": o.paid_at}
+
+@app.get("/api/shop/my-orders")
+def get_my_orders(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    orders = db.exec(select(GlassOrder).where(GlassOrder.customer_email ==
+        db.get(Customer, customer_id).email).order_by(GlassOrder.created_at.desc())).all()
+    result = []
+    for o in orders:
+        items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == o.id)).all()
+        total_excl = sum(i.price_excl * i.quantity for i in items)
+        result.append({**o.model_dump(), "items": [i.model_dump() for i in items], "total_excl": total_excl})
+    return result
 
 @app.delete("/api/shop/orders/{order_id}")
 def delete_order(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):

@@ -133,6 +133,13 @@ export const api = {
   getShopSettings:  ()       => req('GET',   '/api/shop/settings'),
   saveShopSettings: (data)   => req('POST',  '/api/shop/settings', data),
 
+  // Webshop – series
+  getShopSeries:     ()           => req('GET',    '/api/shop/series'),
+  getShopSeriesPublic: ()         => fetch((import.meta.env.VITE_API_URL || '') + '/api/shop/series/public').then(r => r.json()),
+  createShopSeries:  (data)       => req('POST',   '/api/shop/series', data),
+  updateShopSeries:  (id, data)   => req('PATCH',  `/api/shop/series/${id}`, data),
+  deleteShopSeries:  (id)         => req('DELETE', `/api/shop/series/${id}`),
+
   // Webshop – producten (admin)
   getShopProducts:      ()           => req('GET',    '/api/shop/products'),
   createShopProduct:    (data)       => req('POST',   '/api/shop/products', data),
@@ -143,14 +150,16 @@ export const api = {
   getShopProductsPublic: () => fetch((import.meta.env.VITE_API_URL || '') + '/api/shop/products/public').then(r => r.json()),
 
   // Webshop – bestellingen
-  getShopOrders:      (status)     => req('GET',   `/api/shop/orders${status ? `?status=${status}` : ''}`),
-  getShopOrder:       (id)         => req('GET',   `/api/shop/orders/${id}`),
-  updateOrderStatus:  (id, status) => req('PATCH', `/api/shop/orders/${id}/status`, { status }),
-  deleteOrder:        (id) => req('DELETE', `/api/shop/orders/${id}`),
-  sendInvoice:        (id)         => req('POST',  `/api/shop/orders/${id}/invoice`),
-  getInvoiceHtml:     (id)         => req('GET',   `/api/shop/orders/${id}/invoice`),
-  setRefund:          (id, amount, reason) => req('POST', `/api/shop/orders/${id}/refund`, { refund_amount: amount, refund_reason: reason }),
-  getShopReport:      (year, month) => req('GET',  `/api/shop/report?year=${year}&month=${month}`),
+  getShopOrders:        ()           => req('GET',   '/api/shop/orders'),
+  getShopOrder:         (id)         => req('GET',   `/api/shop/orders/${id}`),
+  updateOrderStatus:    (id, status) => req('PATCH', `/api/shop/orders/${id}/status`, { status }),
+  updatePaymentStatus:  (id, ps)     => req('PATCH', `/api/shop/orders/${id}/payment`, { payment_status: ps }),
+  deleteOrder:          (id)         => req('DELETE', `/api/shop/orders/${id}`),
+  sendInvoice:          (id)         => req('POST',  `/api/shop/orders/${id}/invoice`),
+  getInvoiceHtml:       (id)         => req('GET',   `/api/shop/orders/${id}/invoice`),
+  setRefund:            (id, amount, reason) => req('POST', `/api/shop/orders/${id}/refund`, { refund_amount: amount, refund_reason: reason }),
+  getShopReport:        (year, month) => req('GET',  `/api/shop/report?year=${year}&month=${month}`),
+  getMyOrders:          ()           => req('GET',   '/api/shop/my-orders'),
 
   // Webshop – bestellen (auth vereist)
   placeShopOrder: (data) => req('POST', '/api/shop/orders', data),
