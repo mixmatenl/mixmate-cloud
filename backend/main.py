@@ -23,6 +23,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select, delete, Re
 from sqlalchemy import text
 import httpx
 import jwt
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -174,6 +175,7 @@ class GlassOrder(SQLModel, table=True):
     status: str = "nieuw"              # nieuw | bevestigd | verzonden | afgeleverd | geannuleerd
     payment_status: str = "openstaand"  # openstaand | betaald | te_laat
     paid_at: Optional[datetime] = None
+    reminder_sent_at: Optional[datetime] = None
     refund_amount: float = 0.0
     refund_reason: str = ""
     refund_at: Optional[datetime] = None
@@ -210,6 +212,7 @@ def create_tables():
         "ALTER TABLE customer ADD COLUMN country VARCHAR NOT NULL DEFAULT 'Nederland'",
         "ALTER TABLE glassorder ADD COLUMN payment_status VARCHAR NOT NULL DEFAULT 'openstaand'",
         "ALTER TABLE glassorder ADD COLUMN paid_at TIMESTAMP",
+        "ALTER TABLE glassorder ADD COLUMN reminder_sent_at TIMESTAMP",
         "ALTER TABLE glassproduct ADD COLUMN series_id INTEGER REFERENCES glassseries(id)",
     ]
     for sql in migrations:
@@ -322,8 +325,73 @@ app.add_middleware(
 )
 
 @app.on_event("startup")
-def startup():
+async def startup():
     create_tables()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(_check_overdue_payments, "cron", hour=8, minute=0)
+    scheduler.start()
+
+async def _check_overdue_payments():
+    with Session(engine) as db:
+        settings = _get_shop_settings(db)
+        payment_days = settings.payment_days or 14
+        cutoff = datetime.utcnow() - timedelta(days=payment_days)
+
+        orders = db.exec(
+            select(GlassOrder)
+            .where(GlassOrder.payment_status == "openstaand")
+            .where(GlassOrder.invoice_sent_at != None)
+            .where(GlassOrder.invoice_sent_at <= cutoff)
+            .where(GlassOrder.status != "geannuleerd")
+        ).all()
+
+        for order in orders:
+            order.payment_status = "te_laat"
+            # Herinnering sturen als dat nog niet gedaan is
+            if not order.reminder_sent_at and order.customer_email:
+                order.reminder_sent_at = datetime.utcnow()
+                db.add(order)
+                db.commit()
+                await _send_payment_reminder(order, payment_days)
+            else:
+                db.add(order)
+                db.commit()
+
+async def _send_payment_reminder(order: GlassOrder, payment_days: int):
+    due_date = (order.invoice_sent_at + timedelta(days=payment_days)).strftime("%-d %B %Y")
+    content = f"""
+      <div style="width:48px;height:48px;border-radius:50%;background:#fff8ee;text-align:center;line-height:48px;margin:0 0 20px;font-size:22px">⚠</div>
+      <h1 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;letter-spacing:-0.3px">Betalingsherinnering</h1>
+      <p style="margin:0 0 28px;font-size:14px;color:#6e6e73">MIXMATE Glazenwinkel</p>
+
+      <p style="margin:0 0 12px;font-size:15px;color:#1d1d1f">Beste {order.customer_name},</p>
+      <p style="margin:0 0 24px;font-size:15px;color:#3a3a3c;line-height:1.6">
+        Wij hebben geconstateerd dat onderstaande factuur nog niet is voldaan.
+        Wij verzoeken u vriendelijk de betaling zo spoedig mogelijk te regelen.
+      </p>
+
+      <div style="background:#fff8ee;border-radius:10px;padding:18px 20px;margin:0 0 28px">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          {"<tr><td style='font-size:13px;color:#6e6e73;padding:4px 0'>Factuurnummer</td><td style='font-size:14px;font-weight:600;color:#1d1d1f;text-align:right'>" + order.invoice_number + "</td></tr>" if order.invoice_number else ""}
+          <tr><td style="font-size:13px;color:#6e6e73;padding:4px 0">Vervaldatum</td><td style="font-size:14px;font-weight:600;color:#ff3b30;text-align:right">{due_date}</td></tr>
+          <tr><td style="font-size:13px;color:#6e6e73;padding:4px 0">Status</td><td style="font-size:14px;font-weight:600;color:#ff9500;text-align:right">Openstaand</td></tr>
+        </table>
+      </div>
+
+      <p style="margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6">
+        Heeft u de betaling al overgemaakt? Dan kunt u deze e-mail als niet verzonden beschouwen.
+        Neem bij vragen contact met ons op via <a href="mailto:info@mixmate.nl" style="color:#007aff;text-decoration:none">info@mixmate.nl</a>.
+      </p>
+
+      <hr style="border:none;border-top:1px solid #f2f2f7;margin:24px 0">
+      <p style="margin:0;font-size:14px;color:#6e6e73;line-height:1.6">Met vriendelijke groet,<br>
+      <strong style="color:#1d1d1f">Het MIXMATE team</strong></p>
+    """
+    await _resend(
+        to=order.customer_email,
+        subject=f"Betalingsherinnering{' — ' + order.invoice_number if order.invoice_number else ''} — MIXMATE",
+        html=_email_base(content),
+    )
     _create_admin_if_needed()
 
 def _create_admin_if_needed():
