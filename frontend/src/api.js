@@ -146,6 +146,7 @@ export const api = {
   getShopOrders:      (status)     => req('GET',   `/api/shop/orders${status ? `?status=${status}` : ''}`),
   getShopOrder:       (id)         => req('GET',   `/api/shop/orders/${id}`),
   updateOrderStatus:  (id, status) => req('PATCH', `/api/shop/orders/${id}/status`, { status }),
+  deleteOrder:        (id) => req('DELETE', `/api/shop/orders/${id}`),
   sendInvoice:        (id)         => req('POST',  `/api/shop/orders/${id}/invoice`),
   getInvoiceHtml:     (id)         => req('GET',   `/api/shop/orders/${id}/invoice`),
   setRefund:          (id, amount, reason) => req('POST', `/api/shop/orders/${id}/refund`, { refund_amount: amount, refund_reason: reason }),

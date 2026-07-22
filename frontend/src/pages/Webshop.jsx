@@ -66,7 +66,7 @@ function OrderRow({ order, onOpen }) {
   )
 }
 
-function OrderModal({ order: initial, onClose, onRefresh }) {
+function OrderModal({ order: initial, onClose, onRefresh, onDelete }) {
   const [order, setOrder]       = useState(initial)
   const [sending, setSending]   = useState(false)
   const [sent, setSent]         = useState(false)
@@ -264,6 +264,19 @@ function OrderModal({ order: initial, onClose, onRefresh }) {
             Factuur verstuurd op {new Date(order.invoice_sent_at).toLocaleDateString('nl-NL')}
           </div>
         )}
+
+        <div style={{ marginTop: 20, borderTop: '1px solid #e5e5ea', paddingTop: 16 }}>
+          <button onClick={async () => {
+            if (!confirm('Bestelling verwijderen? Dit kan niet ongedaan worden gemaakt.')) return
+            try { await api.deleteOrder(order.id); onDelete() } catch (e) { alert(e.message) }
+          }} style={{
+            width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid #ff3b30',
+            background: 'transparent', color: '#ff3b30', fontSize: 14, fontWeight: 600,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+            Bestelling verwijderen
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -311,6 +324,7 @@ function Bestellingen() {
           order={selected}
           onClose={() => setSelected(null)}
           onRefresh={() => { load(); setSelected(null) }}
+          onDelete={() => { load(); setSelected(null) }}
         />
       )}
     </div>

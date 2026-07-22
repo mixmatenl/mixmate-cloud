@@ -1,3 +1,11 @@
+## [1.3.4] - 2026-07-22
+### Verbeterd
+- Automatische e-mail bij statuswijziging: bevestiging bij "bevestigd", verzendnotificatie bij "verzonden"
+- E-mails worden nu correct verzonden (resend module conflict opgelost)
+- Bestellingsbevestiging bevat duidelijke melding dat goedkeuring handmatig plaatsvindt
+- Admin ontvangt notificatie bij nieuwe bestelling
+- Bestellingen verwijderen vanuit beheer
+
 ## [1.3.3] - 2026-07-22
 ### Nieuw
 - Producten: afbeelding uploaden (max 2 MB) of externe URL invoeren

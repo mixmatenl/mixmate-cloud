@@ -29,7 +29,7 @@ export default function Bestellen({ user }) {
   const [err, setErr]               = useState('')
 
   useEffect(() => {
-    api.getShopProducts().then(setProducts).catch(() => {})
+    api.getShopProductsPublic().then(setProducts).catch(() => {})
     api.accountMe().then(r => {
       setForm({
         customer_company:  r.company       || '',

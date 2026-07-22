@@ -1684,8 +1684,9 @@ def place_order(data: dict, customer_id: int = Depends(verify_token), db: Sessio
         db.add(oi)
     db.commit()
 
-    # Bevestigingsmail naar klant
-    _send_order_confirmation(order, items_data, db)
+    # Bevestigingsmail naar klant + notificatie naar admin
+    order_items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order.id)).all()
+    asyncio.create_task(_send_order_confirmation(order, order_items))
 
     return {"ok": True, "order_id": order.id}
 
@@ -1707,11 +1708,69 @@ def get_order(order_id: int, db: Session = Depends(get_session), _=Depends(verif
     return {**o.model_dump(), "items": [i.model_dump() for i in items]}
 
 @app.patch("/api/shop/orders/{order_id}/status")
-def update_order_status(order_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+async def update_order_status(order_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     o = db.get(GlassOrder, order_id)
     if not o: raise HTTPException(404, "Bestelling niet gevonden")
-    o.status = data.get("status", o.status)
+    old_status = o.status
+    new_status = data.get("status", o.status)
+    o.status = new_status
     db.add(o); db.commit(); db.refresh(o)
+
+    if new_status != old_status and o.customer_email:
+        asyncio.create_task(_send_status_email(o, new_status))
+
+    return {"ok": True}
+
+_STATUS_EMAIL_SUBJECTS = {
+    "bevestigd":   "Uw bestelling is bevestigd — MIXMATE",
+    "verzonden":   "Uw bestelling is verzonden — MIXMATE",
+    "afgeleverd":  "Uw bestelling is afgeleverd — MIXMATE",
+    "geannuleerd": "Uw bestelling is geannuleerd — MIXMATE",
+}
+
+_STATUS_EMAIL_BODY = {
+    "bevestigd": (
+        "Goed nieuws! Wij hebben uw bestelling beoordeeld en goedgekeurd.",
+        "Wij bereiden uw bestelling voor en nemen contact met u op zodra deze verzonden is."
+    ),
+    "verzonden": (
+        "Uw bestelling is onderweg!",
+        "Uw bestelling is zojuist verzonden. U ontvangt deze binnen de afgesproken levertijd."
+    ),
+    "afgeleverd": (
+        "Uw bestelling is afgeleverd.",
+        "Wij hopen dat u tevreden bent met uw bestelling. Neem contact met ons op als er vragen zijn."
+    ),
+    "geannuleerd": (
+        "Uw bestelling is geannuleerd.",
+        "Uw bestelling is helaas geannuleerd. Neem contact met ons op als u vragen heeft."
+    ),
+}
+
+async def _send_status_email(order: GlassOrder, status: str):
+    subject = _STATUS_EMAIL_SUBJECTS.get(status)
+    body = _STATUS_EMAIL_BODY.get(status)
+    if not subject or not body:
+        return
+    heading, detail = body
+    html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;color:#1d1d1f">
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px">{heading}</div>
+      <div style="color:#aeaeb2;font-size:14px;margin-bottom:24px">MIXMATE Glassenwinkel</div>
+      <p>Beste {order.customer_name},</p>
+      <p>{detail}</p>
+      {"<p>Factuurnummer: <strong>" + order.invoice_number + "</strong></p>" if order.invoice_number else ""}
+      <p style="color:#6e6e73;font-size:13px">Met vriendelijke groet,<br><strong>Het MIXMATE team</strong></p>
+    </div>"""
+    await _resend(to=order.customer_email, subject=subject, html=html)
+
+@app.delete("/api/shop/orders/{order_id}")
+def delete_order(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+    o = db.get(GlassOrder, order_id)
+    if not o: raise HTTPException(404, "Bestelling niet gevonden")
+    db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order_id)).all()
+    for item in db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order_id)).all():
+        db.delete(item)
+    db.delete(o); db.commit()
     return {"ok": True}
 
 @app.post("/api/shop/orders/{order_id}/refund")
@@ -1784,7 +1843,7 @@ def get_shop_report(year: int, month: int, db: Session = Depends(get_session), _
     }
 
 @app.post("/api/shop/orders/{order_id}/invoice")
-def send_invoice(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
+async def send_invoice(order_id: int, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     o = db.get(GlassOrder, order_id)
     if not o: raise HTTPException(404, "Bestelling niet gevonden")
     items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order_id)).all()
@@ -1801,7 +1860,7 @@ def send_invoice(order_id: int, db: Session = Depends(get_session), _=Depends(ve
     db.add(o); db.commit(); db.refresh(o)
 
     html = _build_invoice_html(o, items, settings)
-    _send_invoice_email(o, html, settings)
+    await _send_invoice_email(o, html, settings)
 
     return {"ok": True, "invoice_number": o.invoice_number, "html": html}
 
@@ -1892,45 +1951,56 @@ def _build_invoice_html(order: GlassOrder, items: list, settings: ShopSettings) 
   </div>
 </div></body></html>"""
 
-import resend as _resend
+async def _send_invoice_email(order: GlassOrder, html: str, settings: ShopSettings):
+    await _resend(
+        to=order.customer_email,
+        subject=f"Factuur {order.invoice_number} — {settings.company_name or 'MIXMATE'}",
+        html=html,
+        reply_to=settings.email or "",
+    )
 
-def _send_invoice_email(order: GlassOrder, html: str, settings: ShopSettings):
-    api_key = os.getenv("RESEND_API_KEY", "")
-    if not api_key:
-        return
-    _resend.api_key = api_key
-    from_email = os.getenv("RESEND_FROM", "facturen@mixmate.nl")
-    try:
-        _resend.Emails.send({
-            "from": from_email,
-            "to": [order.customer_email],
-            "reply_to": settings.email or from_email,
-            "subject": f"Factuur {order.invoice_number} — {settings.company_name or 'MIXMATE'}",
-            "html": html,
-        })
-    except Exception as e:
-        print(f"[INVOICE EMAIL] Verzenden mislukt: {e}", flush=True)
+async def _send_order_confirmation(order: GlassOrder, items: list):
+    klant_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;color:#1d1d1f">
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px">Bestelling ontvangen</div>
+      <div style="color:#aeaeb2;font-size:14px;margin-bottom:24px">MIXMATE Glassenwinkel</div>
 
-def _send_order_confirmation(order: GlassOrder, items_data: list, db: Session):
-    api_key = os.getenv("RESEND_API_KEY", "")
-    if not api_key:
-        return
-    _resend.api_key = api_key
-    from_email = os.getenv("RESEND_FROM", "bestellingen@mixmate.nl")
-    try:
-        _resend.Emails.send({
-            "from": from_email,
-            "to": [order.customer_email],
-            "subject": "Uw bestelling is ontvangen — MIXMATE",
-            "html": f"""<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px">
-              <h2 style="margin:0 0 8px">Bestelling ontvangen</h2>
-              <p style="color:#6e6e73">Beste {order.customer_name},</p>
-              <p>Bedankt voor uw bestelling. Wij nemen zo snel mogelijk contact met u op om de levering te bevestigen.</p>
-              <p style="color:#6e6e73;font-size:13px">Met vriendelijke groet,<br>MIXMATE</p>
-            </div>""",
-        })
-    except Exception as e:
-        print(f"[ORDER CONFIRM] Verzenden mislukt: {e}", flush=True)
+      <p>Beste {order.customer_name},</p>
+      <p>Bedankt voor uw bestelling. Wij hebben uw aanvraag ontvangen en zullen deze zo spoedig mogelijk beoordelen.</p>
+
+      <div style="background:#fff8ee;border-left:3px solid #ff9500;padding:14px 16px;border-radius:6px;margin:20px 0;font-size:14px;color:#6e6e73">
+        <strong style="color:#1d1d1f">Let op:</strong> Bestellingen worden door ons handmatig goedgekeurd.
+        U ontvangt een bevestiging per e-mail zodra uw bestelling is verwerkt.
+        Dit kan enkele werkdagen duren.
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px">
+        <tr style="border-bottom:2px solid #f2f2f7">
+          <th style="text-align:left;padding:8px 0;color:#6e6e73;font-weight:600">Product</th>
+          <th style="text-align:right;padding:8px 0;color:#6e6e73;font-weight:600">Aantal</th>
+          <th style="text-align:right;padding:8px 0;color:#6e6e73;font-weight:600">Prijs excl. BTW</th>
+        </tr>
+        {"".join(f'<tr style="border-bottom:1px solid #f2f2f7"><td style="padding:8px 0">{i.product_name}</td><td style="text-align:right;padding:8px 0">{i.quantity}</td><td style="text-align:right;padding:8px 0">€ {(i.price_excl * i.quantity):.2f}</td></tr>' for i in items)}
+      </table>
+
+      <p style="color:#6e6e73;font-size:13px">Met vriendelijke groet,<br><strong>Het MIXMATE team</strong></p>
+    </div>"""
+
+    admin_html = f"""<div style="font-family:sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1d1d1f">
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px">Nieuwe bestelling ontvangen</div>
+      <p><strong>Klant:</strong> {order.customer_name} ({order.customer_email})</p>
+      {"<p><strong>Bedrijf:</strong> " + order.customer_company + "</p>" if order.customer_company else ""}
+      {"<p><strong>Adres:</strong> " + order.address_line1 + ", " + order.postal_code + " " + order.city + "</p>" if order.address_line1 else ""}
+      {"<p><strong>Telefoon:</strong> " + order.customer_phone + "</p>" if order.customer_phone else ""}
+      {"<p><strong>Opmerking:</strong> " + order.notes + "</p>" if order.notes else ""}
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+        {"".join(f'<tr style="border-bottom:1px solid #f2f2f7"><td style="padding:6px 0">{i.product_name}</td><td style="text-align:right;padding:6px 0">{i.quantity}×</td><td style="text-align:right;padding:6px 0">€ {(i.price_excl * i.quantity):.2f}</td></tr>' for i in items)}
+      </table>
+      <p style="font-size:13px;color:#6e6e73">Bekijk en verwerk de bestelling in het <a href="https://portaal.mixmate.nl/webshop">MIXMATE portaal</a>.</p>
+    </div>"""
+
+    admin_email = os.getenv("ADMIN_EMAIL", "info@mixmate.nl")
+    await _resend(to=order.customer_email, subject="Uw bestelling is ontvangen — MIXMATE", html=klant_html)
+    await _resend(to=admin_email, subject=f"Nieuwe bestelling: {order.customer_name}", html=admin_html)
 
 # ── Statische frontend serveren ───────────────────────────────────────────────
 
