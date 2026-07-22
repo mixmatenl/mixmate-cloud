@@ -338,10 +338,26 @@ function ProductForm({ product, onSave, onCancel }) {
   function handleImage(e) {
     const file = e.target.files[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) { alert('Afbeelding mag maximaal 2 MB zijn.'); return }
+    if (file.size > 10 * 1024 * 1024) { alert('Afbeelding mag maximaal 10 MB zijn.'); return }
     setImgLoading(true)
     const reader = new FileReader()
-    reader.onload = ev => { set('image_url', ev.target.result); setImgLoading(false) }
+    reader.onload = ev => {
+      const img = new Image()
+      img.onload = () => {
+        const MAX = 800
+        let w = img.width, h = img.height
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX }
+          else       { w = Math.round(w * MAX / h); h = MAX }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        set('image_url', canvas.toDataURL('image/jpeg', 0.82))
+        setImgLoading(false)
+      }
+      img.src = ev.target.result
+    }
     reader.readAsDataURL(file)
   }
 
