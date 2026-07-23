@@ -1,3 +1,8 @@
+## [1.3.6] - 2026-07-23
+### Nieuw
+- MachineApp: pagina op /machineapp waarmee je een MIXMATE-machine kunt ontdekken en verbinden zonder in te loggen
+- Backend: /api/machineapp/machines endpoint geeft online machines terug met lokaal IP
+
 ## [1.3.5] - 2026-07-22
 ### Nieuw
 - Betaalstatus per bestelling: Openstaand / Betaald / Te laat (instelbaar door beheerder in bestelmodal)

@@ -287,6 +287,9 @@ class MachineConnection:
         self.machine_id = machine_id
         self.ws = ws
         self.pending: dict[str, asyncio.Future] = {}
+        self.local_ip: str | None = None
+        self.local_port: int = 8000
+        self.ssl: bool = True
 
     async def send(self, msg: dict):
         await self.ws.send_json(msg)
@@ -451,6 +454,9 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                 if data.get("serial_number") and not machine.serial_number_confirmed:
                     machine.serial_number           = data["serial_number"]
                     machine.serial_number_confirmed = True
+                if data.get("local_ip"):   conn.local_ip   = data["local_ip"]
+                if data.get("local_port"): conn.local_port = int(data["local_port"])
+                if "ssl" in data:          conn.ssl        = bool(data["ssl"])
                 db.add(machine)
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
@@ -2314,6 +2320,25 @@ def download_app(filename: str, token: str = None, credentials: HTTPAuthorizatio
         media_type="application/vnd.android.package-archive",
         filename=filename,
     )
+
+@app.get("/api/machineapp/machines")
+def machineapp_machines(db: Session = Depends(get_session)):
+    result = []
+    for mid, conn in connected_machines.items():
+        if not conn.local_ip:
+            continue
+        machine = db.exec(select(Machine).where(Machine.machine_id == mid)).first()
+        scheme = "https" if conn.ssl else "http"
+        result.append({
+            "machine_id": mid,
+            "name": (machine.model or "MIXMATE Machine") if machine else "MIXMATE Machine",
+            "url": f"{scheme}://{conn.local_ip}:{conn.local_port}",
+            "local_ip": conn.local_ip,
+            "local_port": conn.local_port,
+            "ssl": conn.ssl,
+        })
+    return result
+
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
