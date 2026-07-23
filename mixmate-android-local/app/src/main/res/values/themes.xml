@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MIXMATEMachine" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">#1d1d1f</item>
+        <item name="android:navigationBarColor">#1d1d1f</item>
+    </style>
+    <style name="Theme.MIXMATEMachine.WithBar" parent="Theme.AppCompat.DayNight.DarkActionBar">
+        <item name="android:statusBarColor">#1d1d1f</item>
+        <item name="android:navigationBarColor">#1d1d1f</item>
+        <item name="colorPrimary">#1d1d1f</item>
+        <item name="colorPrimaryDark">#1d1d1f</item>
+    </style>
+</resources>
