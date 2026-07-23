@@ -12,7 +12,6 @@ import Webshop from './pages/Webshop.jsx'
 import Apps from './pages/Apps.jsx'
 import Bestellen from './pages/Bestellen.jsx'
 import MijnBestellingen from './pages/MijnBestellingen.jsx'
-import MachineApp from './pages/MachineApp.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 import { api } from './api.js'
@@ -306,7 +305,6 @@ export default function App() {
   if (!token) {
     return (
       <Routes>
-        <Route path="/machineapp" element={<MachineApp />} />
         <Route path="*" element={<Login onLogin={onLogin} />} />
       </Routes>
     )
@@ -328,7 +326,6 @@ export default function App() {
         <Route path="/apps"      element={<Apps />} />
         <Route path="/bestellen" element={<Bestellen user={user} />} />
         <Route path="/mijn-bestellingen" element={<MijnBestellingen />} />
-        <Route path="/machineapp" element={<MachineApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />
