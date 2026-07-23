@@ -2290,12 +2290,25 @@ def list_apps(_: int = Depends(verify_admin_user)):
     return result
 
 @app.get("/api/admin/apps/{filename}")
-def download_app(filename: str, _: int = Depends(verify_admin_user)):
+def download_app(filename: str, token: str = None, credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)), db: Session = Depends(get_session)):
+    # Accepteer token via Bearer header OF via ?token= query param (voor directe links op Android)
+    raw = token or (credentials.credentials if credentials else None)
+    if not raw:
+        raise HTTPException(401, "Niet ingelogd")
+    try:
+        payload = jwt.decode(raw, JWT_SECRET, algorithms=["HS256"])
+        customer_id = payload.get("sub")
+        customer = db.get(Customer, int(customer_id))
+        if not customer or not customer.is_admin:
+            raise HTTPException(403, "Geen toegang")
+    except Exception:
+        raise HTTPException(401, "Ongeldige token")
+
     if filename not in APP_METADATA:
         raise HTTPException(404, "App niet gevonden")
     path = DOWNLOADS_DIR / filename
     if not path.exists():
-        raise HTTPException(404, "APK nog niet beschikbaar — upload het bestand naar backend/downloads/")
+        raise HTTPException(404, "APK nog niet beschikbaar")
     return FileResponse(
         path=str(path),
         media_type="application/vnd.android.package-archive",

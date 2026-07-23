@@ -166,18 +166,5 @@ export const api = {
 
   // App downloads (admin)
   getApps: () => req('GET', '/api/admin/apps'),
-  downloadApp: async (filename) => {
-    const token = getToken()
-    const res = await fetch(`${BASE}/api/admin/apps/${filename}`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    })
-    if (!res.ok) throw new Error('Download mislukt')
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
-  },
+  getAppDownloadUrl: (filename) => `${BASE}/api/admin/apps/${filename}?token=${getToken()}`,
 }

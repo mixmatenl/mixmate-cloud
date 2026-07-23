@@ -21,24 +21,12 @@ function formatSize(bytes) {
 }
 
 export default function Apps() {
-  const [apps, setApps]         = useState(null)
-  const [downloading, setDownloading] = useState(null)
-  const [err, setErr]           = useState('')
+  const [apps, setApps] = useState(null)
+  const [err, setErr]   = useState('')
 
   useEffect(() => {
     api.getApps().then(setApps).catch(() => setErr('Kon app-lijst niet laden'))
   }, [])
-
-  async function handleDownload(filename) {
-    setDownloading(filename)
-    setErr('')
-    try {
-      await api.downloadApp(filename)
-    } catch (e) {
-      setErr(e.message || 'Download mislukt')
-    }
-    setDownloading(null)
-  }
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 24px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -104,31 +92,28 @@ export default function Apps() {
               </div>
 
               {/* Download knop */}
-              <button
-                onClick={() => handleDownload(app.filename)}
-                disabled={!app.available || downloading === app.filename}
-                style={{
-                  padding: '10px 20px', borderRadius: 10, border: 'none',
-                  background: app.available ? '#1d1d1f' : '#e5e5ea',
-                  color: app.available ? '#fff' : '#aeaeb2',
-                  fontSize: 14, fontWeight: 600,
-                  cursor: app.available ? 'pointer' : 'not-allowed',
-                  fontFamily: 'inherit', flexShrink: 0,
-                  opacity: downloading === app.filename ? .7 : 1,
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}
-              >
-                {downloading === app.filename ? (
-                  'Downloaden…'
-                ) : (
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    APK
-                  </>
-                )}
-              </button>
+              {app.available ? (
+                <a
+                  href={api.getAppDownloadUrl(app.filename)}
+                  download={app.filename}
+                  style={{
+                    padding: '10px 20px', borderRadius: 10, border: 'none',
+                    background: '#1d1d1f', color: '#fff',
+                    fontSize: 14, fontWeight: 600,
+                    textDecoration: 'none', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  APK
+                </a>
+              ) : (
+                <span style={{ padding: '10px 20px', borderRadius: 10, background: '#e5e5ea', color: '#aeaeb2', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+                  Niet beschikbaar
+                </span>
+              )}
             </div>
           ))}
         </div>
