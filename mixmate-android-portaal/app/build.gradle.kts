@@ -17,8 +17,7 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            isMinifyEnabled = false
         }
     }
 
@@ -31,6 +30,4 @@ android {
     }
 }
 
-dependencies {
-    implementation(libs.androidx.core.ktx)
-}
+// Geen dependencies — alleen Android SDK WebView
