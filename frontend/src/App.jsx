@@ -9,6 +9,7 @@ import Rapporten from './pages/Rapporten.jsx'
 import Meldingen from './pages/Meldingen.jsx'
 import Admin from './pages/Admin.jsx'
 import Webshop from './pages/Webshop.jsx'
+import Apps from './pages/Apps.jsx'
 import Bestellen from './pages/Bestellen.jsx'
 import MijnBestellingen from './pages/MijnBestellingen.jsx'
 import Layout from './components/Layout.jsx'
@@ -322,6 +323,7 @@ export default function App() {
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
         <Route path="/admin"     element={<Admin />} />
         <Route path="/webshop"   element={<Webshop />} />
+        <Route path="/apps"      element={<Apps />} />
         <Route path="/bestellen" element={<Bestellen user={user} />} />
         <Route path="/mijn-bestellingen" element={<MijnBestellingen />} />
         <Route path="*" element={<Navigate to="/" replace />} />

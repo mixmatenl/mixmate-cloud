@@ -2258,6 +2258,50 @@ async def _send_order_confirmation(order: GlassOrder, items: list):
 
 # ── Statische frontend serveren ───────────────────────────────────────────────
 
+# ── App downloads (admin only) ────────────────────────────────────────────────
+
+DOWNLOADS_DIR = Path(__file__).parent / "downloads"
+DOWNLOADS_DIR.mkdir(exist_ok=True)
+
+APP_METADATA = {
+    "mixmate-portaal.apk": {
+        "name": "MIXMATE Portaal",
+        "description": "Toegang tot het cloud portaal als native app",
+        "version": "1.0.0",
+    },
+    "mixmate-machine.apk": {
+        "name": "MIXMATE Machine",
+        "description": "Verbinding met de MIXMATE machine op lokaal netwerk",
+        "version": "1.0.0",
+    },
+}
+
+@app.get("/api/admin/apps")
+def list_apps(_: int = Depends(verify_admin_user)):
+    result = []
+    for filename, meta in APP_METADATA.items():
+        path = DOWNLOADS_DIR / filename
+        result.append({
+            "filename": filename,
+            "available": path.exists(),
+            "size": path.stat().st_size if path.exists() else None,
+            **meta,
+        })
+    return result
+
+@app.get("/api/admin/apps/{filename}")
+def download_app(filename: str, _: int = Depends(verify_admin_user)):
+    if filename not in APP_METADATA:
+        raise HTTPException(404, "App niet gevonden")
+    path = DOWNLOADS_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, "APK nog niet beschikbaar — upload het bestand naar backend/downloads/")
+    return FileResponse(
+        path=str(path),
+        media_type="application/vnd.android.package-archive",
+        filename=filename,
+    )
+
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
