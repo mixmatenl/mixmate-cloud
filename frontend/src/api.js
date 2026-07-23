@@ -166,5 +166,5 @@ export const api = {
 
   // App downloads (admin)
   getApps: () => req('GET', '/api/admin/apps'),
-  getAppDownloadUrl: (filename) => `${BASE}/api/admin/apps/${filename}?token=${getToken()}`,
+  getAppDownloadUrl: (filename) => `${BASE}/api/admin/apps/${filename}?token=${encodeURIComponent(getToken())}`,
 }
