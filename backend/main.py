@@ -425,12 +425,18 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
 
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
-        pair_code = str(secrets.randbelow(900000) + 100000)
         machine = Machine(
             machine_id=machine_id,
-            pair_code=pair_code,
+            pair_code=str(secrets.randbelow(900000) + 100000),
             pair_code_expires=datetime.utcnow() + timedelta(hours=24),
         )
+        db.add(machine)
+        db.commit()
+        db.refresh(machine)
+    elif not machine.paired:
+        # Ververs de koppelcode bij elke reconnect zolang niet gekoppeld
+        machine.pair_code = str(secrets.randbelow(900000) + 100000)
+        machine.pair_code_expires = datetime.utcnow() + timedelta(hours=24)
         db.add(machine)
         db.commit()
         db.refresh(machine)
