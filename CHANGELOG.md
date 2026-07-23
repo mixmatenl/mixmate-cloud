@@ -1,3 +1,15 @@
+## [1.3.7] - 2026-07-23
+### Nieuw
+- MachineApp: hybride cloud + lokale modus (detecteert automatisch via cloud én mixmate.local)
+- MachineApp: volledig herschreven Discovery-scherm met AirPods-achtige verbindingservaring
+- MachineApp: lokale modus stuurt API-calls rechtstreeks naar https://mixmate.local:8000
+- MachineApp: cloudmodus stuurt API-calls via /api/machineapp/{id}/proxy/... tunnel
+- MachineApp: pour-voortgang via cloud-WS-brug of direct lokale WS afhankelijk van modus
+- MachineApp: toont hotspot-instructies (MIXMATE-Setup WiFi) als er geen machine gevonden wordt
+- MachineApp: toont cert-acceptatie-instructie als mixmate.local niet vertrouwd is
+- Backend: generiek HTTP-proxy endpoint /api/machineapp/{id}/proxy/{path} voor alle REST-calls via tunnel
+- Backend: pour WS-brug /ws/machineapp/{id}/pour koppelt browsersessie aan Pi-poortstream
+
 ## [1.3.6] - 2026-07-23
 ### Nieuw
 - MachineApp: pagina op /machineapp waarmee je een MIXMATE-machine kunt ontdekken en verbinden zonder in te loggen

@@ -290,6 +290,8 @@ class MachineConnection:
         self.local_ip: str | None = None
         self.local_port: int = 8000
         self.ssl: bool = True
+        self.pairing_mode: bool = True
+        self.pour_queue: asyncio.Queue | None = None
 
     async def send(self, msg: dict):
         await self.ws.send_json(msg)
@@ -454,12 +456,17 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                 if data.get("serial_number") and not machine.serial_number_confirmed:
                     machine.serial_number           = data["serial_number"]
                     machine.serial_number_confirmed = True
-                if data.get("local_ip"):   conn.local_ip   = data["local_ip"]
-                if data.get("local_port"): conn.local_port = int(data["local_port"])
-                if "ssl" in data:          conn.ssl        = bool(data["ssl"])
+                if data.get("local_ip"):     conn.local_ip     = data["local_ip"]
+                if data.get("local_port"):   conn.local_port   = int(data["local_port"])
+                if "ssl" in data:            conn.ssl          = bool(data["ssl"])
+                if "pairing_mode" in data:   conn.pairing_mode = bool(data["pairing_mode"])
                 db.add(machine)
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
+
+            elif msg_type and msg_type.startswith("pour_"):
+                if conn.pour_queue:
+                    await conn.pour_queue.put(data)
 
             elif "req_id" in data:
                 conn.resolve(data["req_id"], data)
@@ -2338,6 +2345,100 @@ def machineapp_machines(db: Session = Depends(get_session)):
             "ssl": conn.ssl,
         })
     return result
+
+
+@app.get("/api/machineapp/discover")
+def machineapp_discover(db: Session = Depends(get_session)):
+    """Geeft online machines terug voor de pairing UI."""
+    result = []
+    for mid, conn in connected_machines.items():
+        machine = db.exec(select(Machine).where(Machine.machine_id == mid)).first()
+        result.append({
+            "machine_id": mid,
+            "name": (machine.model or "MIXMATE Machine") if machine else "MIXMATE Machine",
+            "pairing_mode": conn.pairing_mode,
+        })
+    return result
+
+
+@app.post("/api/machineapp/{machine_id}/rpc")
+async def machineapp_rpc(machine_id: str, body: dict):
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(503, "Machine niet online")
+    result = await conn.request(body, timeout=25.0)
+    return result
+
+
+@app.api_route("/api/machineapp/{machine_id}/proxy/{path:path}", methods=["GET", "POST", "DELETE", "PATCH", "PUT"])
+async def machineapp_proxy(machine_id: str, path: str, request: Request):
+    """Stuurt HTTP-aanroepen door naar de Pi via de WS-tunnel."""
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(503, "Machine niet online")
+    body = None
+    if request.method in ("POST", "PATCH", "PUT"):
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+    result = await conn.request({
+        "type": "http_proxy",
+        "method": request.method,
+        "path": f"/api/{path}",
+        "body": body,
+        "params": dict(request.query_params),
+    }, timeout=20.0)
+    status = result.get("status", 200)
+    data   = result.get("data")
+    if status >= 400:
+        raise HTTPException(status, detail=data)
+    return data
+
+
+@app.websocket("/ws/machineapp/{machine_id}/pour")
+async def machineapp_pour_ws(machine_id: str, websocket: WebSocket):
+    """Brug: browser ↔ cloud ↔ Pi pour-WebSocket."""
+    await websocket.accept()
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        await websocket.send_json({"type": "error", "message": "Machine niet online"})
+        return
+
+    try:
+        start_msg = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+    except Exception:
+        return
+
+    recipe_id = start_msg.get("recipe_id")
+    scale     = start_msg.get("scale", 1.0)
+
+    conn.pour_queue = asyncio.Queue()
+    try:
+        await conn.request({"type": "start_pour", "recipe_id": recipe_id, "scale": scale}, timeout=5.0)
+    except Exception:
+        await websocket.send_json({"type": "error", "message": "Kon gieten niet starten"})
+        conn.pour_queue = None
+        return
+
+    try:
+        while True:
+            msg = await asyncio.wait_for(conn.pour_queue.get(), timeout=90)
+            msg_type = msg.get("type", "")
+            # Verwijder "pour_" prefix voor de frontend
+            clean_type = msg_type.replace("pour_", "", 1) if msg_type.startswith("pour_") else msg_type
+            await websocket.send_json({**msg, "type": clean_type})
+            if clean_type in ("done", "error", "cancelled"):
+                break
+    except asyncio.TimeoutError:
+        await websocket.send_json({"type": "error", "message": "Timeout"})
+    except WebSocketDisconnect:
+        try:
+            await conn.request({"type": "cancel_pour"}, timeout=3.0)
+        except Exception:
+            pass
+    finally:
+        conn.pour_queue = None
 
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
