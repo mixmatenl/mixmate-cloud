@@ -120,13 +120,30 @@ function Dashboard({ data, openTasks, needsData }) {
 
 // ── Inline ticket viewer ──────────────────────────────────────────────────────
 
-function TicketViewer({ ticket, token }) {
-  const url = `/api/hr/tickets/${ticket.id}/download?token=${encodeURIComponent(token)}`
+function TicketViewer({ ticket }) {
+  const [blobUrl, setBlobUrl] = useState(null)
+  const [dlUrl, setDlUrl] = useState(null)
   const isPdf = ticket.mime_type?.includes('pdf')
   const isImg = ticket.mime_type?.startsWith('image')
   const dateLabel = ticket.ticket_date
     ? new Date(ticket.ticket_date).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })
     : null
+
+  useEffect(() => {
+    const token = localStorage.getItem('mm_token') || localStorage.getItem('mixmate_token')
+    if (!token) return
+    fetch(`/api/hr/tickets/${ticket.id}/download`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.blob() : Promise.reject())
+      .then(blob => {
+        const url = URL.createObjectURL(blob)
+        setBlobUrl(url)
+        setDlUrl(url)
+      })
+      .catch(() => {})
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl) }
+  }, [ticket.id])
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -134,18 +151,23 @@ function TicketViewer({ ticket, token }) {
         <div style={{ fontSize: 12, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 8 }}>{dateLabel}</div>
       )}
       <div style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid #e5e5ea', background: '#f5f5f7' }}>
-        {isImg && (
-          <img src={`/api/hr/tickets/${ticket.id}/download`} alt={ticket.original_name}
+        {isImg && blobUrl && (
+          <img src={blobUrl} alt={ticket.original_name}
             style={{ width: '100%', display: 'block', maxHeight: 500, objectFit: 'contain', background: '#000' }} />
         )}
-        {isPdf && (
-          <iframe src={`/api/hr/tickets/${ticket.id}/download`} title={ticket.original_name}
+        {isPdf && blobUrl && (
+          <iframe src={blobUrl} title={ticket.original_name}
             style={{ width: '100%', height: 480, border: 'none', display: 'block' }} />
+        )}
+        {!blobUrl && (isImg || isPdf) && (
+          <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aeaeb2', fontSize: 13 }}>Laden…</div>
         )}
         <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: isImg || isPdf ? '1px solid #e5e5ea' : 'none' }}>
           <span style={{ fontSize: 13, color: '#3a3a3c', fontWeight: 500 }}>{ticket.original_name}</span>
-          <a href={`/api/hr/tickets/${ticket.id}/download`} download={ticket.original_name}
-            style={{ fontSize: 13, color: '#007aff', textDecoration: 'none', fontWeight: 600 }}>Downloaden ↓</a>
+          {dlUrl
+            ? <a href={dlUrl} download={ticket.original_name} style={{ fontSize: 13, color: '#007aff', textDecoration: 'none', fontWeight: 600 }}>Downloaden ↓</a>
+            : <span style={{ fontSize: 13, color: '#aeaeb2' }}>Laden…</span>
+          }
         </div>
       </div>
     </div>
