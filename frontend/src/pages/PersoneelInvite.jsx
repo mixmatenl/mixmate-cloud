@@ -39,8 +39,9 @@ export default function PersoneelInvite({ onLogin }) {
       localStorage.setItem('mixmate_token', d.token)
       localStorage.setItem('mm_user', JSON.stringify(user))
       localStorage.setItem('mixmate_user', JSON.stringify(user))
-      onLogin?.()
-      navigate('/personeel')
+      onLogin?.(d.token, user)
+      // Hard redirect zodat App.jsx opnieuw laadt met correcte user-state
+      window.location.href = '/personeel'
     } catch (e) {
       setError(e.message)
     } finally {

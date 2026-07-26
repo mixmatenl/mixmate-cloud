@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -282,6 +282,21 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('mm_user') || 'null') } catch { return null }
   })
 
+  // Voor al verstuurde mails: als is_employee niet in opgeslagen user staat, check bij /api/hr/me
+  useEffect(() => {
+    if (token && user && user.is_employee === undefined) {
+      fetch('/api/hr/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => { if (r.ok) return r.json(); throw new Error() })
+        .then(() => {
+          const updated = { ...user, is_employee: true }
+          localStorage.setItem('mm_user', JSON.stringify(updated))
+          localStorage.setItem('mixmate_user', JSON.stringify(updated))
+          setUser(updated)
+        })
+        .catch(() => {})
+    }
+  }, [token])
+
   function onLogin(token, user) {
     localStorage.setItem('mm_token', token)
     localStorage.setItem('mm_user', JSON.stringify(user))
@@ -314,7 +329,7 @@ export default function App() {
   if (!token) {
     return (
       <Routes>
-        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={() => {}} />} />
+        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={onLogin} />} />
         <Route path="*" element={<Login onLogin={onLogin} />} />
       </Routes>
     )
@@ -351,7 +366,7 @@ export default function App() {
         <Route path="/apps"      element={<Apps />} />
         <Route path="/bestellen" element={<Bestellen user={user} />} />
         <Route path="/mijn-bestellingen" element={<MijnBestellingen />} />
-        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={() => {}} />} />
+        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={onLogin} />} />
         <Route path="/personeel/beheer" element={user?.email?.toLowerCase() === HR_ADMIN ? <PersoneelAdmin /> : <Navigate to="/" replace />} />
         <Route path="/personeel" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
