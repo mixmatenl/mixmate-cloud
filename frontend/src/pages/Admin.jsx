@@ -86,7 +86,7 @@ function KlantenTab() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
           Terug
         </button>
-        <KlantDetail klant={selected} onClose={() => setSelected(null)} onDelete={handleDelete} />
+        <KlantDetail key={selected.id} klant={selected} onClose={() => setSelected(null)} onDelete={handleDelete} />
       </div>
     )
   }
@@ -101,7 +101,7 @@ function KlantenTab() {
           {loading && <div style={{ padding: 20, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Zoeken…</div>}
           {results && results.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen klanten gevonden.</div>}
           {(results || []).map(c => (
-            <div key={c.id} onClick={() => setSelected(selected?.id === c.id ? null : c)}
+            <div key={c.id} onClick={() => setSelected(c)}
               style={{ ...s.row, background: selected?.id === c.id ? '#f0f6ff' : undefined, borderBottom: '1px solid #f2f2f7' }}>
               <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#e5e5ea', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, color: '#636366', flexShrink: 0 }}>
                 {(c.name || c.email).charAt(0).toUpperCase()}
@@ -122,7 +122,7 @@ function KlantenTab() {
           ))}
         </div>
       </div>
-      {selected && !isMobile && <KlantDetail klant={selected} onClose={() => setSelected(null)} onDelete={handleDelete} />}
+      {selected && !isMobile && <KlantDetail key={selected.id} klant={selected} onClose={() => setSelected(null)} onDelete={handleDelete} />}
     </div>
   )
 }

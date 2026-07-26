@@ -277,6 +277,7 @@ def create_tables():
         "ALTER TABLE glassorder ADD COLUMN paid_at TIMESTAMP",
         "ALTER TABLE glassorder ADD COLUMN reminder_sent_at TIMESTAMP",
         "ALTER TABLE glassproduct ADD COLUMN series_id INTEGER REFERENCES glassseries(id)",
+        "ALTER TABLE employee ADD COLUMN birth_place VARCHAR NOT NULL DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -975,8 +976,11 @@ def admin_delete_customer(cid: int, _: int = Depends(verify_admin_user), db: Ses
         db.exec(delete(TicketResponse).where(TicketResponse.ticket_id == t.id))
         db.delete(t)
     db.exec(delete(Machine).where(Machine.customer_id == cid))
-    emp = db.exec(select(Employee).where(Employee.customer_id == cid)).first()
-    if emp:
+    # Opruimen van gekoppelde employee records (via customer_id of via e-mail)
+    emps = db.exec(select(Employee).where(
+        (Employee.customer_id == cid) | (Employee.email == customer.email)
+    )).all()
+    for emp in emps:
         db.exec(delete(EmployeeTask).where(EmployeeTask.employee_id == emp.id))
         db.exec(delete(FestivalAssignment).where(FestivalAssignment.employee_id == emp.id))
         db.delete(emp)
