@@ -2744,7 +2744,7 @@ async def hr_accept_invite(token: str, body: dict, db: Session = Depends(get_ses
     await _send_confirm_data_email(emp)
 
     token_jwt = create_token(customer.id)
-    return {"token": token_jwt, "name": customer.name}
+    return {"token": token_jwt, "name": customer.name, "email": customer.email, "is_employee": True}
 
 @app.get("/api/hr/invite/{token}")
 async def hr_check_invite(token: str, db: Session = Depends(get_session)):
