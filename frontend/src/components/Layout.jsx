@@ -152,15 +152,6 @@ export default function Layout({ user, onLogout, children }) {
             />
           </NavGroup>
 
-          <NavGroup label="Personeel">
-            <NavRow
-              active={path === '/personeel'}
-              to="/personeel"
-              color="#5856d6"
-              label="Personeelsportaal"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
-            />
-          </NavGroup>
         </>
       )}
 

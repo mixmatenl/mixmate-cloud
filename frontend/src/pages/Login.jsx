@@ -60,7 +60,7 @@ export default function Login({ onLogin }) {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <div className="text-2xl font-bold tracking-tight text-[#111]">MIXMATE</div>
-          <div className="text-sm text-gray-500 mt-1">Mijn machine beheren</div>
+          <div className="text-sm text-gray-500 mt-1">MIXMATE</div>
         </div>
 
         {/* Tab schakelaar — alleen bij login/register */}
