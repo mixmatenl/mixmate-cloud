@@ -33,7 +33,7 @@ export default function Login({ onLogin }) {
     try {
       if (mode === 'login') {
         const r = await api.login(email, password)
-        onLogin(r.token, { name: r.name, email: r.email, must_change_password: r.must_change_password })
+        onLogin(r.token, { name: r.name, email: r.email, must_change_password: r.must_change_password, is_employee: r.is_employee })
 
       } else if (mode === 'register') {
         const r = await api.register(name, email, password)

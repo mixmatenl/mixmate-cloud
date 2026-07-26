@@ -935,11 +935,12 @@ def admin_me(customer_id: int = Depends(verify_admin_user), db: Session = Depend
 @app.get("/api/admin/customers")
 def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     # Medewerkers uitsluiten — die horen in het personeelsportaal, niet in de klantenlijst
-    emp_rows = db.exec(select(Employee.customer_id).where(Employee.customer_id != None)).all()
-    emp_customer_ids = [row[0] for row in emp_rows]
+    emp_customer_ids = list(db.exec(
+        select(Employee.customer_id).where(Employee.customer_id.is_not(None))
+    ).all())
     query = select(Customer)
     if emp_customer_ids:
-        query = query.where(~Customer.id.in_(emp_customer_ids))
+        query = query.where(Customer.id.not_in(emp_customer_ids))
     if q:
         like = f"%{q}%"
         query = query.where((Customer.name.ilike(like)) | (Customer.email.ilike(like)))

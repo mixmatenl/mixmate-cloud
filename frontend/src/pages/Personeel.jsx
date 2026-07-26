@@ -36,6 +36,105 @@ function SectionTitle({ children }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: '#aeaeb2', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>{children}</div>
 }
 
+// ── Dashboard sectie ─────────────────────────────────────────────────────────
+
+function Dashboard({ data, openTasks, needsData }) {
+  const festivals = data.festivals || []
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Gegevens invullen banner — hoogste prioriteit */}
+      {needsData && (
+        <a href="/personeel?s=gegevens" style={{ textDecoration: 'none' }}>
+          <div style={{ background: 'linear-gradient(135deg, #ff9500 0%, #ff6b00 100%)', borderRadius: 18, padding: '20px 22px', display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2 }}>Vul je gegevens in</div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,.85)', lineHeight: 1.4 }}>Verplicht voor de verzekering — daarna zie je je festivals en tickets</div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+        </a>
+      )}
+
+      {/* Openstaande taken */}
+      {openTasks.length > 0 && (
+        <Card style={{ padding: '18px 20px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ background: '#fff8ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '2px 9px', fontSize: 12, color: '#c2410c' }}>{openTasks.length}</span>
+            Openstaande taken
+          </div>
+          {openTasks.map(t => (
+            <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f7' }}>
+              <div style={{ width: 20, height: 20, borderRadius: 10, border: '2px solid #d1d1d6', marginTop: 1, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{t.label}</div>
+                {t.key === 'confirm_data' && (
+                  <a href="/personeel?s=gegevens" style={{ fontSize: 12, color: '#007aff', textDecoration: 'none' }}>Ga naar Persoonlijke gegevens →</a>
+                )}
+                {t.key === 'change_password' && (
+                  <div style={{ fontSize: 12, color: '#6e6e73' }}>Wijzig je wachtwoord via je accountinstellingen</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {openTasks.length === 0 && (
+        <Card style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34c759" strokeWidth="2.5" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>Alle taken zijn afgerond!</div>
+        </Card>
+      )}
+
+      {/* Festivals overzicht */}
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', marginBottom: 12 }}>
+          Jouw festivals
+        </div>
+
+        {!data.data_confirmed ? (
+          <Card style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f5f5f7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>🔒</div>
+            <div style={{ fontSize: 14, color: '#6e6e73' }}>Zichtbaar na het invullen van je gegevens</div>
+          </Card>
+        ) : festivals.length === 0 ? (
+          <Card style={{ padding: '18px 20px' }}>
+            <div style={{ fontSize: 14, color: '#aeaeb2' }}>Je bent nog niet aan een festival toegevoegd.</div>
+          </Card>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {festivals.map(f => (
+              <Card key={f.id} style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#fff8ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 20 }}>🎪</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>{f.name}</div>
+                  <div style={{ fontSize: 12, color: '#6e6e73', marginTop: 2 }}>
+                    {f.location}{f.location && f.date_start ? ' · ' : ''}{f.date_start}
+                    {f.date_end && f.date_end !== f.date_start ? ` t/m ${f.date_end}` : ''}
+                  </div>
+                  {f.role && <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>Rol: {f.role}</div>}
+                </div>
+                {f.tickets?.length > 0 && (
+                  <a href="/personeel?s=festivals" style={{ fontSize: 12, color: '#007aff', textDecoration: 'none', fontWeight: 600, flexShrink: 0 }}>
+                    {f.tickets.length} ticket{f.tickets.length !== 1 ? 's' : ''} →
+                  </a>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Festivals sectie ─────────────────────────────────────────────────────────
 
 function FestivalsSection({ data }) {
@@ -293,7 +392,7 @@ export default function Personeel() {
   const [data, setData] = useState(null)
   const [loadErr, setLoadErr] = useState('')
 
-  const section = new URLSearchParams(location.search).get('s') || 'festivals'
+  const section = new URLSearchParams(location.search).get('s') || 'dashboard'
 
   async function load() {
     try {
@@ -320,7 +419,9 @@ export default function Personeel() {
     </div>
   )
 
-  const openTasks = (data.tasks || []).filter(t => !t.completed && t.key !== 'confirm_data')
+  const allTasks = data.tasks || []
+  const openTasks = allTasks.filter(t => !t.completed)
+  const needsData = !data.data_confirmed
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 20px', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' }}>
@@ -334,18 +435,7 @@ export default function Personeel() {
         <div style={{ fontSize: 14, color: '#6e6e73', marginTop: 4 }}>MIXMATE Personeelsportaal</div>
       </div>
 
-      {/* Openstaande custom taken */}
-      {openTasks.length > 0 && (
-        <div style={{ background: '#fff8ed', border: '1px solid #fed7aa', borderRadius: 16, padding: '16px 18px', marginBottom: 24 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#c2410c', marginBottom: 8 }}>
-            📋 {openTasks.length} {openTasks.length === 1 ? 'taak' : 'taken'} te doen
-          </div>
-          {openTasks.map(t => (
-            <div key={t.id} style={{ fontSize: 14, color: '#92400e', paddingLeft: 4, marginBottom: 4 }}>· {t.label}</div>
-          ))}
-        </div>
-      )}
-
+      {section === 'dashboard' && <Dashboard data={data} openTasks={openTasks} needsData={needsData} />}
       {section === 'festivals'  && <FestivalsSection data={data} />}
       {section === 'contract'   && <ContractSection data={data} />}
       {section === 'gegevens'   && <GegevensSection data={data} onDataUpdate={load} />}

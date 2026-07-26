@@ -118,24 +118,29 @@ export default function Layout({ user, onLogout, children }) {
 
       <div style={{ marginTop: 8 }} />
 
-      {isEmployee && (
-        <>
+      {isEmployee && (() => {
+        const empS = new URLSearchParams(location.search).get('s')
+        const inPortaal = path === '/personeel'
+        return (
           <NavGroup label="Personeelsportaal">
-            <NavRow active={path === '/personeel' && (!new URLSearchParams(location.search).get('s'))} to="/personeel" color="#ff9500" label="Festivals"
+            <NavRow active={inPortaal && (!empS || empS === 'dashboard')} to="/personeel" color="#1d1d1f" label="Dashboard"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>}
+            />
+            <NavRow active={inPortaal && empS === 'festivals'} to="/personeel?s=festivals" color="#ff9500" label="Festivals"
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
             />
-            <NavRow active={path === '/personeel' && new URLSearchParams(location.search).get('s') === 'contract'} to="/personeel?s=contract" color="#5856d6" label="Contractgegevens"
+            <NavRow active={inPortaal && empS === 'contract'} to="/personeel?s=contract" color="#5856d6" label="Contractgegevens"
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
             />
-            <NavRow active={path === '/personeel' && new URLSearchParams(location.search).get('s') === 'gegevens'} to="/personeel?s=gegevens" color="#007aff" label="Persoonlijke gegevens"
+            <NavRow active={inPortaal && empS === 'gegevens'} to="/personeel?s=gegevens" color="#007aff" label="Persoonlijke gegevens"
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
             />
-            <NavRow active={path === '/personeel' && new URLSearchParams(location.search).get('s') === 'melding'} to="/personeel?s=melding" color="#ff3b30" label="Probleem melden"
+            <NavRow active={inPortaal && empS === 'melding'} to="/personeel?s=melding" color="#ff3b30" label="Probleem melden"
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
             />
           </NavGroup>
-        </>
-      )}
+        )
+      })()}
 
       {!isAdmin && !isEmployee && (
         <>
