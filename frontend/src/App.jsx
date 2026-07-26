@@ -282,7 +282,10 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('mm_user') || 'null') } catch { return null }
   })
 
-  // Voor al verstuurde mails: als is_employee niet in opgeslagen user staat, check bij /api/hr/me
+  // Als is_employee nog onbekend is: blokkeer render tot we het weten
+  const [employeeChecked, setEmployeeChecked] = useState(
+    !token || !user || user.is_employee !== undefined
+  )
   useEffect(() => {
     if (token && user && user.is_employee === undefined) {
       fetch('/api/hr/me', { headers: { Authorization: `Bearer ${token}` } })
@@ -293,7 +296,13 @@ export default function App() {
           localStorage.setItem('mixmate_user', JSON.stringify(updated))
           setUser(updated)
         })
-        .catch(() => {})
+        .catch(() => {
+          const updated = { ...user, is_employee: false }
+          localStorage.setItem('mm_user', JSON.stringify(updated))
+          localStorage.setItem('mixmate_user', JSON.stringify(updated))
+          setUser(updated)
+        })
+        .finally(() => setEmployeeChecked(true))
     }
   }, [token])
 
@@ -324,6 +333,15 @@ export default function App() {
     localStorage.setItem('mm_user', JSON.stringify(updated))
     localStorage.setItem('mixmate_user', JSON.stringify(updated))
     setUser(updated)
+  }
+
+  if (!employeeChecked) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <div style={{ width: 28, height: 28, border: '2px solid #e5e5ea', borderTopColor: '#1d1d1f', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    )
   }
 
   if (!token) {
