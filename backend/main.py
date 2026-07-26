@@ -2671,12 +2671,22 @@ async def hr_delete_employee(emp_id: int, admin_id: int = Depends(verify_hr_admi
     emp = db.get(Employee, emp_id)
     if not emp:
         raise HTTPException(status_code=404)
+    cid = emp.customer_id
     db.exec(delete(EmployeeTask).where(EmployeeTask.employee_id == emp_id))
     db.exec(delete(FestivalAssignment).where(FestivalAssignment.employee_id == emp_id))
     db.exec(delete(FestivalTicket).where(FestivalTicket.employee_id == emp_id))
-    if emp.customer_id:
-        db.exec(delete(Customer).where(Customer.id == emp.customer_id))
     db.delete(emp)
+    db.flush()  # Employee weg vóór Customer — anders FK-violation
+    if cid:
+        tickets = db.exec(select(SupportTicket).where(SupportTicket.customer_id == cid)).all()
+        for t in tickets:
+            db.exec(delete(TicketResponse).where(TicketResponse.ticket_id == t.id))
+            db.delete(t)
+        db.exec(delete(MachineMember).where(MachineMember.customer_id == cid))
+        db.exec(delete(Machine).where(Machine.customer_id == cid))
+        customer = db.get(Customer, cid)
+        if customer:
+            db.delete(customer)
     db.commit()
     return {"ok": True}
 
