@@ -23,6 +23,8 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select, delete, Re
 from sqlalchemy import text
 import httpx
 import jwt
+import boto3
+from botocore.exceptions import ClientError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -195,6 +197,34 @@ HR_ADMIN_EMAIL = "r.muller@mixmate.nl"
 
 UPLOADS_DIR = Path(__file__).parent.parent / "uploads" / "tickets"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+R2_BUCKET = os.environ.get("R2_BUCKET_NAME", "")
+R2_ENDPOINT = os.environ.get("R2_ENDPOINT_URL", "")
+R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY_ID", "")
+R2_SECRET_KEY = os.environ.get("R2_SECRET_ACCESS_KEY", "")
+USE_R2 = bool(R2_BUCKET and R2_ENDPOINT and R2_ACCESS_KEY and R2_SECRET_KEY)
+
+def _r2_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=R2_ENDPOINT,
+        aws_access_key_id=R2_ACCESS_KEY,
+        aws_secret_access_key=R2_SECRET_KEY,
+        region_name="auto",
+    )
+
+def r2_upload(content: bytes, key: str, content_type: str):
+    _r2_client().put_object(Bucket=R2_BUCKET, Key=key, Body=content, ContentType=content_type)
+
+def r2_download(key: str) -> bytes:
+    resp = _r2_client().get_object(Bucket=R2_BUCKET, Key=key)
+    return resp["Body"].read()
+
+def r2_delete(key: str):
+    try:
+        _r2_client().delete_object(Bucket=R2_BUCKET, Key=key)
+    except ClientError:
+        pass
 
 class Employee(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -2901,9 +2931,11 @@ async def hr_upload_ticket(
     if ext not in [".pdf", ".jpg", ".jpeg", ".png", ".webp"]:
         raise HTTPException(status_code=400, detail="Alleen PDF of afbeeldingen toegestaan")
     safe_name = f"{secrets.token_hex(16)}{ext}"
-    dest = UPLOADS_DIR / safe_name
     content = await file.read()
-    dest.write_bytes(content)
+    if USE_R2:
+        r2_upload(content, safe_name, file.content_type or "application/octet-stream")
+    else:
+        (UPLOADS_DIR / safe_name).write_bytes(content)
     ticket = FestivalTicket(
         festival_id=fid,
         employee_id=employee_id,
@@ -2922,10 +2954,13 @@ async def hr_delete_ticket(ticket_id: int, admin_id: int = Depends(verify_hr_adm
     t = db.get(FestivalTicket, ticket_id)
     if not t:
         raise HTTPException(status_code=404)
-    try:
-        (UPLOADS_DIR / t.filename).unlink(missing_ok=True)
-    except Exception:
-        pass
+    if USE_R2:
+        r2_delete(t.filename)
+    else:
+        try:
+            (UPLOADS_DIR / t.filename).unlink(missing_ok=True)
+        except Exception:
+            pass
     db.delete(t)
     db.commit()
     return {"ok": True}
@@ -2946,6 +2981,15 @@ async def hr_download_ticket(ticket_id: int, auth: tuple = Depends(verify_employ
             raise HTTPException(status_code=403)
         if t.employee_id is not None and t.employee_id != emp.id:
             raise HTTPException(status_code=403)
+    if USE_R2:
+        try:
+            content = r2_download(t.filename)
+        except ClientError:
+            raise HTTPException(status_code=404)
+        from fastapi.responses import Response
+        return Response(content=content, media_type=t.mime_type, headers={
+            "Content-Disposition": f'inline; filename="{t.original_name}"'
+        })
     path = UPLOADS_DIR / t.filename
     if not path.exists():
         raise HTTPException(status_code=404)
