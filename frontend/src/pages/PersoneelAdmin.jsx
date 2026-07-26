@@ -270,11 +270,13 @@ function FestivalsTab() {
     loadDetail(festivalId)
   }
 
-  async function uploadTicket(festivalId, file, empId) {
+  async function uploadTicket(festivalId, file, empId, ticketDate) {
     setUploading(true)
     const fd = new FormData()
     fd.append('file', file)
-    const url = empId ? `/api/hr/festivals/${festivalId}/tickets?employee_id=${empId}` : `/api/hr/festivals/${festivalId}/tickets`
+    let url = `/api/hr/festivals/${festivalId}/tickets?`
+    if (empId) url += `employee_id=${empId}&`
+    if (ticketDate) url += `ticket_date=${encodeURIComponent(ticketDate)}&`
     const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('mm_token')}` }, body: fd })
     if (!r.ok) alert('Upload mislukt')
     setUploading(false)
@@ -360,24 +362,59 @@ function FestivalsTab() {
 
           {/* Tickets */}
           <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 20, marginTop: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', marginBottom: 12 }}>Tickets uploaden</div>
-            {detail.tickets.map(t => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, padding: '8px 12px', background: '#f9f9f9', borderRadius: 10 }}>
-                <span style={{ fontSize: 16 }}>{t.mime_type?.includes('pdf') ? '📄' : '🖼️'}</span>
-                <span style={{ fontSize: 13, flex: 1 }}>{t.original_name}</span>
-                {t.employee_id && <span style={{ fontSize: 12, color: '#6e6e73' }}>Persoonlijk</span>}
-                <a href={`/api/hr/tickets/${t.id}/download`} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#0369a1', textDecoration: 'none' }}>↓</a>
-                <Btn small color="#fff1f0" textColor="#dc2626" onClick={() => deleteTicket(t.id, selected.id)}>✕</Btn>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', marginBottom: 12 }}>Tickets</div>
+
+            {/* Bestaande tickets gegroepeerd per medewerker / per dag */}
+            {detail.tickets.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                {detail.tickets.map(t => {
+                  const emp = t.employee_id ? detail.employees.find(e => e.id === t.employee_id) : null
+                  const empLabel = emp ? `${emp.first_name} ${emp.last_name}` : 'Iedereen'
+                  const dateLabel = t.ticket_date ? new Date(t.ticket_date).toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' }) : null
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, padding: '9px 12px', background: '#f9f9f9', borderRadius: 10 }}>
+                      <span style={{ fontSize: 15 }}>{t.mime_type?.includes('pdf') ? '📄' : '🖼️'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.original_name}</div>
+                        <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 1 }}>
+                          {empLabel}{dateLabel ? ` · ${dateLabel}` : ''}
+                        </div>
+                      </div>
+                      <a href={`/api/hr/tickets/${t.id}/download`} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#0369a1', textDecoration: 'none', flexShrink: 0 }}>↓</a>
+                      <Btn small color="#fff1f0" textColor="#dc2626" onClick={() => deleteTicket(t.id, selected.id)}>✕</Btn>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-              <select id="ticket-emp" style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}>
-                <option value="">Voor iedereen</option>
-                {detail.employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
-              </select>
+            )}
+
+            {/* Upload formulier */}
+            <div style={{ background: '#f5f5f7', borderRadius: 12, padding: '14px 14px 10px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 10 }}>Nieuw ticket uploaden</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#6e6e73', marginBottom: 4 }}>Medewerker</label>
+                  <select id="ticket-emp" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff' }}>
+                    <option value="">Voor iedereen</option>
+                    {detail.employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#6e6e73', marginBottom: 4 }}>Datum</label>
+                  <input id="ticket-date" type="date" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
+                </div>
+              </div>
               <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files[0]; if (f) { const empId = document.getElementById('ticket-emp').value || null; uploadTicket(selected.id, f, empId) }; e.target.value = '' }} />
-              <Btn small disabled={uploading} onClick={() => fileRef.current.click()}>{uploading ? 'Uploaden…' : '↑ Upload ticket'}</Btn>
+                onChange={e => {
+                  const f = e.target.files[0]
+                  if (f) {
+                    const empId = document.getElementById('ticket-emp').value || null
+                    const date = document.getElementById('ticket-date').value || null
+                    uploadTicket(selected.id, f, empId, date)
+                  }
+                  e.target.value = ''
+                }} />
+              <Btn small disabled={uploading} onClick={() => fileRef.current.click()}>{uploading ? 'Uploaden…' : '↑ Bestand kiezen & uploaden'}</Btn>
             </div>
           </div>
         </Modal>

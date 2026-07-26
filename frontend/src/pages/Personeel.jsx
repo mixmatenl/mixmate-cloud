@@ -110,24 +110,7 @@ function Dashboard({ data, openTasks, needsData }) {
           </Card>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {festivals.map(f => (
-              <Card key={f.id} style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#fff8ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 20 }}>🎪</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>{f.name}</div>
-                  <div style={{ fontSize: 12, color: '#6e6e73', marginTop: 2 }}>
-                    {f.location}{f.location && f.date_start ? ' · ' : ''}{f.date_start}
-                    {f.date_end && f.date_end !== f.date_start ? ` t/m ${f.date_end}` : ''}
-                  </div>
-                  {f.role && <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>Rol: {f.role}</div>}
-                </div>
-                {f.tickets?.length > 0 && (
-                  <a href="/personeel?s=festivals" style={{ fontSize: 12, color: '#007aff', textDecoration: 'none', fontWeight: 600, flexShrink: 0 }}>
-                    {f.tickets.length} ticket{f.tickets.length !== 1 ? 's' : ''} →
-                  </a>
-                )}
-              </Card>
-            ))}
+            {festivals.map(f => <FestivalCard key={f.id} f={f} />)}
           </div>
         )}
       </div>
@@ -135,7 +118,83 @@ function Dashboard({ data, openTasks, needsData }) {
   )
 }
 
+// ── Inline ticket viewer ──────────────────────────────────────────────────────
+
+function TicketViewer({ ticket, token }) {
+  const url = `/api/hr/tickets/${ticket.id}/download?token=${encodeURIComponent(token)}`
+  const isPdf = ticket.mime_type?.includes('pdf')
+  const isImg = ticket.mime_type?.startsWith('image')
+  const dateLabel = ticket.ticket_date
+    ? new Date(ticket.ticket_date).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })
+    : null
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {dateLabel && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 8 }}>{dateLabel}</div>
+      )}
+      <div style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid #e5e5ea', background: '#f5f5f7' }}>
+        {isImg && (
+          <img src={`/api/hr/tickets/${ticket.id}/download`} alt={ticket.original_name}
+            style={{ width: '100%', display: 'block', maxHeight: 500, objectFit: 'contain', background: '#000' }} />
+        )}
+        {isPdf && (
+          <iframe src={`/api/hr/tickets/${ticket.id}/download`} title={ticket.original_name}
+            style={{ width: '100%', height: 480, border: 'none', display: 'block' }} />
+        )}
+        <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: isImg || isPdf ? '1px solid #e5e5ea' : 'none' }}>
+          <span style={{ fontSize: 13, color: '#3a3a3c', fontWeight: 500 }}>{ticket.original_name}</span>
+          <a href={`/api/hr/tickets/${ticket.id}/download`} download={ticket.original_name}
+            style={{ fontSize: 13, color: '#007aff', textDecoration: 'none', fontWeight: 600 }}>Downloaden ↓</a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Festivals sectie ─────────────────────────────────────────────────────────
+
+function FestivalCard({ f }) {
+  const [open, setOpen] = useState(false)
+  const hasTickets = f.tickets?.length > 0
+
+  return (
+    <Card style={{ marginBottom: 12, overflow: 'hidden' }}>
+      <div onClick={() => setOpen(o => !o)}
+        style={{ padding: '16px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: '#fff8ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 20 }}>🎪</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>{f.name}</div>
+          <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>
+            {f.location}{f.location && f.date_start ? ' · ' : ''}{f.date_start}
+            {f.date_end && f.date_end !== f.date_start ? ` t/m ${f.date_end}` : ''}
+          </div>
+          {f.role && <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>Rol: {f.role}</div>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          {hasTickets && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#ff9500', background: '#fff8ed', borderRadius: 8, padding: '3px 9px' }}>
+              {f.tickets.length} ticket{f.tickets.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" strokeWidth="2.5" strokeLinecap="round"
+            style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ borderTop: '1px solid #f0f0f0', padding: '16px 20px' }}>
+          {!hasTickets && (
+            <div style={{ fontSize: 14, color: '#aeaeb2', textAlign: 'center', padding: '12px 0' }}>Nog geen tickets beschikbaar.</div>
+          )}
+          {f.tickets?.map(t => <TicketViewer key={t.id} ticket={t} />)}
+        </div>
+      )}
+    </Card>
+  )
+}
 
 function FestivalsSection({ data }) {
   if (!data.data_confirmed) {
@@ -173,31 +232,7 @@ function FestivalsSection({ data }) {
   return (
     <div>
       <SectionTitle>Festivals</SectionTitle>
-      {festivals.map(f => (
-        <Card key={f.id} style={{ padding: 20, marginBottom: 12 }}>
-          <div style={{ marginBottom: f.tickets?.length ? 16 : 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f' }}>{f.name}</div>
-            <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4 }}>
-              {f.location}{f.location && (f.date_start || f.date_end) ? ' · ' : ''}
-              {f.date_start}{f.date_end && f.date_end !== f.date_start ? ` t/m ${f.date_end}` : ''}
-            </div>
-            {f.role && <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 4 }}>Rol: {f.role}</div>}
-          </div>
-          {f.tickets?.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aeaeb2', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Tickets</div>
-              {f.tickets.map(t => (
-                <a key={t.id} href={`/api/hr/tickets/${t.id}/download`} target="_blank" rel="noreferrer"
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f5f5f7', borderRadius: 12, textDecoration: 'none', color: '#1d1d1f', marginBottom: 6 }}>
-                  <span style={{ fontSize: 18 }}>{t.mime_type?.includes('pdf') ? '📄' : '🎟️'}</span>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{t.original_name}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 12, color: '#8e8e93' }}>Downloaden ↓</span>
-                </a>
-              ))}
-            </div>
-          )}
-        </Card>
-      ))}
+      {festivals.map(f => <FestivalCard key={f.id} f={f} />)}
     </div>
   )
 }

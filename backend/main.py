@@ -242,6 +242,7 @@ class FestivalTicket(SQLModel, table=True):
     filename: str = ""
     original_name: str = ""
     mime_type: str = ""
+    ticket_date: str = ""   # bijv. "2025-07-04" — dag waarvoor het ticket geldt
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EmployeeTask(SQLModel, table=True):
@@ -286,6 +287,7 @@ def create_tables():
         "ALTER TABLE glassorder ADD COLUMN reminder_sent_at TIMESTAMP",
         "ALTER TABLE glassproduct ADD COLUMN series_id INTEGER REFERENCES glassseries(id)",
         "ALTER TABLE employee ADD COLUMN birth_place VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE festivalticket ADD COLUMN ticket_date VARCHAR NOT NULL DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -2889,6 +2891,7 @@ async def hr_upload_ticket(
     fid: int,
     file: UploadFile = FastAPIFile(...),
     employee_id: Optional[int] = None,
+    ticket_date: Optional[str] = None,
     admin_id: int = Depends(verify_hr_admin),
     db: Session = Depends(get_session),
 ):
@@ -2907,6 +2910,7 @@ async def hr_upload_ticket(
         filename=safe_name,
         original_name=file.filename,
         mime_type=file.content_type or "application/octet-stream",
+        ticket_date=ticket_date or "",
     )
     db.add(ticket)
     db.commit()
