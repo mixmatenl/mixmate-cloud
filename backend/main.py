@@ -2681,9 +2681,10 @@ async def hr_delete_employee(emp_id: int, admin_id: int = Depends(verify_hr_admi
         tickets = db.exec(select(SupportTicket).where(SupportTicket.customer_id == cid)).all()
         for t in tickets:
             db.exec(delete(TicketResponse).where(TicketResponse.ticket_id == t.id))
-            db.delete(t)
+        db.exec(delete(SupportTicket).where(SupportTicket.customer_id == cid))
         db.exec(delete(MachineMember).where(MachineMember.customer_id == cid))
         db.exec(delete(Machine).where(Machine.customer_id == cid))
+        db.flush()
         customer = db.get(Customer, cid)
         if customer:
             db.delete(customer)
