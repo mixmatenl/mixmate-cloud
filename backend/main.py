@@ -2666,6 +2666,20 @@ async def hr_update_employee(emp_id: int, body: dict, db: Session = Depends(get_
     db.commit()
     return emp.model_dump()
 
+@app.delete("/api/hr/employees/{emp_id}")
+async def hr_delete_employee(emp_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    emp = db.get(Employee, emp_id)
+    if not emp:
+        raise HTTPException(status_code=404)
+    db.exec(delete(EmployeeTask).where(EmployeeTask.employee_id == emp_id))
+    db.exec(delete(FestivalAssignment).where(FestivalAssignment.employee_id == emp_id))
+    db.exec(delete(FestivalTicket).where(FestivalTicket.employee_id == emp_id))
+    if emp.customer_id:
+        db.exec(delete(Customer).where(Customer.id == emp.customer_id))
+    db.delete(emp)
+    db.commit()
+    return {"ok": True}
+
 @app.post("/api/hr/employees/{emp_id}/resend-invite")
 async def hr_resend_invite(emp_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
     emp = db.get(Employee, emp_id)

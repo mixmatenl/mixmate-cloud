@@ -87,6 +87,14 @@ function EmployeesTab({ openAdd }) {
     alert(`Uitnodiging opnieuw verstuurd naar ${emp.email}`)
   }
 
+  async function deleteEmployee(emp) {
+    if (!window.confirm(`${emp.first_name} ${emp.last_name} definitief verwijderen? Dit verwijdert ook hun portaalaccount en alle gekoppelde taken.`)) return
+    try {
+      await api(`/api/hr/employees/${emp.id}`, { method: 'DELETE' })
+      load()
+    } catch (e) { alert(e.message) }
+  }
+
   function openEdit(emp) { setSelected(emp); setForm({ ...emp }); setError('') }
 
   const F = key => ({ value: form[key] || '', onChange: v => setForm(p => ({ ...p, [key]: v })) })
@@ -115,6 +123,7 @@ function EmployeesTab({ openAdd }) {
             {!emp.active && <span style={{ fontSize: 12, background: '#f5f5f7', color: '#8e8e93', borderRadius: 8, padding: '3px 8px' }}>Inactief</span>}
             <Btn small onClick={() => openEdit(emp)} color="#f5f5f7" textColor="#1d1d1f">Bewerken</Btn>
             {!emp.customer_id && <Btn small onClick={() => resendInvite(emp)} color="#f0f9ff" textColor="#0369a1">Heruitnodigen</Btn>}
+            <Btn small onClick={() => deleteEmployee(emp)} color="#fff1f0" textColor="#dc2626">Verwijderen</Btn>
           </div>
         </Card>
       ))}
