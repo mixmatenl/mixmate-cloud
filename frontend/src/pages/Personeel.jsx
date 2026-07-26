@@ -122,7 +122,7 @@ function Dashboard({ data, openTasks, needsData }) {
 
 function TicketViewer({ ticket }) {
   const [blobUrl, setBlobUrl] = useState(null)
-  const [dlUrl, setDlUrl] = useState(null)
+  const [error, setError] = useState(false)
   const isPdf = ticket.mime_type?.includes('pdf')
   const isImg = ticket.mime_type?.startsWith('image')
   const dateLabel = ticket.ticket_date
@@ -130,19 +130,19 @@ function TicketViewer({ ticket }) {
     : null
 
   useEffect(() => {
+    let objectUrl = null
     const token = localStorage.getItem('mm_token') || localStorage.getItem('mixmate_token')
-    if (!token) return
+    if (!token) { setError(true); return }
     fetch(`/api/hr/tickets/${ticket.id}/download`, {
       headers: { Authorization: `Bearer ${token}` }
     })
-      .then(r => r.ok ? r.blob() : Promise.reject())
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob() })
       .then(blob => {
-        const url = URL.createObjectURL(blob)
-        setBlobUrl(url)
-        setDlUrl(url)
+        objectUrl = URL.createObjectURL(blob)
+        setBlobUrl(objectUrl)
       })
-      .catch(() => {})
-    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl) }
+      .catch(() => setError(true))
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [ticket.id])
 
   return (
@@ -156,17 +156,20 @@ function TicketViewer({ ticket }) {
             style={{ width: '100%', display: 'block', maxHeight: 500, objectFit: 'contain', background: '#000' }} />
         )}
         {isPdf && blobUrl && (
-          <iframe src={blobUrl} title={ticket.original_name}
-            style={{ width: '100%', height: 480, border: 'none', display: 'block' }} />
+          <iframe src={blobUrl + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH'} title={ticket.original_name}
+            style={{ width: '100%', height: 500, border: 'none', display: 'block', background: '#fff', borderRadius: '0 0 0 0' }} />
         )}
-        {!blobUrl && (isImg || isPdf) && (
+        {!blobUrl && !error && (isImg || isPdf) && (
           <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aeaeb2', fontSize: 13 }}>Laden…</div>
+        )}
+        {error && (
+          <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ff3b30', fontSize: 13 }}>Kon ticket niet laden</div>
         )}
         <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: isImg || isPdf ? '1px solid #e5e5ea' : 'none' }}>
           <span style={{ fontSize: 13, color: '#3a3a3c', fontWeight: 500 }}>{ticket.original_name}</span>
-          {dlUrl
-            ? <a href={dlUrl} download={ticket.original_name} style={{ fontSize: 13, color: '#007aff', textDecoration: 'none', fontWeight: 600 }}>Downloaden ↓</a>
-            : <span style={{ fontSize: 13, color: '#aeaeb2' }}>Laden…</span>
+          {blobUrl
+            ? <a href={blobUrl} download={ticket.original_name} style={{ fontSize: 13, color: '#007aff', textDecoration: 'none', fontWeight: 600 }}>Downloaden ↓</a>
+            : <span style={{ fontSize: 13, color: '#aeaeb2' }}>{error ? '—' : 'Laden…'}</span>
           }
         </div>
       </div>
