@@ -377,12 +377,169 @@ function FestivalsTab() {
   )
 }
 
+// ── Taken tab ──────────────────────────────────────────────────────────────────
+
+function TakenTab() {
+  const [overview, setOverview] = useState(null)
+  const [festivals, setFestivals] = useState([])
+  const [employees, setEmployees] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [form, setForm] = useState({ label: '', scope: 'all', employee_id: '', festival_id: '' })
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+
+  async function load() {
+    setLoading(true)
+    try {
+      const [ov, fe, em] = await Promise.all([
+        api('/api/hr/tasks/overview'),
+        api('/api/hr/festivals'),
+        api('/api/hr/employees'),
+      ])
+      setOverview(ov)
+      setFestivals(fe)
+      setEmployees(em)
+    } catch {}
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function createTask() {
+    if (!form.label.trim()) return setError('Voer een taakomschrijving in.')
+    setCreating(true); setError('')
+    try {
+      const body = { label: form.label }
+      if (form.scope === 'one' && form.employee_id) body.employee_ids = [parseInt(form.employee_id)]
+      else if (form.scope === 'festival' && form.festival_id) body.festival_id = parseInt(form.festival_id)
+      else body.all_employees = true
+      await api('/api/hr/tasks/create', { method: 'POST', body: JSON.stringify(body) })
+      setForm({ label: '', scope: 'all', employee_id: '', festival_id: '' })
+      setShowCreate(false)
+      load()
+    } catch (e) { setError(e.message) }
+    setCreating(false)
+  }
+
+  async function deleteTask(id) {
+    if (!window.confirm('Taak verwijderen?')) return
+    try {
+      await api(`/api/hr/tasks/${id}`, { method: 'DELETE' })
+      load()
+    } catch (e) { alert(e.message) }
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#aeaeb2' }}>Laden…</div>
+
+  const allTasks = overview ? overview.flatMap(emp =>
+    (emp.tasks || []).filter(t => !t.key?.startsWith('confirm_data') && !t.key?.startsWith('change_password')).map(t => ({ ...t, emp_name: `${emp.first_name} ${emp.last_name}` }))
+  ) : []
+  const open = allTasks.filter(t => !t.completed)
+  const done = allTasks.filter(t => t.completed)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>Taken beheer</div>
+        <Btn onClick={() => setShowCreate(true)}>+ Taak aanmaken</Btn>
+      </div>
+
+      {showCreate && (
+        <Modal title="Nieuwe taak aanmaken" onClose={() => setShowCreate(false)}>
+          <Field label="Taakomschrijving" value={form.label} onChange={v => setForm(f => ({ ...f, label: v }))} required />
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 5 }}>Toewijzen aan</label>
+            <select value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value, employee_id: '', festival_id: '' }))}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}>
+              <option value="all">Alle medewerkers</option>
+              <option value="festival">Alle medewerkers van een festival</option>
+              <option value="one">Specifieke medewerker</option>
+            </select>
+          </div>
+          {form.scope === 'festival' && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 5 }}>Festival</label>
+              <select value={form.festival_id} onChange={e => setForm(f => ({ ...f, festival_id: e.target.value }))}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}>
+                <option value="">Kies een festival…</option>
+                {festivals.map(fe => <option key={fe.id} value={fe.id}>{fe.name}</option>)}
+              </select>
+            </div>
+          )}
+          {form.scope === 'one' && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 5 }}>Medewerker</label>
+              <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}>
+                <option value="">Kies een medewerker…</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              </select>
+            </div>
+          )}
+          {error && <div style={{ color: '#ff3b30', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <Btn onClick={createTask} disabled={creating}>{creating ? 'Aanmaken…' : 'Taak aanmaken'}</Btn>
+            <Btn color="#f5f5f7" textColor="#1d1d1f" onClick={() => setShowCreate(false)}>Annuleren</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {open.length === 0 && done.length === 0 && (
+        <Card style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen taken aangemaakt.</Card>
+      )}
+
+      {open.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Open ({open.length})</div>
+          {open.map(t => (
+            <Card key={t.id} style={{ padding: '12px 16px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 4, border: '2px solid #e5e5ea', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{t.label}</div>
+                <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{t.emp_name}</div>
+              </div>
+              <Btn small color="#fff1f0" textColor="#dc2626" onClick={() => deleteTask(t.id)}>✕</Btn>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {done.length > 0 && (
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Afgerond ({done.length})</div>
+          {done.map(t => (
+            <Card key={t.id} style={{ padding: '12px 16px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12, opacity: 0.6 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 4, background: '#34c759', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><polyline points="2,6 5,9 10,3"/></svg>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', textDecoration: 'line-through' }}>{t.label}</div>
+                <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{t.emp_name}</div>
+              </div>
+              <Btn small color="#fff1f0" textColor="#dc2626" onClick={() => deleteTask(t.id)}>✕</Btn>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Hoofd component ────────────────────────────────────────────────────────────
 
 export default function PersoneelAdmin() {
   const location = useLocation()
   const urlTab = new URLSearchParams(location.search).get('t')
-  const [tab, setTab] = useState(urlTab === 'festivals' ? 'festivals' : 'medewerkers')
+  const resolvedTab = urlTab === 'festivals' ? 'festivals' : urlTab === 'taken' ? 'taken' : 'medewerkers'
+  const [tab, setTab] = useState(resolvedTab)
+
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('t')
+    if (t === 'festivals') setTab('festivals')
+    else if (t === 'taken') setTab('taken')
+    else if (t === 'add' || t === 'medewerkers') setTab('medewerkers')
+  }, [location.search])
 
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', padding: '32px 20px', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' }}>
@@ -394,22 +551,22 @@ export default function PersoneelAdmin() {
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f5f5f7', borderRadius: 12, padding: 4 }}>
-        {['medewerkers', 'festivals'].map(t => (
+        {['medewerkers', 'festivals', 'taken'].map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             flex: 1, padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer',
             background: tab === t ? '#fff' : 'transparent',
             color: tab === t ? '#1d1d1f' : '#6e6e73',
-            fontSize: 14, fontWeight: tab === t ? 600 : 400, fontFamily: 'inherit',
+            fontSize: 13, fontWeight: tab === t ? 600 : 400, fontFamily: 'inherit',
             boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-            textTransform: 'capitalize',
           }}>
-            {t === 'medewerkers' ? '👥 Medewerkers' : '🎪 Festivals'}
+            {t === 'medewerkers' ? '👥 Medewerkers' : t === 'festivals' ? '🎪 Festivals' : '✅ Taken'}
           </button>
         ))}
       </div>
 
       {tab === 'medewerkers' && <EmployeesTab openAdd={urlTab === 'add'} />}
       {tab === 'festivals' && <FestivalsTab />}
+      {tab === 'taken' && <TakenTab />}
     </div>
   )
 }

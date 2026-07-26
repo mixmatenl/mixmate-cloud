@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { api } from '../api.js'
 
-const TABS = ['Bestellingen', 'Producten', 'Series', 'Rapportage', 'Instellingen']
+const TABS = ['Producten', 'Series', 'Rapportage', 'Instellingen']
 
 const PAYMENT_LABELS = {
   openstaand: { label: 'Openstaand', color: '#ff9500', bg: '#fff8ee' },
@@ -1012,7 +1012,7 @@ function Series() {
 // ── Hoofd component ───────────────────────────────────────────────────────────
 
 export default function Webshop() {
-  const [tab, setTab] = useState('Bestellingen')
+  const [tab, setTab] = useState('Producten')
 
   return (
     <div style={{ maxWidth: 820, margin: '0 auto', padding: '24px' }}>
@@ -1034,7 +1034,6 @@ export default function Webshop() {
         ))}
       </div>
 
-      {tab === 'Bestellingen' && <Bestellingen />}
       {tab === 'Producten'    && <Producten />}
       {tab === 'Series'       && <Series />}
       {tab === 'Rapportage'   && <Rapportage />}

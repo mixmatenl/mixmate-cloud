@@ -252,6 +252,14 @@ class EmployeeTask(SQLModel, table=True):
     completed: bool = False
     completed_at: Optional[datetime] = None
 
+class NewsletterSend(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    subject: str = ""
+    content: str = ""
+    sent_count: int = 0
+    failed_count: int = 0
+    sent_at: datetime = Field(default_factory=datetime.utcnow)
+
 def create_tables():
     SQLModel.metadata.create_all(engine)
     # Voeg nieuwe kolommen toe aan bestaande tabellen als ze nog niet bestaan
@@ -557,11 +565,13 @@ def login(body: dict, db: Session = Depends(get_session)):
     if not customer or not verify_password(password, customer.password_hash):
         raise HTTPException(status_code=401, detail="Onjuist e-mailadres of wachtwoord")
 
+    emp = db.exec(select(Employee).where(Employee.customer_id == customer.id)).first()
     return {
         "token": create_token(customer.id),
         "name": customer.name,
         "email": customer.email,
         "must_change_password": customer.must_change_password,
+        "is_employee": emp is not None,
     }
 
 @app.post("/api/auth/register")
@@ -924,7 +934,12 @@ def admin_me(customer_id: int = Depends(verify_admin_user), db: Session = Depend
 
 @app.get("/api/admin/customers")
 def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    # Medewerkers uitsluiten — die horen in het personeelsportaal, niet in de klantenlijst
+    emp_rows = db.exec(select(Employee.customer_id).where(Employee.customer_id != None)).all()
+    emp_customer_ids = [row[0] for row in emp_rows]
     query = select(Customer)
+    if emp_customer_ids:
+        query = query.where(~Customer.id.in_(emp_customer_ids))
     if q:
         like = f"%{q}%"
         query = query.where((Customer.name.ilike(like)) | (Customer.email.ilike(like)))
@@ -1062,7 +1077,14 @@ async def admin_newsletter_send(body: dict, _: int = Depends(verify_admin_user),
         except Exception as exc:
             print(f"[NEWSLETTER FAIL] {c.email}: {exc}", flush=True)
             failed += 1
+    db.add(NewsletterSend(subject=subject, content=content, sent_count=sent, failed_count=failed))
+    db.commit()
     return {"sent": sent, "failed": failed}
+
+@app.get("/api/admin/newsletter/history")
+def admin_newsletter_history(_: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    sends = db.exec(select(NewsletterSend).order_by(NewsletterSend.sent_at.desc()).limit(50)).all()
+    return [s.model_dump() for s in sends]
 
 @app.get("/api/admin/tickets")
 def admin_list_tickets(customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
@@ -2736,11 +2758,16 @@ async def hr_complete_task(task_id: int, auth: tuple = Depends(verify_employee_o
     task = db.get(EmployeeTask, task_id)
     if not task or task.employee_id != emp.id:
         raise HTTPException(status_code=404)
-    task.completed = True
-    task.completed_at = datetime.utcnow()
     if task.key == "confirm_data":
+        required = [emp.first_name, emp.last_name, emp.phone, emp.address,
+                    emp.postal_code, emp.city, emp.iban, emp.bsn,
+                    emp.date_of_birth, emp.birth_place]
+        if not all(f.strip() for f in required):
+            raise HTTPException(status_code=400, detail="Vul eerst alle verplichte gegevens in.")
         emp.data_confirmed = True
         db.add(emp)
+    task.completed = True
+    task.completed_at = datetime.utcnow()
     db.add(task)
     db.commit()
     return {"ok": True}
@@ -2893,6 +2920,68 @@ async def hr_download_ticket(ticket_id: int, auth: tuple = Depends(verify_employ
     if not path.exists():
         raise HTTPException(status_code=404)
     return FR(str(path), media_type=t.mime_type, filename=t.original_name)
+
+# ── HR: taken beheer ──────────────────────────────────────────────────────────
+
+@app.get("/api/hr/tasks/overview")
+async def hr_tasks_overview(admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    """Alle taken per medewerker, gegroepeerd."""
+    employees = db.exec(select(Employee).where(Employee.active == True).order_by(Employee.last_name)).all()
+    result = []
+    for emp in employees:
+        tasks = db.exec(select(EmployeeTask).where(EmployeeTask.employee_id == emp.id)).all()
+        result.append({
+            "id": emp.id,
+            "name": f"{emp.first_name} {emp.last_name}".strip(),
+            "email": emp.email,
+            "tasks": [t.model_dump() for t in tasks],
+        })
+    return result
+
+@app.post("/api/hr/tasks/create")
+async def hr_create_task(body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    """Maak een taak aan voor specifieke medewerkers, alle medewerkers, of alle medewerkers van een festival."""
+    label = (body.get("label") or "").strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Label is verplicht")
+
+    employee_ids = body.get("employee_ids")  # lijst van IDs, of None
+    festival_id = body.get("festival_id")    # festival ID, of None
+    all_employees = body.get("all_employees", False)
+
+    if festival_id:
+        assignments = db.exec(select(FestivalAssignment).where(FestivalAssignment.festival_id == festival_id)).all()
+        target_ids = [a.employee_id for a in assignments]
+    elif all_employees or not employee_ids:
+        target_ids = [e.id for e in db.exec(select(Employee).where(Employee.active == True)).all()]
+    else:
+        target_ids = employee_ids
+
+    created = 0
+    key = f"custom_{secrets.token_hex(6)}"
+    for eid in target_ids:
+        emp = db.get(Employee, eid)
+        if emp:
+            db.add(EmployeeTask(employee_id=eid, key=key, label=label))
+            created += 1
+    db.commit()
+    return {"created": created, "key": key}
+
+@app.delete("/api/hr/tasks/{task_id}")
+async def hr_delete_task(task_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    task = db.get(EmployeeTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404)
+    db.delete(task)
+    db.commit()
+    return {"ok": True}
+
+@app.delete("/api/hr/tasks/key/{key}")
+async def hr_delete_task_by_key(key: str, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    """Verwijder alle taken met een bepaalde key (voor alle medewerkers tegelijk)."""
+    db.exec(delete(EmployeeTask).where(EmployeeTask.key == key))
+    db.commit()
+    return {"ok": True}
 
 # ── Static file serving ────────────────────────────────────────────────────────
 

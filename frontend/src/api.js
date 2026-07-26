@@ -179,4 +179,13 @@ export const api = {
   // App downloads (admin)
   getApps: () => req('GET', '/api/admin/apps'),
   getAppDownloadUrl: (filename) => `${BASE}/api/admin/apps/${filename}?token=${encodeURIComponent(getToken())}`,
+
+  // Nieuwsbrief historie
+  adminNewsletterHistory: () => req('GET', '/api/admin/newsletter/history'),
+
+  // HR taken beheer
+  hrTasksOverview:   ()           => req('GET',    '/api/hr/tasks/overview'),
+  hrCreateTask:      (body)       => req('POST',   '/api/hr/tasks/create', body),
+  hrDeleteTask:      (id)         => req('DELETE', `/api/hr/tasks/${id}`),
+  hrDeleteTaskByKey: (key)        => req('DELETE', `/api/hr/tasks/key/${key}`),
 }

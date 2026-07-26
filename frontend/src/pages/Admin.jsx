@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { api } from '../api'
+import { api, fetchApi } from '../api'
 
 const s = {
   page:   { maxWidth: 900, margin: '0 auto', padding: '32px 24px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
@@ -800,6 +800,56 @@ function BestellingenTab({ filter }) {
   )
 }
 
+function NieuwsbriefHistorie() {
+  const [items, setItems] = useState(null)
+  const [expanded, setExpanded] = useState(null)
+
+  useEffect(() => {
+    fetchApi('/api/admin/newsletter/history')
+      .then(setItems)
+      .catch(() => setItems([]))
+  }, [])
+
+  if (items === null) return <div style={{ padding: 40, textAlign: 'center', color: '#aeaeb2' }}>Laden…</div>
+  if (items.length === 0) return (
+    <div style={{ ...s.card, padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>
+      Nog geen nieuwsbrieven verstuurd.
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {items.map(item => (
+        <div key={item.id} style={s.card}>
+          <div
+            onClick={() => setExpanded(expanded === item.id ? null : item.id)}
+            style={{ padding: '16px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', marginBottom: 3 }}>{item.subject}</div>
+              <div style={{ fontSize: 12, color: '#aeaeb2' }}>
+                {new Date(item.sent_at).toLocaleString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {' · '}
+                <span style={{ color: '#34c759', fontWeight: 600 }}>{item.sent_count} verstuurd</span>
+                {item.failed_count > 0 && <span style={{ color: '#ff3b30', marginLeft: 8, fontWeight: 600 }}>{item.failed_count} mislukt</span>}
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" strokeWidth="2" strokeLinecap="round"
+              style={{ transform: expanded === item.id ? 'rotate(180deg)' : 'none', transition: 'transform .2s', flexShrink: 0 }}>
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          {expanded === item.id && (
+            <div style={{ borderTop: '1px solid #f2f2f7', padding: '16px 20px' }}>
+              <div style={{ fontSize: 13, color: '#3a3a3c', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{item.content}</div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function NieuwsbriefTab({ initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab === 'historie' ? 'historie' : 'opstellen')
   const [subject,     setSubject]     = useState('')
@@ -831,11 +881,7 @@ function NieuwsbriefTab({ initialTab }) {
 
   const canSend = subject.trim() && content.trim() && subscribers?.count > 0
 
-  if (activeTab === 'historie') return (
-    <div style={{ ...s.card, padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>
-      Nieuwsbriefhistorie is nog niet beschikbaar.
-    </div>
-  )
+  if (activeTab === 'historie') return <NieuwsbriefHistorie />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -946,8 +992,8 @@ function NieuwsbriefTab({ initialTab }) {
 
 // ── Hoofd component ───────────────────────────────────────────────────────────
 const FILTER_MAP = {
-  meldingen: { actief: 'actief', opgelost: 'opgelost' },
-  offertes:  { actief: 'actief', voorstel: 'prijsvoorstel', afgesloten: 'opgelost' },
+  meldingen: { open: 'open', actief: 'actief', opgelost: 'opgelost' },
+  offertes:  { open: 'open', actief: 'actief', voorstel: 'prijsvoorstel', afgesloten: 'opgelost' },
   bestellingen: { nieuw: 'nieuw', verzonden: 'verzonden', facturen: 'facturen', geannuleerd: 'geannuleerd' },
 }
 
@@ -1002,7 +1048,7 @@ export default function Admin() {
     bestellingen: 'Webshop bestellingen per status.',
   }
   const filterLabels = {
-    actief: ' — Actief', opgelost: ' — Opgelost', voorstel: ' — Voorstel', afgesloten: ' — Afgesloten',
+    open: ' — Open', actief: ' — Actief', opgelost: ' — Opgelost', voorstel: ' — Voorstel', afgesloten: ' — Afgesloten',
     opstellen: ' — Nieuwe opstellen', historie: ' — Historie',
     nieuw: ' — Nieuw', verzonden: ' — Verzonden', facturen: ' — Facturen', geannuleerd: ' — Geannuleerd',
   }

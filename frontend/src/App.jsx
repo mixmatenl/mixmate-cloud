@@ -289,6 +289,10 @@ export default function App() {
     localStorage.setItem('mixmate_user', JSON.stringify(user))
     setToken(token)
     setUser(user)
+    // Redirect employee to their portal on login
+    if (user?.is_employee) {
+      window.history.replaceState({}, '', '/personeel')
+    }
   }
 
   function onLogout() {
@@ -316,6 +320,21 @@ export default function App() {
     )
   }
 
+  const isEmployee = !!user?.is_employee
+
+  if (isEmployee) {
+    return (
+      <Layout user={user} onLogout={onLogout}>
+        {user?.must_change_password && <ChangePasswordModal onDone={onPasswordChanged} />}
+        <Routes>
+          <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={() => {}} />} />
+          <Route path="/personeel" element={<Personeel />} />
+          <Route path="*" element={<Navigate to="/personeel" replace />} />
+        </Routes>
+      </Layout>
+    )
+  }
+
   return (
     <Layout user={user} onLogout={onLogout}>
       {user?.must_change_password && <ChangePasswordModal onDone={onPasswordChanged} />}
@@ -334,7 +353,7 @@ export default function App() {
         <Route path="/mijn-bestellingen" element={<MijnBestellingen />} />
         <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={() => {}} />} />
         <Route path="/personeel/beheer" element={user?.email?.toLowerCase() === HR_ADMIN ? <PersoneelAdmin /> : <Navigate to="/" replace />} />
-        <Route path="/personeel" element={<Personeel />} />
+        <Route path="/personeel" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />
