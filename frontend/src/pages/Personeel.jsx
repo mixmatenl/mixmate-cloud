@@ -258,6 +258,10 @@ function FestivalsSection({ data }) {
     <div>
       <SectionTitle>Festivals</SectionTitle>
       {festivals.map(f => <FestivalCard key={f.id} f={f} />)}
+      <div style={{ marginTop: 24, padding: '14px 18px', background: '#f5f5f7', borderRadius: 14, fontSize: 13, color: '#6e6e73', lineHeight: 1.6 }}>
+        Voor vragen over tickets en festivals neem je contact op met Robin via{' '}
+        <a href="mailto:r.muller@mixmate.nl" style={{ color: '#007aff', textDecoration: 'none', fontWeight: 600 }}>r.muller@mixmate.nl</a>
+      </div>
     </div>
   )
 }
