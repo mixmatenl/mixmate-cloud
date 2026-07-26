@@ -923,13 +923,7 @@ def admin_me(customer_id: int = Depends(verify_admin_user), db: Session = Depend
 
 @app.get("/api/admin/customers")
 def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
-    try:
-        employee_customer_ids = {e.customer_id for e in db.exec(select(Employee)).all() if e.customer_id}
-    except Exception:
-        employee_customer_ids = set()
     query = select(Customer)
-    if employee_customer_ids:
-        query = query.where(~Customer.id.in_(list(employee_customer_ids)))
     if q:
         like = f"%{q}%"
         query = query.where((Customer.name.ilike(like)) | (Customer.email.ilike(like)))
