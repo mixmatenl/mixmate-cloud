@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { api } from '../api.js'
+import { fetchApi as api } from '../api.js'
 
 function TaskItem({ task, onComplete }) {
   const [loading, setLoading] = useState(false)
@@ -85,6 +85,8 @@ export default function Personeel() {
     load()
   }
 
+  const REQUIRED_FIELDS = ['first_name', 'last_name', 'phone', 'address', 'postal_code', 'city', 'iban', 'bsn', 'date_of_birth', 'birth_place']
+
   async function save() {
     setSaving(true)
     setError('')
@@ -93,6 +95,13 @@ export default function Personeel() {
         method: 'PUT',
         body: JSON.stringify(form),
       })
+      const allFilled = REQUIRED_FIELDS.every(k => form[k]?.trim?.())
+      if (allFilled && !data.data_confirmed) {
+        const confirmTask = data.tasks?.find(t => t.key === 'confirm_data' && !t.completed)
+        if (confirmTask) {
+          await api(`/api/hr/me/tasks/${confirmTask.id}/complete`, { method: 'POST' })
+        }
+      }
       setSaved(true)
       setEditing(false)
       setTimeout(() => setSaved(false), 3000)
@@ -198,6 +207,11 @@ export default function Personeel() {
       {/* Festivals */}
       {data.festivals?.length > 0 && (
         <Section title="Festivals">
+          {!data.data_confirmed && (
+            <div style={{ background: '#fff8ed', border: '1px solid #fed7aa', borderRadius: 14, padding: '14px 16px', marginBottom: 16, fontSize: 13, color: '#92400e', lineHeight: 1.5 }}>
+              Vul eerst je persoonlijke gegevens in en bevestig ze om je tickets te kunnen inzien. Dit is verplicht voor de verzekering.
+            </div>
+          )}
           {data.festivals.map(f => (
             <div key={f.id} style={{ background: '#fff', borderRadius: 18, padding: 20, border: '1px solid #f0f0f0', marginBottom: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: f.tickets?.length ? 14 : 0 }}>

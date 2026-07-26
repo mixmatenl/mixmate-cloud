@@ -923,7 +923,8 @@ def admin_me(customer_id: int = Depends(verify_admin_user), db: Session = Depend
 
 @app.get("/api/admin/customers")
 def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
-    query = select(Customer)
+    employee_customer_ids = {e.customer_id for e in db.exec(select(Employee)).all() if e.customer_id}
+    query = select(Customer).where(~Customer.id.in_(employee_customer_ids))
     if q:
         like = f"%{q}%"
         query = query.where((Customer.name.ilike(like)) | (Customer.email.ilike(like)))
@@ -975,6 +976,11 @@ def admin_delete_customer(cid: int, _: int = Depends(verify_admin_user), db: Ses
         db.exec(delete(TicketResponse).where(TicketResponse.ticket_id == t.id))
         db.delete(t)
     db.exec(delete(Machine).where(Machine.customer_id == cid))
+    emp = db.exec(select(Employee).where(Employee.customer_id == cid)).first()
+    if emp:
+        db.exec(delete(EmployeeTask).where(EmployeeTask.employee_id == emp.id))
+        db.exec(delete(FestivalAssignment).where(FestivalAssignment.employee_id == emp.id))
+        db.delete(emp)
     db.delete(customer)
     db.commit()
     return {"ok": True}
@@ -2714,7 +2720,8 @@ async def hr_me(auth: tuple = Depends(verify_employee_or_hr), db: Session = Depe
                 FestivalTicket.festival_id == f.id,
                 (FestivalTicket.employee_id == emp.id) | (FestivalTicket.employee_id == None)
             )).all()
-            festivals.append({**f.model_dump(), "role": a.role, "tickets": [t.model_dump() for t in tickets]})
+            visible_tickets = [t.model_dump() for t in tickets] if emp.data_confirmed else []
+            festivals.append({**f.model_dump(), "role": a.role, "tickets": visible_tickets})
     return {**emp.model_dump(), "tasks": [t.model_dump() for t in tasks], "festivals": festivals}
 
 @app.post("/api/hr/me/tasks/{task_id}/complete")

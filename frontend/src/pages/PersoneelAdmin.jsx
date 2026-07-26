@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { api } from '../api.js'
+import { fetchApi as api } from '../api.js'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -127,17 +127,17 @@ function EmployeesTab() {
               <Field label="Achternaam" {...F('last_name')} required />
             </div>
             <Field label="E-mailadres" {...F('email')} type="email" required />
-            <Field label="Telefoonnummer" {...F('phone')} required />
-            <Field label="Adres" {...F('address')} required />
+            <Field label="Telefoonnummer" {...F('phone')} />
+            <Field label="Adres" {...F('address')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0 12px' }}>
-              <Field label="Postcode" {...F('postal_code')} required />
-              <Field label="Stad" {...F('city')} required />
+              <Field label="Postcode" {...F('postal_code')} />
+              <Field label="Stad" {...F('city')} />
             </div>
-            <Field label="IBAN" {...F('iban')} required />
-            <Field label="BSN" {...F('bsn')} required />
+            <Field label="IBAN" {...F('iban')} />
+            <Field label="BSN" {...F('bsn')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
-              <Field label="Geboortedatum" {...F('date_of_birth')} type="date" required />
-              <Field label="Geboorteplaats" {...F('birth_place')} required />
+              <Field label="Geboortedatum" {...F('date_of_birth')} type="date" />
+              <Field label="Geboorteplaats" {...F('birth_place')} />
             </div>
             <Field label="Uurloon (€)" {...F('hourly_rate')} type="number" />
             <div style={{ marginBottom: 12 }}>
@@ -151,6 +151,9 @@ function EmployeesTab() {
               </select>
             </div>
             <Field label="Notities" {...F('notes')} />
+            <div style={{ padding: '10px 14px', background: '#f0f9ff', borderRadius: 10, fontSize: 12, color: '#0369a1', marginBottom: 12 }}>
+              Ontbrekende velden worden gevraagd aan de medewerker via het portaal.
+            </div>
             {error && <div style={{ padding: '10px 14px', background: '#fff1f0', borderRadius: 10, color: '#dc2626', fontSize: 13, marginBottom: 12 }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <Btn color="#f5f5f7" textColor="#1d1d1f" onClick={() => setShowAdd(false)}>Annuleren</Btn>
@@ -262,7 +265,7 @@ function FestivalsTab() {
     const fd = new FormData()
     fd.append('file', file)
     const url = empId ? `/api/hr/festivals/${festivalId}/tickets?employee_id=${empId}` : `/api/hr/festivals/${festivalId}/tickets`
-    const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: fd })
+    const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('mm_token')}` }, body: fd })
     if (!r.ok) alert('Upload mislukt')
     setUploading(false)
     loadDetail(festivalId)

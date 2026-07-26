@@ -4,6 +4,18 @@ function getToken() {
   return localStorage.getItem('mm_token')
 }
 
+export async function fetchApi(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(BASE + path, { ...options, headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Onbekende fout' }))
+    throw new Error(err.detail || 'Fout')
+  }
+  return res.json()
+}
+
 async function req(method, path, body) {
   const headers = { 'Content-Type': 'application/json' }
   const token = getToken()

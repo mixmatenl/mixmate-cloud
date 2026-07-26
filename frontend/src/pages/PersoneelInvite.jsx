@@ -34,7 +34,8 @@ export default function PersoneelInvite({ onLogin }) {
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.detail || 'Fout')
-      localStorage.setItem('token', d.token)
+      localStorage.setItem('mm_token', d.token)
+      localStorage.setItem('mixmate_token', d.token)
       onLogin?.()
       navigate('/personeel')
     } catch (e) {
