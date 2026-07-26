@@ -1064,7 +1064,7 @@ export default function Admin() {
       {section === 'meldingen'    && <TicketTab key={`mel-${urlFilter}`} ticketType="service" initialFilter={ticketFilter} />}
       {section === 'offertes'     && <TicketTab key={`off-${urlFilter}`} ticketType="offerte" initialFilter={ticketFilter} />}
       {section === 'klanten'      && <KlantenTab />}
-      {section === 'nieuwsbrief'  && <NieuwsbriefTab initialTab={urlFilter} />}
+      {section === 'nieuwsbrief'  && <NieuwsbriefTab key={urlFilter || 'opstellen'} initialTab={urlFilter} />}
       {section === 'bestellingen' && <BestellingenTab filter={urlFilter} />}
     </div>
   )
