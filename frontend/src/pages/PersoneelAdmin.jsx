@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { fetchApi as api } from '../api.js'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -45,9 +46,9 @@ function Modal({ title, onClose, children }) {
 
 // ── Medewerkers tab ────────────────────────────────────────────────────────────
 
-function EmployeesTab() {
+function EmployeesTab({ openAdd }) {
   const [employees, setEmployees] = useState([])
-  const [showAdd, setShowAdd] = useState(false)
+  const [showAdd, setShowAdd] = useState(!!openAdd)
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
@@ -379,7 +380,9 @@ function FestivalsTab() {
 // ── Hoofd component ────────────────────────────────────────────────────────────
 
 export default function PersoneelAdmin() {
-  const [tab, setTab] = useState('medewerkers')
+  const location = useLocation()
+  const urlTab = new URLSearchParams(location.search).get('t')
+  const [tab, setTab] = useState(urlTab === 'festivals' ? 'festivals' : 'medewerkers')
 
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', padding: '32px 20px', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' }}>
@@ -405,7 +408,7 @@ export default function PersoneelAdmin() {
         ))}
       </div>
 
-      {tab === 'medewerkers' && <EmployeesTab />}
+      {tab === 'medewerkers' && <EmployeesTab openAdd={urlTab === 'add'} />}
       {tab === 'festivals' && <FestivalsTab />}
     </div>
   )

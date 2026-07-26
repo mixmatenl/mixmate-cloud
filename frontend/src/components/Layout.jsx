@@ -36,6 +36,24 @@ function NavRow({ icon, label, to, color = '#636366', active, onClick, danger })
   )
 }
 
+function NavSubRow({ label, to, active }) {
+  const navigate = useNavigate()
+  return (
+    <button onClick={() => navigate(to)} style={{
+      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+      padding: '7px 16px 7px 52px', background: active ? 'rgba(0,0,0,.05)' : 'none',
+      border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 8,
+      transition: 'background .15s',
+    }}
+    onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,.04)' }}
+    onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}
+    >
+      <div style={{ width: 5, height: 5, borderRadius: '50%', background: active ? '#1d1d1f' : '#c7c7cc', flexShrink: 0 }} />
+      <span style={{ fontSize: 13, fontWeight: active ? 600 : 400, color: active ? '#1d1d1f' : '#3a3a3c' }}>{label}</span>
+    </button>
+  )
+}
+
 function NavGroup({ label, children }) {
   return (
     <div style={{ marginBottom: 8 }}>
@@ -167,61 +185,72 @@ export default function Layout({ user, onLogout, children }) {
         </NavGroup>
       )}
 
-      {isAdmin && (
-        <NavGroup label="Beheer">
-          <NavRow
-            active={path === '/admin' && (new URLSearchParams(window.location.search).get('tab') || 'Meldingen') === 'Meldingen'}
-            to="/admin?tab=Meldingen"
-            color="#ff9500"
-            label="Service meldingen"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
-          />
-          <NavRow
-            active={path === '/admin' && new URLSearchParams(window.location.search).get('tab') === 'Offertes'}
-            to="/admin?tab=Offertes"
-            color="#5856d6"
-            label="Offerte aanvragen"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
-          />
-          <NavRow
-            active={path === '/admin' && new URLSearchParams(window.location.search).get('tab') === 'Klanten'}
-            to="/admin?tab=Klanten"
-            color="#34c759"
-            label="Klanten opzoeken"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>}
-          />
-          <NavRow
-            active={path === '/admin' && new URLSearchParams(window.location.search).get('tab') === 'Nieuwsbrief'}
-            to="/admin?tab=Nieuwsbrief"
-            color="#007aff"
-            label="Nieuwsbrief"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
-          />
-          {user?.email?.toLowerCase() === 'r.muller@mixmate.nl' && (
-            <NavRow
-              active={path === '/personeel/beheer'}
-              to="/personeel/beheer"
-              color="#5856d6"
-              label="Personeelsbeheer"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>}
-            />
-          )}
-          <NavRow
-            active={path === '/webshop'}
-            to="/webshop"
-            color="#ff6b35"
-            label="Webshop"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>}
-          />
-          <NavRow
-            active={path === '/apps'}
-            to="/apps"
-            color="#34c759"
-            label="Android Apps"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M8 12h8M12 8v8"/></svg>}
-          />
-        </NavGroup>
-      )}
+      {isAdmin && (() => {
+        const sp = new URLSearchParams(window.location.search)
+        const s = sp.get('s'), f = sp.get('f'), t = sp.get('t')
+        const inAdmin = path === '/admin'
+        const inPersoneel = path === '/personeel/beheer'
+        const inWebshop = path === '/webshop'
+
+        return (
+          <>
+            <NavGroup label="Service meldingen">
+              <NavRow active={inAdmin && s === 'meldingen' && !f} to="/admin?s=meldingen" color="#ff9500" label="Service meldingen"
+                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>} />
+              <NavSubRow active={inAdmin && s === 'meldingen' && f === 'actief'} to="/admin?s=meldingen&f=actief" label="Actief" />
+              <NavSubRow active={inAdmin && s === 'meldingen' && f === 'opgelost'} to="/admin?s=meldingen&f=opgelost" label="Opgelost" />
+            </NavGroup>
+
+            <NavGroup label="Offerte aanvragen">
+              <NavRow active={inAdmin && s === 'offertes' && !f} to="/admin?s=offertes" color="#5856d6" label="Offerte aanvragen"
+                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>} />
+              <NavSubRow active={inAdmin && s === 'offertes' && f === 'actief'} to="/admin?s=offertes&f=actief" label="Actief" />
+              <NavSubRow active={inAdmin && s === 'offertes' && f === 'voorstel'} to="/admin?s=offertes&f=voorstel" label="Voorstel" />
+              <NavSubRow active={inAdmin && s === 'offertes' && f === 'afgesloten'} to="/admin?s=offertes&f=afgesloten" label="Afgesloten" />
+            </NavGroup>
+
+            <NavGroup label="Klanten">
+              <NavRow active={inAdmin && s === 'klanten'} to="/admin?s=klanten" color="#34c759" label="Klanten opzoeken"
+                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
+            </NavGroup>
+
+            <NavGroup label="Nieuwsbrief">
+              <NavRow active={inAdmin && s === 'nieuwsbrief' && !f} to="/admin?s=nieuwsbrief" color="#007aff" label="Nieuwsbrief"
+                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>} />
+              <NavSubRow active={inAdmin && s === 'nieuwsbrief' && f === 'opstellen'} to="/admin?s=nieuwsbrief&f=opstellen" label="Nieuwe opstellen" />
+              <NavSubRow active={inAdmin && s === 'nieuwsbrief' && f === 'historie'} to="/admin?s=nieuwsbrief&f=historie" label="Historie bekijken" />
+            </NavGroup>
+
+            {user?.email?.toLowerCase() === 'r.muller@mixmate.nl' && (
+              <NavGroup label="Personeelsbeheer">
+                <NavRow active={inPersoneel && !t} to="/personeel/beheer" color="#5856d6" label="Personeelsbeheer"
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
+                <NavSubRow active={inPersoneel && t === 'add'} to="/personeel/beheer?t=add" label="Medewerker toevoegen" />
+                <NavSubRow active={inPersoneel && t === 'medewerkers'} to="/personeel/beheer?t=medewerkers" label="Medewerkers beheren" />
+                <NavSubRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" label="Festivals" />
+                <NavSubRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" label="Taken beheren" />
+              </NavGroup>
+            )}
+
+            <NavGroup label="Webshop">
+              <NavRow active={inWebshop && !f} to="/webshop" color="#ff6b35" label="Webshop"
+                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>} />
+              <NavSubRow active={inWebshop && f === 'producten'} to="/webshop?f=producten" label="Producten" />
+              <NavSubRow active={inWebshop && f === 'categorieen'} to="/webshop?f=categorieen" label="Categorieën" />
+              <NavSubRow active={inWebshop && f === 'rapportages'} to="/webshop?f=rapportages" label="Rapportages" />
+            </NavGroup>
+
+            <NavGroup label="Bestellingen">
+              <NavRow active={inAdmin && s === 'bestellingen' && !f} to="/admin?s=bestellingen" color="#ff3b30" label="Bestellingen"
+                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>} />
+              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'nieuw'} to="/admin?s=bestellingen&f=nieuw" label="Nieuwe bestellingen" />
+              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'verzonden'} to="/admin?s=bestellingen&f=verzonden" label="Verzonden" />
+              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'facturen'} to="/admin?s=bestellingen&f=facturen" label="Facturen" />
+              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'geannuleerd'} to="/admin?s=bestellingen&f=geannuleerd" label="Geannuleerde" />
+            </NavGroup>
+          </>
+        )
+      })()}
 
       <NavGroup label="Account">
         <NavRow

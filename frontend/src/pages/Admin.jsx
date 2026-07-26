@@ -330,10 +330,10 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
 }
 
 // ── Ticket lijst + detail ─────────────────────────────────────────────────────
-function TicketTab({ ticketType }) {
+function TicketTab({ ticketType, initialFilter }) {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('open')
+  const [filter, setFilter] = useState(initialFilter || 'open')
   const [selected, setSelected] = useState(null)
   const isMobile = useIsMobile()
 
@@ -692,7 +692,116 @@ function MiniField({ label, value, mono }) {
 }
 
 // ── Nieuwsbrief tab ───────────────────────────────────────────────────────────
-function NieuwsbriefTab() {
+function BestellingenTab({ filter }) {
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState(null)
+
+  useEffect(() => {
+    api.getShopOrders()
+      .then(all => {
+        const filtered = !filter ? all : all.filter(o => {
+          if (filter === 'nieuw')       return ['nieuw', 'in_behandeling'].includes(o.status)
+          if (filter === 'verzonden')   return o.status === 'verzonden'
+          if (filter === 'geannuleerd') return o.status === 'geannuleerd'
+          if (filter === 'facturen')    return !!o.invoice_number
+          return true
+        })
+        setOrders(filtered)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [filter])
+
+  function refresh() {
+    setLoading(true)
+    api.getShopOrders()
+      .then(all => {
+        const filtered = !filter ? all : all.filter(o => {
+          if (filter === 'nieuw')       return ['nieuw', 'in_behandeling'].includes(o.status)
+          if (filter === 'verzonden')   return o.status === 'verzonden'
+          if (filter === 'geannuleerd') return o.status === 'geannuleerd'
+          if (filter === 'facturen')    return !!o.invoice_number
+          return true
+        })
+        setOrders(filtered)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#aeaeb2' }}>Laden…</div>
+  if (orders.length === 0) return <div style={{ ...s.card, padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen bestellingen gevonden.</div>
+
+  return (
+    <div style={s.card}>
+      {orders.map(o => {
+        const STATUS_LABELS = {
+          nieuw: { label: 'Nieuw', color: '#1d1d1f', bg: '#f2f2f7' },
+          in_behandeling: { label: 'In behandeling', color: '#ff9500', bg: '#fff8ed' },
+          verzonden: { label: 'Verzonden', color: '#34c759', bg: '#f0fdf4' },
+          geannuleerd: { label: 'Geannuleerd', color: '#ff3b30', bg: '#fff1f0' },
+        }
+        const st = STATUS_LABELS[o.status] || STATUS_LABELS.nieuw
+        return (
+          <div key={o.id} onClick={() => setSelected(o)}
+            style={{ padding: '14px 16px', borderBottom: '1px solid #f2f2f7', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{o.customer_company || o.customer_name}</div>
+              <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>
+                {new Date(o.created_at).toLocaleDateString('nl-NL')} · {o.customer_email}
+                {o.invoice_number && ` · ${o.invoice_number}`}
+              </div>
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>€{((o.total_excl || 0) * (1 + (o.btw_rate_snapshot || 21) / 100)).toFixed(2)}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: st.color, background: st.bg, borderRadius: 8, padding: '3px 8px' }}>{st.label}</div>
+          </div>
+        )
+      })}
+      {selected && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setSelected(null) }}>
+          <div style={{ background: '#f2f2f7', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 640, maxHeight: '90vh', overflow: 'auto', padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 700 }}>{selected.customer_company || selected.customer_name}</div>
+                {selected.invoice_number && <div style={{ fontSize: 13, color: '#aeaeb2' }}>{selected.invoice_number}</div>}
+              </div>
+              <button onClick={() => setSelected(null)} style={{ background: 'rgba(0,0,0,.08)', border: 'none', borderRadius: 20, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 4 }}>{selected.customer_email} · {selected.customer_phone}</div>
+            <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 16 }}>{selected.shipping_address}</div>
+            {selected.items?.map((item, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e5e5ea', fontSize: 14 }}>
+                <span>{item.quantity}× {item.product_name}</span>
+                <span>€{(item.price_excl * item.quantity).toFixed(2)}</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['nieuw','in_behandeling','verzonden','geannuleerd'].map(st => (
+                <button key={st} onClick={async () => { await api.updateOrderStatus(selected.id, st); refresh(); setSelected(null) }}
+                  style={{ padding: '7px 14px', borderRadius: 10, border: '1.5px solid #e5e5ea', background: selected.status === st ? '#1d1d1f' : '#fff', color: selected.status === st ? '#fff' : '#1d1d1f', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {st.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+            {!selected.invoice_number && (
+              <button onClick={async () => { await api.sendInvoice(selected.id); refresh(); setSelected(null) }}
+                style={{ marginTop: 12, width: '100%', padding: '12px', background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Factuur versturen
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NieuwsbriefTab({ initialTab }) {
+  const [activeTab, setActiveTab] = useState(initialTab === 'historie' ? 'historie' : 'opstellen')
   const [subject,     setSubject]     = useState('')
   const [content,     setContent]     = useState('')
   const [subscribers, setSubscribers] = useState(null)
@@ -721,6 +830,12 @@ function NieuwsbriefTab() {
   }
 
   const canSend = subject.trim() && content.trim() && subscribers?.count > 0
+
+  if (activeTab === 'historie') return (
+    <div style={{ ...s.card, padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>
+      Nieuwsbriefhistorie is nog niet beschikbaar.
+    </div>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -830,10 +945,14 @@ function NieuwsbriefTab() {
 }
 
 // ── Hoofd component ───────────────────────────────────────────────────────────
+const FILTER_MAP = {
+  meldingen: { actief: 'actief', opgelost: 'opgelost' },
+  offertes:  { actief: 'actief', voorstel: 'prijsvoorstel', afgesloten: 'opgelost' },
+  bestellingen: { nieuw: 'nieuw', verzonden: 'verzonden', facturen: 'facturen', geannuleerd: 'geannuleerd' },
+}
+
 export default function Admin() {
   const location = useLocation()
-  const initialTab = new URLSearchParams(location.search).get('tab') || 'Meldingen'
-  const [tab, setTab] = useState(TABS.includes(initialTab) ? initialTab : 'Meldingen')
   const [isAdmin, setIsAdmin] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -843,12 +962,6 @@ export default function Admin() {
       .catch(() => setIsAdmin(false))
       .finally(() => setLoading(false))
   }, [])
-
-  // Sync tab als URL-param verandert (navigatie via sidebar)
-  useEffect(() => {
-    const t = new URLSearchParams(location.search).get('tab')
-    if (t && TABS.includes(t)) setTab(t)
-  }, [location.search])
 
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
@@ -865,25 +978,48 @@ export default function Admin() {
     </div>
   )
 
-  const tabTitle = { Meldingen: 'Service meldingen', Offertes: 'Offertes', Klanten: 'Klanten opzoeken', Nieuwsbrief: 'Nieuwsbrief' }
+  const sp = new URLSearchParams(location.search)
+  // Backwards compat: old ?tab= links
+  const oldTab = sp.get('tab')
+  const legacyMap = { Meldingen: 'meldingen', Offertes: 'offertes', Klanten: 'klanten', Nieuwsbrief: 'nieuwsbrief' }
+  const section = sp.get('s') || (oldTab ? legacyMap[oldTab] : 'meldingen')
+  const urlFilter = sp.get('f')
+
+  const ticketFilter = FILTER_MAP[section]?.[urlFilter] || undefined
+
+  const titles = {
+    meldingen:    'Service meldingen',
+    offertes:     'Offerte aanvragen',
+    klanten:      'Klanten opzoeken',
+    nieuwsbrief:  'Nieuwsbrief',
+    bestellingen: 'Bestellingen',
+  }
+  const subs = {
+    meldingen:    'Binnenkomende serviceverzoeken van klanten.',
+    offertes:     'Offerte-aanvragen via de website.',
+    klanten:      'Zoek klanten op en bekijk hun machines.',
+    nieuwsbrief:  'Verstuur een nieuwsbrief naar aangemelde klanten.',
+    bestellingen: 'Webshop bestellingen per status.',
+  }
+  const filterLabels = {
+    actief: ' — Actief', opgelost: ' — Opgelost', voorstel: ' — Voorstel', afgesloten: ' — Afgesloten',
+    opstellen: ' — Nieuwe opstellen', historie: ' — Historie',
+    nieuw: ' — Nieuw', verzonden: ' — Verzonden', facturen: ' — Facturen', geannuleerd: ' — Geannuleerd',
+  }
 
   return (
     <div style={s.page}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-        <h1 style={s.h1}>{tabTitle[tab]}</h1>
+        <h1 style={s.h1}>{titles[section] || 'Beheer'}{urlFilter ? (filterLabels[urlFilter] || '') : ''}</h1>
         <span style={s.badge('#fff', '#1d1d1f', '#1d1d1f')}>Admin</span>
       </div>
-      <p style={s.sub}>
-        {tab === 'Meldingen'    && 'Binnenkomende serviceverzoeken van klanten.'}
-        {tab === 'Offertes'     && 'Offerte-aanvragen via de website.'}
-        {tab === 'Klanten'      && 'Zoek klanten op en bekijk hun machines.'}
-        {tab === 'Nieuwsbrief'  && 'Verstuur een nieuwsbrief naar aangemelde klanten.'}
-      </p>
+      <p style={s.sub}>{subs[section] || ''}</p>
 
-      {tab === 'Meldingen'   && <TicketTab ticketType="service" />}
-      {tab === 'Offertes'    && <TicketTab ticketType="offerte" />}
-      {tab === 'Klanten'     && <KlantenTab />}
-      {tab === 'Nieuwsbrief' && <NieuwsbriefTab />}
+      {section === 'meldingen'    && <TicketTab key={`mel-${urlFilter}`} ticketType="service" initialFilter={ticketFilter} />}
+      {section === 'offertes'     && <TicketTab key={`off-${urlFilter}`} ticketType="offerte" initialFilter={ticketFilter} />}
+      {section === 'klanten'      && <KlantenTab />}
+      {section === 'nieuwsbrief'  && <NieuwsbriefTab initialTab={urlFilter} />}
+      {section === 'bestellingen' && <BestellingenTab filter={urlFilter} />}
     </div>
   )
 }
