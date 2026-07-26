@@ -209,6 +209,7 @@ class Employee(SQLModel, table=True):
     iban: str = ""
     bsn: str = ""
     date_of_birth: str = ""
+    birth_place: str = ""
     hourly_rate: float = 0.0
     contract_type: str = ""   # vast | flex | oproep
     notes: str = ""
@@ -2592,6 +2593,7 @@ async def hr_create_employee(body: dict, admin_id: int = Depends(verify_hr_admin
         iban=body.get("iban", ""),
         bsn=body.get("bsn", ""),
         date_of_birth=body.get("date_of_birth", ""),
+        birth_place=body.get("birth_place", ""),
         hourly_rate=float(body.get("hourly_rate", 0)),
         contract_type=body.get("contract_type", ""),
         notes=body.get("notes", ""),
@@ -2622,7 +2624,7 @@ async def hr_update_employee(emp_id: int, body: dict, db: Session = Depends(get_
         raise HTTPException(status_code=404)
     if not is_hr and emp.customer_id != customer_id:
         raise HTTPException(status_code=403)
-    allowed = ["first_name","last_name","phone","address","city","postal_code","iban","bsn","date_of_birth","contract_type","notes"]
+    allowed = ["first_name","last_name","phone","address","city","postal_code","iban","bsn","date_of_birth","birth_place","contract_type","notes"]
     if is_hr:
         allowed += ["email","hourly_rate","active"]
     for k in allowed:

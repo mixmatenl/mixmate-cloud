@@ -124,14 +124,20 @@ function EmployeesTab() {
           <form onSubmit={add}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
               <Field label="Voornaam" {...F('first_name')} required />
-              <Field label="Achternaam" {...F('last_name')} />
+              <Field label="Achternaam" {...F('last_name')} required />
             </div>
             <Field label="E-mailadres" {...F('email')} type="email" required />
-            <Field label="Telefoonnummer" {...F('phone')} />
-            <Field label="Adres" {...F('address')} />
+            <Field label="Telefoonnummer" {...F('phone')} required />
+            <Field label="Adres" {...F('address')} required />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0 12px' }}>
-              <Field label="Postcode" {...F('postal_code')} />
-              <Field label="Stad" {...F('city')} />
+              <Field label="Postcode" {...F('postal_code')} required />
+              <Field label="Stad" {...F('city')} required />
+            </div>
+            <Field label="IBAN" {...F('iban')} required />
+            <Field label="BSN" {...F('bsn')} required />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+              <Field label="Geboortedatum" {...F('date_of_birth')} type="date" required />
+              <Field label="Geboorteplaats" {...F('birth_place')} required />
             </div>
             <Field label="Uurloon (€)" {...F('hourly_rate')} type="number" />
             <div style={{ marginBottom: 12 }}>
@@ -159,18 +165,21 @@ function EmployeesTab() {
         <Modal title={`${selected.first_name} ${selected.last_name}`} onClose={() => setSelected(null)}>
           <form onSubmit={save}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
-              <Field label="Voornaam" {...F('first_name')} />
-              <Field label="Achternaam" {...F('last_name')} />
+              <Field label="Voornaam" {...F('first_name')} required />
+              <Field label="Achternaam" {...F('last_name')} required />
             </div>
-            <Field label="Telefoonnummer" {...F('phone')} />
-            <Field label="Adres" {...F('address')} />
+            <Field label="Telefoonnummer" {...F('phone')} required />
+            <Field label="Adres" {...F('address')} required />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0 12px' }}>
-              <Field label="Postcode" {...F('postal_code')} />
-              <Field label="Stad" {...F('city')} />
+              <Field label="Postcode" {...F('postal_code')} required />
+              <Field label="Stad" {...F('city')} required />
             </div>
-            <Field label="IBAN" {...F('iban')} />
-            <Field label="BSN" {...F('bsn')} />
-            <Field label="Geboortedatum" {...F('date_of_birth')} type="date" />
+            <Field label="IBAN" {...F('iban')} required />
+            <Field label="BSN" {...F('bsn')} required />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+              <Field label="Geboortedatum" {...F('date_of_birth')} type="date" required />
+              <Field label="Geboorteplaats" {...F('birth_place')} required />
+            </div>
             <Field label="Uurloon (€)" {...F('hourly_rate')} type="number" />
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 5 }}>Contracttype</label>
@@ -267,22 +276,24 @@ function FestivalsTab() {
 
   const F = key => ({ value: form[key] || '', onChange: v => setForm(p => ({ ...p, [key]: v })) })
 
-  const FestivalForm = ({ onSubmit }) => (
-    <form onSubmit={onSubmit}>
-      <Field label="Festivalnaam" {...F('name')} required />
-      <Field label="Locatie" {...F('location')} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
-        <Field label="Startdatum" {...F('date_start')} type="date" />
-        <Field label="Einddatum" {...F('date_end')} type="date" />
-      </div>
-      <Field label="Omschrijving" {...F('description')} />
-      {error && <div style={{ padding: '10px 14px', background: '#fff1f0', borderRadius: 10, color: '#dc2626', fontSize: 13, marginBottom: 12 }}>{error}</div>}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <Btn color="#f5f5f7" textColor="#1d1d1f" onClick={() => { setShowAdd(false); setSelected(null) }}>Annuleren</Btn>
-        <Btn disabled={saving}>{saving ? 'Opslaan…' : 'Opslaan'}</Btn>
-      </div>
-    </form>
-  )
+  function festivalFormFields(onSubmit) {
+    return (
+      <form onSubmit={onSubmit}>
+        <Field label="Festivalnaam" {...F('name')} required />
+        <Field label="Locatie" {...F('location')} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+          <Field label="Startdatum" {...F('date_start')} type="date" />
+          <Field label="Einddatum" {...F('date_end')} type="date" />
+        </div>
+        <Field label="Omschrijving" {...F('description')} />
+        {error && <div style={{ padding: '10px 14px', background: '#fff1f0', borderRadius: 10, color: '#dc2626', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Btn color="#f5f5f7" textColor="#1d1d1f" onClick={() => { setShowAdd(false); setSelected(null) }}>Annuleren</Btn>
+          <Btn disabled={saving}>{saving ? 'Opslaan…' : 'Opslaan'}</Btn>
+        </div>
+      </form>
+    )
+  }
 
   return (
     <div>
@@ -302,11 +313,11 @@ function FestivalsTab() {
         </Card>
       ))}
 
-      {showAdd && <Modal title="Festival toevoegen" onClose={() => setShowAdd(false)}><FestivalForm onSubmit={add} /></Modal>}
+      {showAdd && <Modal title="Festival toevoegen" onClose={() => setShowAdd(false)}>{festivalFormFields(add)}</Modal>}
 
       {selected && detail && (
         <Modal title={selected.name} onClose={() => { setSelected(null); setDetail(null) }}>
-          <FestivalForm onSubmit={save} />
+          {festivalFormFields(save)}
 
           {/* Medewerkers */}
           <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 20, marginTop: 8 }}>

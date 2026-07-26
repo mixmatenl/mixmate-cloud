@@ -157,7 +157,10 @@ export default function Personeel() {
           </div>
           <Field label="IBAN" {...f('iban')} />
           <Field label="BSN" {...f('bsn')} />
-          <Field label="Geboortedatum" {...f('date_of_birth')} type="date" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <Field label="Geboortedatum" {...f('date_of_birth')} type="date" />
+            <Field label="Geboorteplaats" {...f('birth_place')} />
+          </div>
 
           {error && <div style={{ padding: '10px 14px', background: '#fff1f0', borderRadius: 10, color: '#dc2626', fontSize: 13, marginBottom: 12 }}>{error}</div>}
           {saved && <div style={{ padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, color: '#15803d', fontSize: 13, marginBottom: 12 }}>Opgeslagen ✓</div>}
