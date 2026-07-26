@@ -189,6 +189,68 @@ class GlassOrderItem(SQLModel, table=True):
     price_excl: float = 0.0
     quantity: int = 1
 
+# ── Personeelsportaal ─────────────────────────────────────────────────────────
+
+HR_ADMIN_EMAIL = "r.muller@mixmate.nl"
+
+UPLOADS_DIR = Path(__file__).parent.parent / "uploads" / "tickets"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+class Employee(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id", unique=True)
+    first_name: str = ""
+    last_name: str = ""
+    email: str = Field(index=True, unique=True)
+    phone: str = ""
+    address: str = ""
+    city: str = ""
+    postal_code: str = ""
+    iban: str = ""
+    bsn: str = ""
+    date_of_birth: str = ""
+    hourly_rate: float = 0.0
+    contract_type: str = ""   # vast | flex | oproep
+    notes: str = ""
+    active: bool = True
+    invite_token: Optional[str] = Field(default=None, index=True)
+    invite_expires: Optional[datetime] = None
+    data_confirmed: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Festival(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = ""
+    location: str = ""
+    date_start: str = ""
+    date_end: str = ""
+    description: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class FestivalAssignment(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    festival_id: int = Field(foreign_key="festival.id", index=True)
+    employee_id: int = Field(foreign_key="employee.id", index=True)
+    role: str = ""
+    notes: str = ""
+
+class FestivalTicket(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    festival_id: int = Field(foreign_key="festival.id", index=True)
+    employee_id: Optional[int] = Field(default=None, foreign_key="employee.id")  # None = voor iedereen
+    filename: str = ""
+    original_name: str = ""
+    mime_type: str = ""
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+
+class EmployeeTask(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    employee_id: int = Field(foreign_key="employee.id", index=True)
+    key: str = ""        # bijv. "confirm_data", "change_password"
+    label: str = ""
+    completed: bool = False
+    completed_at: Optional[datetime] = None
+
 def create_tables():
     SQLModel.metadata.create_all(engine)
     # Voeg nieuwe kolommen toe aan bestaande tabellen als ze nog niet bestaan
@@ -2446,6 +2508,384 @@ async def machineapp_pour_ws(machine_id: str, websocket: WebSocket):
     finally:
         conn.pour_queue = None
 
+
+# ── HR: helpers ───────────────────────────────────────────────────────────────
+
+from fastapi import UploadFile, File as FastAPIFile
+from fastapi.responses import FileResponse as FR
+
+def verify_hr_admin(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_session)) -> int:
+    customer_id = verify_token(credentials)
+    customer = db.get(Customer, customer_id)
+    if not customer or customer.email.lower() != HR_ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Geen toegang tot personeelsbeheer")
+    return customer_id
+
+def verify_employee_or_hr(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_session)) -> tuple[int, bool]:
+    """Geeft (customer_id, is_hr_admin) terug."""
+    customer_id = verify_token(credentials)
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        raise HTTPException(status_code=401)
+    is_hr = customer.email.lower() == HR_ADMIN_EMAIL
+    return customer_id, is_hr
+
+def _get_employee_by_customer(customer_id: int, db: Session) -> Optional["Employee"]:
+    return db.exec(select(Employee).where(Employee.customer_id == customer_id)).first()
+
+def _add_task(employee_id: int, key: str, label: str, db: Session):
+    existing = db.exec(select(EmployeeTask).where(EmployeeTask.employee_id == employee_id).where(EmployeeTask.key == key)).first()
+    if not existing:
+        db.add(EmployeeTask(employee_id=employee_id, key=key, label=label))
+        db.commit()
+
+async def _send_employee_invite(employee: "Employee", token: str):
+    invite_url = f"{PORTAL_URL}/personeel/invite/{token}"
+    body = (
+        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>Welkom bij MIXMATE!</h2>"
+        f"<p style='margin:0 0 20px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+        f"Hallo {employee.first_name}, je bent toegevoegd aan het personeelsportaal van MIXMATE. "
+        f"Klik op de knop hieronder om je account in te stellen.</p>"
+        + _email_button(invite_url, "Account instellen →") +
+        "<p style='margin:16px 0 0;font-size:12px;color:#aeaeb2;'>Deze link is 48 uur geldig.</p>"
+    )
+    await _resend(employee.email, "Welkom bij MIXMATE — stel je account in", _email_html(body))
+
+async def _send_confirm_data_email(employee: "Employee"):
+    body = (
+        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>Controleer je gegevens</h2>"
+        f"<p style='margin:0 0 20px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+        f"Hallo {employee.first_name}, we hebben je gegevens alvast ingevuld. "
+        f"Log in op het personeelsportaal om ze te controleren en waar nodig aan te vullen.</p>"
+        + _email_button(f"{PORTAL_URL}/personeel", "Gegevens bekijken →")
+    )
+    await _resend(employee.email, "Controleer je gegevens — MIXMATE", _email_html(body))
+
+# ── HR: medewerkers ───────────────────────────────────────────────────────────
+
+@app.get("/api/hr/employees")
+async def hr_list_employees(admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    employees = db.exec(select(Employee).order_by(Employee.last_name)).all()
+    result = []
+    for e in employees:
+        tasks = db.exec(select(EmployeeTask).where(EmployeeTask.employee_id == e.id)).all()
+        result.append({**e.model_dump(), "open_tasks": sum(1 for t in tasks if not t.completed)})
+    return result
+
+@app.post("/api/hr/employees")
+async def hr_create_employee(body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="E-mail is verplicht")
+    if db.exec(select(Employee).where(Employee.email == email)).first():
+        raise HTTPException(status_code=409, detail="Er bestaat al een medewerker met dit e-mailadres")
+
+    token = secrets.token_urlsafe(32)
+    emp = Employee(
+        first_name=body.get("first_name", ""),
+        last_name=body.get("last_name", ""),
+        email=email,
+        phone=body.get("phone", ""),
+        address=body.get("address", ""),
+        city=body.get("city", ""),
+        postal_code=body.get("postal_code", ""),
+        iban=body.get("iban", ""),
+        bsn=body.get("bsn", ""),
+        date_of_birth=body.get("date_of_birth", ""),
+        hourly_rate=float(body.get("hourly_rate", 0)),
+        contract_type=body.get("contract_type", ""),
+        notes=body.get("notes", ""),
+        invite_token=token,
+        invite_expires=datetime.utcnow() + timedelta(hours=48),
+    )
+    db.add(emp)
+    db.commit()
+    db.refresh(emp)
+    await _send_employee_invite(emp, token)
+    return emp.model_dump()
+
+@app.get("/api/hr/employees/{emp_id}")
+async def hr_get_employee(emp_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    emp = db.get(Employee, emp_id)
+    if not emp:
+        raise HTTPException(status_code=404)
+    tasks = db.exec(select(EmployeeTask).where(EmployeeTask.employee_id == emp_id)).all()
+    assignments = db.exec(select(FestivalAssignment).where(FestivalAssignment.employee_id == emp_id)).all()
+    festivals = [db.get(Festival, a.festival_id) for a in assignments]
+    return {**emp.model_dump(), "tasks": [t.model_dump() for t in tasks], "festivals": [f.model_dump() for f in festivals if f]}
+
+@app.put("/api/hr/employees/{emp_id}")
+async def hr_update_employee(emp_id: int, body: dict, db: Session = Depends(get_session), auth: tuple = Depends(verify_employee_or_hr)):
+    customer_id, is_hr = auth
+    emp = db.get(Employee, emp_id)
+    if not emp:
+        raise HTTPException(status_code=404)
+    if not is_hr and emp.customer_id != customer_id:
+        raise HTTPException(status_code=403)
+    allowed = ["first_name","last_name","phone","address","city","postal_code","iban","bsn","date_of_birth","contract_type","notes"]
+    if is_hr:
+        allowed += ["email","hourly_rate","active"]
+    for k in allowed:
+        if k in body:
+            setattr(emp, k, body[k])
+    db.add(emp)
+    db.commit()
+    return emp.model_dump()
+
+@app.post("/api/hr/employees/{emp_id}/resend-invite")
+async def hr_resend_invite(emp_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    emp = db.get(Employee, emp_id)
+    if not emp:
+        raise HTTPException(status_code=404)
+    token = secrets.token_urlsafe(32)
+    emp.invite_token = token
+    emp.invite_expires = datetime.utcnow() + timedelta(hours=48)
+    db.add(emp)
+    db.commit()
+    await _send_employee_invite(emp, token)
+    return {"ok": True}
+
+# ── HR: uitnodiging accepteren ────────────────────────────────────────────────
+
+@app.post("/api/hr/invite/{token}")
+async def hr_accept_invite(token: str, body: dict, db: Session = Depends(get_session)):
+    emp = db.exec(select(Employee).where(Employee.invite_token == token)).first()
+    if not emp or not emp.invite_expires or emp.invite_expires < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Deze uitnodigingslink is ongeldig of verlopen")
+
+    password = body.get("password", "")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Wachtwoord moet minimaal 8 tekens zijn")
+
+    # Maak of update Customer account
+    customer = db.exec(select(Customer).where(Customer.email == emp.email)).first()
+    if not customer:
+        customer = Customer(
+            email=emp.email,
+            name=f"{emp.first_name} {emp.last_name}".strip(),
+            password_hash=hash_password(password),
+        )
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+    else:
+        customer.password_hash = hash_password(password)
+        db.add(customer)
+        db.commit()
+
+    emp.customer_id = customer.id
+    emp.invite_token = None
+    emp.invite_expires = None
+    db.add(emp)
+    db.commit()
+    db.refresh(emp)
+
+    # Taak: gegevens controleren
+    _add_task(emp.id, "confirm_data", "Controleer en vul je persoonlijke gegevens aan", db)
+    await _send_confirm_data_email(emp)
+
+    token_jwt = create_token(customer.id)
+    return {"token": token_jwt, "name": customer.name}
+
+@app.get("/api/hr/invite/{token}")
+async def hr_check_invite(token: str, db: Session = Depends(get_session)):
+    emp = db.exec(select(Employee).where(Employee.invite_token == token)).first()
+    if not emp or not emp.invite_expires or emp.invite_expires < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Deze uitnodigingslink is ongeldig of verlopen")
+    return {"email": emp.email, "first_name": emp.first_name, "last_name": emp.last_name}
+
+# ── HR: mijn profiel (medewerker) ─────────────────────────────────────────────
+
+@app.get("/api/hr/me")
+async def hr_me(auth: tuple = Depends(verify_employee_or_hr), db: Session = Depends(get_session)):
+    customer_id, _ = auth
+    emp = _get_employee_by_customer(customer_id, db)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Geen medewerkersprofiel gevonden")
+    tasks = db.exec(select(EmployeeTask).where(EmployeeTask.employee_id == emp.id).order_by(EmployeeTask.completed)).all()
+    assignments = db.exec(select(FestivalAssignment).where(FestivalAssignment.employee_id == emp.id)).all()
+    festivals = []
+    for a in assignments:
+        f = db.get(Festival, a.festival_id)
+        if f:
+            tickets = db.exec(select(FestivalTicket).where(
+                FestivalTicket.festival_id == f.id,
+                (FestivalTicket.employee_id == emp.id) | (FestivalTicket.employee_id == None)
+            )).all()
+            festivals.append({**f.model_dump(), "role": a.role, "tickets": [t.model_dump() for t in tickets]})
+    return {**emp.model_dump(), "tasks": [t.model_dump() for t in tasks], "festivals": festivals}
+
+@app.post("/api/hr/me/tasks/{task_id}/complete")
+async def hr_complete_task(task_id: int, auth: tuple = Depends(verify_employee_or_hr), db: Session = Depends(get_session)):
+    customer_id, _ = auth
+    emp = _get_employee_by_customer(customer_id, db)
+    if not emp:
+        raise HTTPException(status_code=404)
+    task = db.get(EmployeeTask, task_id)
+    if not task or task.employee_id != emp.id:
+        raise HTTPException(status_code=404)
+    task.completed = True
+    task.completed_at = datetime.utcnow()
+    if task.key == "confirm_data":
+        emp.data_confirmed = True
+        db.add(emp)
+    db.add(task)
+    db.commit()
+    return {"ok": True}
+
+# ── HR: festivals ─────────────────────────────────────────────────────────────
+
+@app.get("/api/hr/festivals")
+async def hr_list_festivals(admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    festivals = db.exec(select(Festival).order_by(Festival.date_start.desc())).all()
+    result = []
+    for f in festivals:
+        assignments = db.exec(select(FestivalAssignment).where(FestivalAssignment.festival_id == f.id)).all()
+        tickets = db.exec(select(FestivalTicket).where(FestivalTicket.festival_id == f.id)).all()
+        result.append({**f.model_dump(), "employee_count": len(assignments), "ticket_count": len(tickets)})
+    return result
+
+@app.post("/api/hr/festivals")
+async def hr_create_festival(body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    f = Festival(
+        name=body.get("name", ""),
+        location=body.get("location", ""),
+        date_start=body.get("date_start", ""),
+        date_end=body.get("date_end", ""),
+        description=body.get("description", ""),
+    )
+    db.add(f)
+    db.commit()
+    db.refresh(f)
+    return f.model_dump()
+
+@app.put("/api/hr/festivals/{fid}")
+async def hr_update_festival(fid: int, body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    f = db.get(Festival, fid)
+    if not f:
+        raise HTTPException(status_code=404)
+    for k in ["name","location","date_start","date_end","description"]:
+        if k in body:
+            setattr(f, k, body[k])
+    db.add(f)
+    db.commit()
+    return f.model_dump()
+
+@app.delete("/api/hr/festivals/{fid}")
+async def hr_delete_festival(fid: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    f = db.get(Festival, fid)
+    if not f:
+        raise HTTPException(status_code=404)
+    db.delete(f)
+    db.commit()
+    return {"ok": True}
+
+@app.get("/api/hr/festivals/{fid}")
+async def hr_get_festival(fid: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    f = db.get(Festival, fid)
+    if not f:
+        raise HTTPException(status_code=404)
+    assignments = db.exec(select(FestivalAssignment).where(FestivalAssignment.festival_id == fid)).all()
+    employees = []
+    for a in assignments:
+        e = db.get(Employee, a.employee_id)
+        if e:
+            employees.append({**e.model_dump(), "role": a.role, "assignment_id": a.id, "notes": a.notes})
+    tickets = db.exec(select(FestivalTicket).where(FestivalTicket.festival_id == fid)).all()
+    return {**f.model_dump(), "employees": employees, "tickets": [t.model_dump() for t in tickets]}
+
+# ── HR: medewerkers aan festivals koppelen ────────────────────────────────────
+
+@app.post("/api/hr/festivals/{fid}/assignments")
+async def hr_assign_employee(fid: int, body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    if not db.get(Festival, fid):
+        raise HTTPException(status_code=404)
+    existing = db.exec(select(FestivalAssignment).where(FestivalAssignment.festival_id == fid).where(FestivalAssignment.employee_id == body["employee_id"])).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Medewerker is al toegewezen aan dit festival")
+    a = FestivalAssignment(festival_id=fid, employee_id=body["employee_id"], role=body.get("role",""), notes=body.get("notes",""))
+    db.add(a)
+    db.commit()
+    return {"ok": True}
+
+@app.delete("/api/hr/festivals/{fid}/assignments/{assignment_id}")
+async def hr_remove_assignment(fid: int, assignment_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    a = db.get(FestivalAssignment, assignment_id)
+    if not a or a.festival_id != fid:
+        raise HTTPException(status_code=404)
+    db.delete(a)
+    db.commit()
+    return {"ok": True}
+
+# ── HR: tickets uploaden ──────────────────────────────────────────────────────
+
+@app.post("/api/hr/festivals/{fid}/tickets")
+async def hr_upload_ticket(
+    fid: int,
+    file: UploadFile = FastAPIFile(...),
+    employee_id: Optional[int] = None,
+    admin_id: int = Depends(verify_hr_admin),
+    db: Session = Depends(get_session),
+):
+    if not db.get(Festival, fid):
+        raise HTTPException(status_code=404)
+    ext = Path(file.filename).suffix.lower()
+    if ext not in [".pdf", ".jpg", ".jpeg", ".png", ".webp"]:
+        raise HTTPException(status_code=400, detail="Alleen PDF of afbeeldingen toegestaan")
+    safe_name = f"{secrets.token_hex(16)}{ext}"
+    dest = UPLOADS_DIR / safe_name
+    content = await file.read()
+    dest.write_bytes(content)
+    ticket = FestivalTicket(
+        festival_id=fid,
+        employee_id=employee_id,
+        filename=safe_name,
+        original_name=file.filename,
+        mime_type=file.content_type or "application/octet-stream",
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return ticket.model_dump()
+
+@app.delete("/api/hr/tickets/{ticket_id}")
+async def hr_delete_ticket(ticket_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    t = db.get(FestivalTicket, ticket_id)
+    if not t:
+        raise HTTPException(status_code=404)
+    try:
+        (UPLOADS_DIR / t.filename).unlink(missing_ok=True)
+    except Exception:
+        pass
+    db.delete(t)
+    db.commit()
+    return {"ok": True}
+
+@app.get("/api/hr/tickets/{ticket_id}/download")
+async def hr_download_ticket(ticket_id: int, auth: tuple = Depends(verify_employee_or_hr), db: Session = Depends(get_session)):
+    customer_id, is_hr = auth
+    t = db.get(FestivalTicket, ticket_id)
+    if not t:
+        raise HTTPException(status_code=404)
+    if not is_hr:
+        emp = _get_employee_by_customer(customer_id, db)
+        if not emp:
+            raise HTTPException(status_code=403)
+        # Controleer of medewerker toegang heeft: ticket is voor hem/iedereen en hij is toegewezen
+        assignment = db.exec(select(FestivalAssignment).where(FestivalAssignment.festival_id == t.festival_id).where(FestivalAssignment.employee_id == emp.id)).first()
+        if not assignment:
+            raise HTTPException(status_code=403)
+        if t.employee_id is not None and t.employee_id != emp.id:
+            raise HTTPException(status_code=403)
+    path = UPLOADS_DIR / t.filename
+    if not path.exists():
+        raise HTTPException(status_code=404)
+    return FR(str(path), media_type=t.mime_type, filename=t.original_name)
+
+# ── Static file serving ────────────────────────────────────────────────────────
+
+# Serve uploaded tickets via /uploads/tickets/{filename} (alleen intern — downloaden via API)
+app.mount("/uploads", StaticFiles(directory=str(Path(__file__).parent.parent / "uploads")), name="uploads")
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():

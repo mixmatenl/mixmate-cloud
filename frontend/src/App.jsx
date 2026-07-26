@@ -12,9 +12,14 @@ import Webshop from './pages/Webshop.jsx'
 import Apps from './pages/Apps.jsx'
 import Bestellen from './pages/Bestellen.jsx'
 import MijnBestellingen from './pages/MijnBestellingen.jsx'
+import Personeel from './pages/Personeel.jsx'
+import PersoneelAdmin from './pages/PersoneelAdmin.jsx'
+import PersoneelInvite from './pages/PersoneelInvite.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 import { api } from './api.js'
+
+const HR_ADMIN = 'r.muller@mixmate.nl'
 
 function EyeIcon({ open }) {
   return open
@@ -305,6 +310,7 @@ export default function App() {
   if (!token) {
     return (
       <Routes>
+        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={() => {}} />} />
         <Route path="*" element={<Login onLogin={onLogin} />} />
       </Routes>
     )
@@ -326,6 +332,9 @@ export default function App() {
         <Route path="/apps"      element={<Apps />} />
         <Route path="/bestellen" element={<Bestellen user={user} />} />
         <Route path="/mijn-bestellingen" element={<MijnBestellingen />} />
+        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={() => {}} />} />
+        <Route path="/personeel/beheer" element={user?.email?.toLowerCase() === HR_ADMIN ? <PersoneelAdmin /> : <Navigate to="/" replace />} />
+        <Route path="/personeel" element={<Personeel />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />
