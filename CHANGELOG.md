@@ -1,3 +1,8 @@
+## [1.6.1] - 2026-07-27
+### Gewijzigd
+- Spoelroutine: standaard duur verlaagd (analyse genereert kortere tijden), default 10s → 6s
+- Spoelroutine: melding bij weegschaalbeveiliging (Pi stopt automatisch boven 2 kg)
+
 ## [1.6.0] - 2026-07-27
 ### Nieuw
 - Pompbeheer: per pomp instellen of het een peristaltische pomp of CO₂-valve is

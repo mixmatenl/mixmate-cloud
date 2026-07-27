@@ -1131,16 +1131,16 @@ function SpoelTab({ machineId, status, blocked, onToggleBlock, toggling }) {
 // ── Instellingen ──────────────────────────────────────────────────────────────
 
 function calcFlushDuration(slot, daysSince) {
-  const base = 8
-  const lineFactor = slot * 0.85
-  const contamFactor = Math.min(daysSince * 1.3, 14)
+  const base = 4
+  const lineFactor = slot * 0.4
+  const contamFactor = Math.min(daysSince * 0.5, 6)
   const variance = (slot % 3) - 1
-  return Math.max(6, Math.round(base + lineFactor + contamFactor + variance))
+  return Math.max(3, Math.round(base + lineFactor + contamFactor + variance))
 }
 
 function flushLabel(duration) {
-  if (duration <= 9)  return { text: 'Standaard spoeling',  color: '#30d158' }
-  if (duration <= 13) return { text: 'Intensieve spoeling', color: '#ff9500' }
+  if (duration <= 6)  return { text: 'Standaard spoeling',  color: '#30d158' }
+  if (duration <= 9)  return { text: 'Intensieve spoeling', color: '#ff9500' }
   return                     { text: 'Verhoogde spoelduur', color: '#ff3b30' }
 }
 
@@ -1189,7 +1189,13 @@ function Spoelroutine({ machineId, status }) {
           // Flush is klaar — we hebben active:true gehad en nu active:false
           stopPolling()
           setFlushing(false)
-          setFlushDone({ ok: true })
+          if (s.weight_stop) {
+            setFlushDone({ ok: false, msg: '⚠️ Gestopt: gewicht boven 2 kg gedetecteerd. Weegschaalbeveiliging heeft de spoelroutine onderbroken.' })
+          } else if (s.error) {
+            setFlushDone({ ok: false, msg: s.error })
+          } else {
+            setFlushDone({ ok: true })
+          }
           setAnalysed(false)
           setSelected(pumps?.map(p => p.slot) || [])
           api.getFlushLog(machineId).then(setLog).catch(() => {})
@@ -1219,7 +1225,7 @@ function Spoelroutine({ machineId, status }) {
   async function startFlush() {
     if (!confirm(`Spoelroutine starten voor ${selected.length} leiding(en)? Zorg dat water is aangesloten.`)) return
     setFlushing(true); setFlushDone(null); setLiveStatus(null)
-    const pumpsPayload = selected.map(slot => ({ slot, duration: durations[slot] || 10 }))
+    const pumpsPayload = selected.map(slot => ({ slot, duration: durations[slot] || 6 }))
     try {
       await api.flushMachine(machineId, pumpsPayload)
       startPolling()
