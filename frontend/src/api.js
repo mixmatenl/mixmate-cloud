@@ -93,6 +93,7 @@ export const api = {
   getFlushLog:      (mid)        => req('GET',   `/api/machines/${mid}/flush-log`),
   getFlushSchedule: (mid)        => req('GET',   `/api/machines/${mid}/flush-schedule`),
   updateFlushSchedule: (mid, data) => req('PATCH', `/api/machines/${mid}/flush-schedule`, data),
+  getCooldownStatus: (mid)       => req('GET',  `/api/machines/${mid}/cooldown-status`),
   getBlockStatus:  (mid)        => req('GET',  `/api/machines/${mid}/block-status`),
   blockMachine:    (mid)        => req('POST', `/api/machines/${mid}/block`),
   unblockMachine:  (mid)        => req('POST', `/api/machines/${mid}/unblock`),

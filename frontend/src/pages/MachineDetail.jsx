@@ -1130,12 +1130,13 @@ function SpoelTab({ machineId, status, blocked, onToggleBlock, toggling }) {
 
 // ── Instellingen ──────────────────────────────────────────────────────────────
 
-function calcFlushDuration(slot, daysSince) {
-  const base = 4
-  const lineFactor = slot * 0.4
-  const contamFactor = Math.min(daysSince * 0.5, 6)
-  const variance = (slot % 3) - 1
-  return Math.max(3, Math.round(base + lineFactor + contamFactor + variance))
+function calcFlushDuration(_slot, _daysSince) {
+  return 6  // vaste 6s — genoeg om schoonmaakmiddel door te spoelen
+}
+
+function fmtSecs(s) {
+  const m = Math.floor(s / 60), sec = s % 60
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`
 }
 
 function Spoelroutine({ machineId, status }) {
@@ -1145,7 +1146,9 @@ function Spoelroutine({ machineId, status }) {
   const [flushDone,  setFlushDone] = useState(null)
   const [liveStatus, setLiveStatus]= useState(null)
   const [log,        setLog]       = useState(null)
+  const [cooldowns,  setCooldowns] = useState([])
   const pollRef      = useRef(null)
+  const cdPollRef    = useRef(null)
   const sawActiveRef = useRef(false)
   const pollStartRef = useRef(0)
 
@@ -1154,9 +1157,20 @@ function Spoelroutine({ machineId, status }) {
     api.getPumps(machineId).then(d => {
       const list = (d.items || d).filter(p => p.pump_type !== 'valve')
       setPumps(list)
-      setSelected(list.map(p => p.slot))
+      // Geen auto-selectie — gebruiker kiest zelf welke leidingen op water zitten
     }).catch(() => {})
     api.getFlushLog(machineId).then(setLog).catch(() => {})
+
+    // Cooldown status poller
+    async function pollCooldown() {
+      try {
+        const r = await api.getCooldownStatus(machineId)
+        setCooldowns(Array.isArray(r) ? r : (r.items || []))
+      } catch {}
+      cdPollRef.current = setTimeout(pollCooldown, 2000)
+    }
+    pollCooldown()
+    return () => { if (cdPollRef.current) clearTimeout(cdPollRef.current) }
   }, [machineId, status?.online])
 
   function stopPolling() {
@@ -1331,6 +1345,33 @@ function Spoelroutine({ machineId, status }) {
         </div>
       )}
 
+      {/* Geblokkeerde leidingen */}
+      {cooldowns.length > 0 && !flushing && (
+        <div style={{ borderBottom: '1px solid #f2f2f7' }}>
+          <div style={{ padding: '10px 16px 6px', fontSize: 11, fontWeight: 700, color: '#aeaeb2', letterSpacing: 1, textTransform: 'uppercase' }}>
+            Geblokkeerde leidingen
+          </div>
+          {cooldowns.map(cd => (
+            <div key={cd.slot} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid #f9f9f9' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: '#fff8ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>{cd.ingredient_name || `Leiding ${cd.slot}`}</div>
+                  <div style={{ fontSize: 11, color: '#aeaeb2', marginTop: 1 }}>Leiding {cd.slot} · Recepten geblokkeerd</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#ff9500', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtSecs(cd.remaining_seconds)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Pompkeuze + start (verborgen tijdens actief spoelen) */}
       {!flushing && (
         <>
@@ -1338,11 +1379,13 @@ function Spoelroutine({ machineId, status }) {
           {pumps ? (
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #f2f2f7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 13, color: '#1d1d1f', fontWeight: 500 }}>
-                {selected.length === 0 ? 'Geen leidingen geselecteerd' : `${selected.length} van ${pumps.length} leidingen`}
+                {selected.length === 0 ? 'Selecteer leidingen die op water zitten' : `${selected.length} van ${pumps.length} leidingen`}
               </div>
-              <button onClick={toggleAll} style={{ fontSize: 12, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
-                {selected.length === pumps.length ? 'Alles deselecteren' : 'Alles selecteren'}
-              </button>
+              {selected.length > 0 && (
+                <button onClick={() => setSelected([])} style={{ fontSize: 12, color: '#aeaeb2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                  Wis selectie
+                </button>
+              )}
             </div>
           ) : null}
 

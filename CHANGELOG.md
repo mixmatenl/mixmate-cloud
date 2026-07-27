@@ -1,3 +1,14 @@
+## [1.8.0] - 2026-07-28
+### Gewijzigd
+- Spoelroutine: geen auto-selectie bij laden — gebruiker kiest zelf welke leidingen op water staan
+- Spoelroutine: "Geblokkeerde leidingen" sectie bovenaan met afteltimer per leiding (live via WebSocket proxy)
+- Spoelroutine: spoelduur vaste 6s per leiding (was variabele formule)
+- Spoelroutine: "Alles selecteren" knop verwijderd; vervangen door "Wis selectie"
+### Nieuw
+- Cloud backend: `/api/machines/{id}/cooldown-status` proxy endpoint
+- Pi cloud_client: `get_cooldown_status` message type toegevoegd
+- Portal api.js: `getCooldownStatus(machineId)` toegevoegd
+
 ## [1.7.0] - 2026-07-27
 ### Gewijzigd
 - Spoelscherm volledig herontworpen: consistente Group/Row-stijl, geen nep-analysestap

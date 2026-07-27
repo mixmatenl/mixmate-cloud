@@ -1361,6 +1361,17 @@ async def get_flush_status(machine_id: str, customer_id: int = Depends(verify_to
     except Exception:
         return {"active": False}
 
+@app.get("/api/machines/{machine_id}/cooldown-status")
+async def get_cooldown_status(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _check_machine_access(machine_id, customer_id, db)
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        return []
+    try:
+        return await conn.request({"type": "get_cooldown_status"}, timeout=5)
+    except Exception:
+        return []
+
 @app.get("/api/machines/{machine_id}/block-status")
 async def get_block_status(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _check_machine_access(machine_id, customer_id, db)
