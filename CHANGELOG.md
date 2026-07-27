@@ -1,3 +1,8 @@
+## [1.8.1] - 2026-07-28
+### Opgelost
+- Spoelroutine: verbindingsfout tijdens spoelen toont nu een foutmelding i.p.v. stil leegvallen
+- Pompbeheer: type-wissel (peristaltisch ↔ CO₂ valve) en ingrediëntkoppeling worden nu direct in de UI bijgewerkt zonder pagina-herlaad
+
 ## [1.8.0] - 2026-07-28
 ### Gewijzigd
 - Spoelroutine: geen auto-selectie bij laden — gebruiker kiest zelf welke leidingen op water staan

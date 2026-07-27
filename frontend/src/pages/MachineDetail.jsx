@@ -948,8 +948,8 @@ function Catalogus({ machineId }) {
 // ── Pompen ────────────────────────────────────────────────────────────────────
 
 function Pompen({ machineId }) {
-  const { items: pumps, loading, err } = useList(() => api.getPumps(machineId))
-  const { items: ingredients }         = useList(() => api.getIngredients(machineId))
+  const { items: pumps, loading, err, setItems: setPumps } = useList(() => api.getPumps(machineId))
+  const { items: ingredients }                              = useList(() => api.getIngredients(machineId))
   const [saving, setSaving] = useState(null)
   const [saved,  setSaved]  = useState(null)
 
@@ -957,6 +957,7 @@ function Pompen({ machineId }) {
     setSaving(pump.id)
     try {
       await api.updatePump(machineId, pump.id, { ingredient_id: ingredient_id || null })
+      setPumps(prev => prev.map(p => p.id === pump.id ? { ...p, ingredient_id: ingredient_id ? Number(ingredient_id) : null } : p))
       setSaved(pump.id); setTimeout(() => setSaved(null), 1500)
     } catch (e) { alert(e.message) }
     setSaving(null)
@@ -967,6 +968,7 @@ function Pompen({ machineId }) {
     setSaving(pump.id)
     try {
       await api.updatePump(machineId, pump.id, { pump_type: next, ingredient_id: null })
+      setPumps(prev => prev.map(p => p.id === pump.id ? { ...p, pump_type: next, ingredient_id: null } : p))
       setSaved(pump.id); setTimeout(() => setSaved(null), 1500)
     } catch (e) { alert(e.message) }
     setSaving(null)
@@ -1202,7 +1204,7 @@ function Spoelroutine({ machineId, status }) {
           stopPolling(); setFlushing(false)
           setFlushDone({ ok: false, msg: 'Machine reageert niet op spoelcommando. Controleer of hij online is.' })
         }
-      } catch { stopPolling(); setFlushing(false) }
+      } catch { stopPolling(); setFlushing(false); setFlushDone({ ok: false, msg: 'Verbinding verbroken. Controleer of de machine online is.' }) }
     }, 1000)
   }
 
