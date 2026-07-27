@@ -270,13 +270,14 @@ function FestivalsTab() {
     loadDetail(festivalId)
   }
 
-  async function uploadTicket(festivalId, file, empId, ticketDate) {
+  async function uploadTicket(festivalId, file, empId, ticketDate, releaseDate) {
     setUploading(true)
     const fd = new FormData()
     fd.append('file', file)
     let url = `/api/hr/festivals/${festivalId}/tickets?`
     if (empId) url += `employee_id=${empId}&`
     if (ticketDate) url += `ticket_date=${encodeURIComponent(ticketDate)}&`
+    if (releaseDate) url += `release_date=${encodeURIComponent(releaseDate)}&`
     const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('mm_token')}` }, body: fd })
     if (!r.ok) alert('Upload mislukt')
     setUploading(false)
@@ -400,9 +401,13 @@ function FestivalsTab() {
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#6e6e73', marginBottom: 4 }}>Datum</label>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#6e6e73', marginBottom: 4 }}>Geldig op datum</label>
                   <input id="ticket-date" type="date" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
                 </div>
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#6e6e73', marginBottom: 4 }}>Zichtbaar vanaf <span style={{ fontWeight: 400, color: '#aeaeb2' }}>(leeg = direct zichtbaar)</span></label>
+                <input id="ticket-release" type="date" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
               </div>
               <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }}
                 onChange={e => {
@@ -410,7 +415,8 @@ function FestivalsTab() {
                   if (f) {
                     const empId = document.getElementById('ticket-emp').value || null
                     const date = document.getElementById('ticket-date').value || null
-                    uploadTicket(selected.id, f, empId, date)
+                    const release = document.getElementById('ticket-release').value || null
+                    uploadTicket(selected.id, f, empId, date, release)
                   }
                   e.target.value = ''
                 }} />
@@ -432,8 +438,20 @@ function TakenTab() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ label: '', scope: 'all', employee_id: '', festival_id: '' })
+  const [formFields, setFormFields] = useState([])
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [expandedResponse, setExpandedResponse] = useState(null)
+
+  function addFormField() {
+    setFormFields(f => [...f, { id: `field_${Date.now()}`, label: '', type: 'text', required: false }])
+  }
+  function updateFormField(id, key, val) {
+    setFormFields(f => f.map(x => x.id === id ? { ...x, [key]: val } : x))
+  }
+  function removeFormField(id) {
+    setFormFields(f => f.filter(x => x.id !== id))
+  }
 
   async function load() {
     setLoading(true)
@@ -454,14 +472,17 @@ function TakenTab() {
 
   async function createTask() {
     if (!form.label.trim()) return setError('Voer een taakomschrijving in.')
+    const invalidField = formFields.find(f => !f.label.trim())
+    if (invalidField) return setError('Vul een label in voor alle formuliervragen.')
     setCreating(true); setError('')
     try {
-      const body = { label: form.label }
+      const body = { label: form.label, form_fields: formFields }
       if (form.scope === 'one' && form.employee_id) body.employee_ids = [parseInt(form.employee_id)]
       else if (form.scope === 'festival' && form.festival_id) body.festival_id = parseInt(form.festival_id)
       else body.all_employees = true
       await api('/api/hr/tasks/create', { method: 'POST', body: JSON.stringify(body) })
       setForm({ label: '', scope: 'all', employee_id: '', festival_id: '' })
+      setFormFields([])
       setShowCreate(false)
       load()
     } catch (e) { setError(e.message) }
@@ -523,6 +544,35 @@ function TakenTab() {
               </select>
             </div>
           )}
+          {/* Formulier builder */}
+          <div style={{ marginTop: 4, marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 8 }}>Formuliervragen <span style={{ fontWeight: 400, color: '#aeaeb2' }}>(optioneel)</span></div>
+            {formFields.map((field, i) => (
+              <div key={field.id} style={{ background: '#f5f5f7', borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                  <input
+                    placeholder={`Vraag ${i + 1}`}
+                    value={field.label}
+                    onChange={e => updateFormField(field.id, 'label', e.target.value)}
+                    style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+                  />
+                  <select value={field.type} onChange={e => updateFormField(field.id, 'type', e.target.value)}
+                    style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff' }}>
+                    <option value="text">Tekst</option>
+                    <option value="yesno">Ja / Nee</option>
+                    <option value="number">Getal</option>
+                  </select>
+                  <button onClick={() => removeFormField(field.id)} style={{ padding: '0 10px', borderRadius: 8, border: 'none', background: '#fff1f0', color: '#dc2626', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>✕</button>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#6e6e73', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={field.required} onChange={e => updateFormField(field.id, 'required', e.target.checked)} />
+                  Verplicht
+                </label>
+              </div>
+            ))}
+            <button onClick={addFormField} style={{ fontSize: 13, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontWeight: 600 }}>+ Vraag toevoegen</button>
+          </div>
+
           {error && <div style={{ color: '#ff3b30', fontSize: 13, marginBottom: 10 }}>{error}</div>}
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
             <Btn onClick={createTask} disabled={creating}>{creating ? 'Aanmaken…' : 'Taak aanmaken'}</Btn>
@@ -554,18 +604,44 @@ function TakenTab() {
       {done.length > 0 && (
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Afgerond ({done.length})</div>
-          {done.map(t => (
-            <Card key={t.id} style={{ padding: '12px 16px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12, opacity: 0.6 }}>
-              <div style={{ width: 16, height: 16, borderRadius: 4, background: '#34c759', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><polyline points="2,6 5,9 10,3"/></svg>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', textDecoration: 'line-through' }}>{t.label}</div>
-                <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{t.emp_name}</div>
-              </div>
-              <Btn small color="#fff1f0" textColor="#dc2626" onClick={() => deleteTask(t.id)}>✕</Btn>
-            </Card>
-          ))}
+          {done.map(t => {
+            const fields = (() => { try { return JSON.parse(t.form_fields || '[]') } catch { return [] } })()
+            const response = (() => { try { return JSON.parse(t.form_response || '{}') } catch { return {} } })()
+            const hasResponse = fields.length > 0 && Object.keys(response).length > 0
+            const isExpanded = expandedResponse === t.id
+            return (
+              <Card key={t.id} style={{ padding: '12px 16px', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 4, background: '#34c759', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><polyline points="2,6 5,9 10,3"/></svg>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#6e6e73', textDecoration: 'line-through' }}>{t.label}</div>
+                    <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{t.emp_name}</div>
+                  </div>
+                  {hasResponse && (
+                    <button onClick={() => setExpandedResponse(isExpanded ? null : t.id)}
+                      style={{ fontSize: 12, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, padding: '4px 8px' }}>
+                      {isExpanded ? 'Verbergen' : 'Antwoorden'}
+                    </button>
+                  )}
+                  <Btn small color="#fff1f0" textColor="#dc2626" onClick={() => deleteTask(t.id)}>✕</Btn>
+                </div>
+                {isExpanded && hasResponse && (
+                  <div style={{ marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                    {fields.map(f => (
+                      <div key={f.id} style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 2 }}>{f.label}</div>
+                        <div style={{ fontSize: 14, color: '#1d1d1f', padding: '6px 10px', background: '#f5f5f7', borderRadius: 8 }}>
+                          {response[f.id] !== undefined ? String(response[f.id]) : '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )
+          })}
         </div>
       )}
     </div>

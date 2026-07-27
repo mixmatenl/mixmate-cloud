@@ -38,8 +38,64 @@ function SectionTitle({ children }) {
 
 // ── Dashboard sectie ─────────────────────────────────────────────────────────
 
+function TaskFormCard({ task, onDone }) {
+  const fields = (() => { try { return JSON.parse(task.form_fields || '[]') } catch { return [] } })()
+  const [answers, setAnswers] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit() {
+    const missing = fields.filter(f => f.required && !answers[f.id]?.toString().trim())
+    if (missing.length) return setError(`Vul alle verplichte vragen in.`)
+    setSaving(true); setError('')
+    try {
+      const token = localStorage.getItem('mm_token') || localStorage.getItem('mixmate_token')
+      const r = await fetch(`/api/hr/tasks/${task.id}/response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ response: answers })
+      })
+      if (!r.ok) throw new Error('Fout')
+      onDone()
+    } catch { setError('Kon antwoorden niet opslaan.') }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ background: '#f5f5f7', borderRadius: 12, padding: '14px 16px', marginTop: 8 }}>
+      {fields.map(f => (
+        <div key={f.id} style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 5 }}>
+            {f.label}{f.required && ' *'}
+          </label>
+          {f.type === 'yesno' ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['Ja', 'Nee'].map(opt => (
+                <button key={opt} onClick={() => setAnswers(a => ({ ...a, [f.id]: opt }))}
+                  style={{ padding: '8px 20px', borderRadius: 10, border: `2px solid ${answers[f.id] === opt ? '#007aff' : '#e5e5ea'}`, background: answers[f.id] === opt ? '#e8f0fe' : '#fff', color: answers[f.id] === opt ? '#007aff' : '#1d1d1f', fontFamily: 'inherit', fontSize: 14, cursor: 'pointer', fontWeight: 600 }}>
+                  {opt}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <input type={f.type === 'number' ? 'number' : 'text'} value={answers[f.id] || ''}
+              onChange={e => setAnswers(a => ({ ...a, [f.id]: e.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+          )}
+        </div>
+      ))}
+      {error && <div style={{ color: '#ff3b30', fontSize: 12, marginBottom: 8 }}>{error}</div>}
+      <button onClick={submit} disabled={saving}
+        style={{ padding: '10px 20px', background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+        {saving ? 'Opslaan…' : 'Bevestigen'}
+      </button>
+    </div>
+  )
+}
+
 function Dashboard({ data, openTasks, needsData }) {
   const festivals = data.festivals || []
+  const [openForm, setOpenForm] = useState(null)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -67,20 +123,35 @@ function Dashboard({ data, openTasks, needsData }) {
             <span style={{ background: '#fff8ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '2px 9px', fontSize: 12, color: '#c2410c' }}>{openTasks.length}</span>
             Openstaande taken
           </div>
-          {openTasks.map(t => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f7' }}>
-              <div style={{ width: 20, height: 20, borderRadius: 10, border: '2px solid #d1d1d6', marginTop: 1, flexShrink: 0 }} />
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{t.label}</div>
-                {t.key === 'confirm_data' && (
-                  <a href="/personeel?s=gegevens" style={{ fontSize: 12, color: '#007aff', textDecoration: 'none' }}>Ga naar Persoonlijke gegevens →</a>
-                )}
-                {t.key === 'change_password' && (
-                  <div style={{ fontSize: 12, color: '#6e6e73' }}>Wijzig je wachtwoord via je accountinstellingen</div>
+          {openTasks.map(t => {
+            const hasForm = t.form_fields && t.form_fields !== '[]' && t.form_fields !== ''
+            const isOpen = openForm === t.id
+            return (
+              <div key={t.id} style={{ padding: '10px 0', borderBottom: '1px solid #f5f5f7' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 10, border: '2px solid #d1d1d6', marginTop: 1, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{t.label}</div>
+                    {t.key === 'confirm_data' && (
+                      <a href="/personeel?s=gegevens" style={{ fontSize: 12, color: '#007aff', textDecoration: 'none' }}>Ga naar Persoonlijke gegevens →</a>
+                    )}
+                    {t.key === 'change_password' && (
+                      <div style={{ fontSize: 12, color: '#6e6e73' }}>Wijzig je wachtwoord via je accountinstellingen</div>
+                    )}
+                    {hasForm && !isOpen && (
+                      <button onClick={() => setOpenForm(t.id)}
+                        style={{ marginTop: 4, fontSize: 12, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontWeight: 600 }}>
+                        Formulier invullen →
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {hasForm && isOpen && (
+                  <TaskFormCard task={t} onDone={() => { setOpenForm(null); window.location.reload() }} />
                 )}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </Card>
       )}
 
@@ -113,6 +184,29 @@ function Dashboard({ data, openTasks, needsData }) {
             {festivals.map(f => <FestivalCard key={f.id} f={f} />)}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Vergrendeld ticket ────────────────────────────────────────────────────────
+
+function LockedTicket({ ticket }) {
+  const dateLabel = ticket.ticket_date
+    ? new Date(ticket.ticket_date).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })
+    : null
+  const releaseLabel = new Date(ticket.release_date).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {dateLabel && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 8 }}>{dateLabel}</div>
+      )}
+      <div style={{ borderRadius: 14, border: '1px solid #e5e5ea', background: '#f5f5f7', padding: '20px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ fontSize: 24 }}>🔒</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{ticket.original_name}</div>
+          <div style={{ fontSize: 12, color: '#6e6e73', marginTop: 2 }}>Beschikbaar vanaf {releaseLabel}</div>
+        </div>
       </div>
     </div>
   )
@@ -214,7 +308,13 @@ function FestivalCard({ f }) {
           {!hasTickets && (
             <div style={{ fontSize: 14, color: '#aeaeb2', textAlign: 'center', padding: '12px 0' }}>Nog geen tickets beschikbaar.</div>
           )}
-          {f.tickets?.map(t => <TicketViewer key={t.id} ticket={t} />)}
+          {f.tickets?.map(t => {
+            if (t.release_date) {
+              const today = new Date().toISOString().slice(0, 10)
+              if (t.release_date > today) return <LockedTicket key={t.id} ticket={t} />
+            }
+            return <TicketViewer key={t.id} ticket={t} />
+          })}
         </div>
       )}
     </Card>

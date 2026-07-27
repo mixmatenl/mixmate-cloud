@@ -273,6 +273,7 @@ class FestivalTicket(SQLModel, table=True):
     original_name: str = ""
     mime_type: str = ""
     ticket_date: str = ""   # bijv. "2025-07-04" — dag waarvoor het ticket geldt
+    release_date: str = ""  # leeg = direct zichtbaar, anders datum vanaf wanneer zichtbaar
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EmployeeTask(SQLModel, table=True):
@@ -282,6 +283,8 @@ class EmployeeTask(SQLModel, table=True):
     label: str = ""
     completed: bool = False
     completed_at: Optional[datetime] = None
+    form_fields: str = ""   # JSON: [{id, label, type: text|yesno|number, required}]
+    form_response: str = "" # JSON: {field_id: antwoord}
 
 class NewsletterSend(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -318,6 +321,9 @@ def create_tables():
         "ALTER TABLE glassproduct ADD COLUMN series_id INTEGER REFERENCES glassseries(id)",
         "ALTER TABLE employee ADD COLUMN birth_place VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE festivalticket ADD COLUMN ticket_date VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE festivalticket ADD COLUMN release_date VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE employeetask ADD COLUMN form_fields TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE employeetask ADD COLUMN form_response TEXT NOT NULL DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -2830,6 +2836,23 @@ async def hr_complete_task(task_id: int, auth: tuple = Depends(verify_employee_o
     db.commit()
     return {"ok": True}
 
+@app.post("/api/hr/tasks/{task_id}/response")
+async def hr_submit_task_response(task_id: int, body: dict, auth: tuple = Depends(verify_employee_or_hr), db: Session = Depends(get_session)):
+    import json as _json
+    customer_id, _ = auth
+    emp = _get_employee_by_customer(customer_id, db)
+    if not emp:
+        raise HTTPException(status_code=404)
+    task = db.get(EmployeeTask, task_id)
+    if not task or task.employee_id != emp.id:
+        raise HTTPException(status_code=404)
+    task.form_response = _json.dumps(body.get("response", {}))
+    task.completed = True
+    task.completed_at = datetime.utcnow()
+    db.add(task)
+    db.commit()
+    return {"ok": True}
+
 # ── HR: festivals ─────────────────────────────────────────────────────────────
 
 @app.get("/api/hr/festivals")
@@ -2922,6 +2945,7 @@ async def hr_upload_ticket(
     file: UploadFile = FastAPIFile(...),
     employee_id: Optional[int] = None,
     ticket_date: Optional[str] = None,
+    release_date: Optional[str] = None,
     admin_id: int = Depends(verify_hr_admin),
     db: Session = Depends(get_session),
 ):
@@ -2943,6 +2967,7 @@ async def hr_upload_ticket(
         original_name=file.filename,
         mime_type=file.content_type or "application/octet-stream",
         ticket_date=ticket_date or "",
+        release_date=release_date or "",
     )
     db.add(ticket)
     db.commit()
@@ -2981,6 +3006,11 @@ async def hr_download_ticket(ticket_id: int, auth: tuple = Depends(verify_employ
             raise HTTPException(status_code=403)
         if t.employee_id is not None and t.employee_id != emp.id:
             raise HTTPException(status_code=403)
+        # Vergrendeld tot release_date
+        if t.release_date:
+            from datetime import date as date_type
+            if date_type.fromisoformat(t.release_date) > date_type.today():
+                raise HTTPException(status_code=403, detail=f"Dit ticket is beschikbaar vanaf {t.release_date}")
     if USE_R2:
         try:
             content = r2_download(t.filename)
@@ -3031,12 +3061,16 @@ async def hr_create_task(body: dict, admin_id: int = Depends(verify_hr_admin), d
     else:
         target_ids = employee_ids
 
+    import json as _json
+    form_fields_raw = body.get("form_fields", [])
+    form_fields_str = _json.dumps(form_fields_raw) if form_fields_raw else ""
+
     created = 0
     key = f"custom_{secrets.token_hex(6)}"
     for eid in target_ids:
         emp = db.get(Employee, eid)
         if emp:
-            db.add(EmployeeTask(employee_id=eid, key=key, label=label))
+            db.add(EmployeeTask(employee_id=eid, key=key, label=label, form_fields=form_fields_str))
             created += 1
     db.commit()
     return {"created": created, "key": key}
