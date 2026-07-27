@@ -1,3 +1,10 @@
+## [1.5.0] - 2026-07-27
+### Nieuw
+- `GlassProduct` heeft nu `volume_ml` veld (inhoud van het glas in ml)
+- Admin webshop: volume-veld in productformulier voor glazen
+- Publiek endpoint `/api/glass-catalog` geeft actieve glazen met naam, volume en afbeelding terug aan Pi-machines
+- Receptbeheer in portaal: waarschuwing als geselecteerd glas te klein is voor cocktailvolume
+
 ## [1.3.7] - 2026-07-23
 ### Nieuw
 - MachineApp: hybride cloud + lokale modus (detecteert automatisch via cloud én mixmate.local)

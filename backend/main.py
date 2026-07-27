@@ -152,6 +152,7 @@ class GlassProduct(SQLModel, table=True):
     series_id: Optional[int] = Field(default=None, foreign_key="glassseries.id")
     name: str = ""
     description: str = ""
+    volume_ml: float = 0.0
     price_excl: float = 0.0
     purchase_price: float = 0.0
     unit: str = "stuk"
@@ -319,6 +320,7 @@ def create_tables():
         "ALTER TABLE glassorder ADD COLUMN paid_at TIMESTAMP",
         "ALTER TABLE glassorder ADD COLUMN reminder_sent_at TIMESTAMP",
         "ALTER TABLE glassproduct ADD COLUMN series_id INTEGER REFERENCES glassseries(id)",
+        "ALTER TABLE glassproduct ADD COLUMN volume_ml REAL NOT NULL DEFAULT 0.0",
         "ALTER TABLE employee ADD COLUMN birth_place VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE festivalticket ADD COLUMN ticket_date VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE festivalticket ADD COLUMN release_date VARCHAR NOT NULL DEFAULT ''",
@@ -1878,7 +1880,13 @@ def save_shop_settings(data: dict, db: Session = Depends(get_session), _=Depends
 def get_products_public(db: Session = Depends(get_session)):
     products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.series_id.nulls_last(), GlassProduct.id)).all()
     # Strip inkoopprijs uit publieke response
-    return [{"id": p.id, "name": p.name, "description": p.description, "price_excl": p.price_excl, "unit": p.unit, "min_order": p.min_order, "active": p.active, "image_url": p.image_url, "series_id": p.series_id} for p in products]
+    return [{"id": p.id, "name": p.name, "description": p.description, "volume_ml": p.volume_ml, "price_excl": p.price_excl, "unit": p.unit, "min_order": p.min_order, "active": p.active, "image_url": p.image_url, "series_id": p.series_id} for p in products]
+
+@app.get("/api/glass-catalog")
+def get_glass_catalog(db: Session = Depends(get_session)):
+    """Publiek endpoint voor Pi-machines: geeft actieve glazen met volume en afbeelding."""
+    products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.series_id.nulls_last(), GlassProduct.id)).all()
+    return [{"id": p.id, "name": p.name, "volume_ml": p.volume_ml, "image_url": p.image_url} for p in products if p.volume_ml > 0]
 
 @app.get("/api/shop/products")
 def get_products(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
@@ -1889,6 +1897,7 @@ def create_product(data: dict, db: Session = Depends(get_session), _=Depends(ver
     p = GlassProduct(
         name=data.get("name",""),
         description=data.get("description",""),
+        volume_ml=float(data.get("volume_ml", 0)),
         price_excl=float(data.get("price_excl", 0)),
         purchase_price=float(data.get("purchase_price", 0)),
         unit=data.get("unit","stuk"),
@@ -1904,7 +1913,7 @@ def create_product(data: dict, db: Session = Depends(get_session), _=Depends(ver
 def update_product(product_id: int, data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     p = db.get(GlassProduct, product_id)
     if not p: raise HTTPException(404, "Product niet gevonden")
-    for k in ("name","description","price_excl","purchase_price","unit","min_order","image_url","active","series_id"):
+    for k in ("name","description","volume_ml","price_excl","purchase_price","unit","min_order","image_url","active","series_id"):
         if k in data:
             setattr(p, k, data[k])
     db.add(p); db.commit(); db.refresh(p)

@@ -573,6 +573,10 @@ function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel
   const removeStep = i  => setSteps(s => s.filter((_, idx) => idx !== i))
   const updateStep = (i, k, v) => setSteps(s => s.map((st, idx) => idx === i ? { ...st, [k]: v } : st))
 
+  const totalMl = steps.reduce((sum, s) => sum + (parseFloat(s.amount_ml) || 0), 0)
+  const selectedGlass = glassId ? (glasses || []).find(g => g.id === parseInt(glassId)) : null
+  const glassTooSmall = selectedGlass && selectedGlass.volume_ml > 0 && totalMl > selectedGlass.volume_ml
+
   async function handleSubmit(e) {
     e.preventDefault(); if (!name.trim()) return
     setSaving(true); setErr(null)
@@ -632,12 +636,18 @@ function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel
           <div>
             <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Glas</div>
             <div style={{ position: 'relative' }}>
-              <select value={glassId} onChange={e => setGlassId(e.target.value)} style={sel}>
+              <select value={glassId} onChange={e => setGlassId(e.target.value)} style={{ ...sel, borderColor: glassTooSmall ? '#f97316' : undefined }}>
                 <option value="">— Geen —</option>
                 {(glasses || []).map(g => <option key={g.id} value={g.id}>{g.name} ({g.volume_ml}ml)</option>)}
               </select>
               <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
+            {glassTooSmall && (
+              <div style={{ marginTop: 8, padding: '10px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, fontSize: 13, color: '#c2410c', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span>⚠️</span>
+                <span>Deze cocktail is <strong>{Math.round(totalMl)} ml</strong> maar {selectedGlass.name} heeft slechts <strong>{selectedGlass.volume_ml} ml</strong> inhoud. Kies een groter glas.</span>
+              </div>
+            )}
           </div>
         </div>
 

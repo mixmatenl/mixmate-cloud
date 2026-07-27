@@ -430,6 +430,7 @@ function ProductForm({ product, onSave, onCancel }) {
   const [form, setForm] = useState({
     name: product?.name ?? '',
     description: product?.description ?? '',
+    volume_ml: product?.volume_ml ?? '',
     price_excl: product?.price_excl ?? '',
     purchase_price: product?.purchase_price ?? '',
     unit: product?.unit ?? 'stuk',
@@ -474,6 +475,7 @@ function ProductForm({ product, onSave, onCancel }) {
     try {
       await onSave({
         ...form,
+        volume_ml: parseFloat(form.volume_ml) || 0,
         price_excl: parseFloat(form.price_excl) || 0,
         purchase_price: parseFloat(form.purchase_price) || 0,
         min_order: parseInt(form.min_order) || 1,
@@ -535,6 +537,15 @@ function ProductForm({ product, onSave, onCancel }) {
 
         <input required value={form.name} onChange={e => set('name', e.target.value)} placeholder="Naam *" style={inp} />
         <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Omschrijving" rows={3} style={{ ...inp, resize: 'vertical' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Glasinhoud (ml)</div>
+            <input type="number" min="0" step="1" value={form.volume_ml} onChange={e => set('volume_ml', e.target.value)} placeholder="bv. 300" style={inp} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+            <div style={{ fontSize: 12, color: '#6e6e73', lineHeight: 1.4 }}>Wordt gebruikt om te controleren of een cocktail in dit glas past op de machine.</div>
+          </div>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
             <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Verkoopprijs excl. BTW (€)</div>
