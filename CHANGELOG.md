@@ -1,3 +1,12 @@
+## [1.7.0] - 2026-07-27
+### Gewijzigd
+- Spoelscherm volledig herontworpen: consistente Group/Row-stijl, geen nep-analysestap
+- Leidingkeuze als checkboxlijst met ingrediëntnaam + geschatte duur per rij
+- "Alles selecteren / deselecteren" knop; CO₂-valves automatisch uitgesloten
+- Live voortgang: dunne overall-progressbar bovenaan + per-leiding blokjes met vullend kleur
+- Resultaat (voltooid / gewichtsbeveiliging / fout) met icoon-stijl consistent aan rest portaal
+- Spoelgeschiedenis altijd zichtbaar als aparte Group onderaan (geen verbergen-knop meer)
+
 ## [1.6.1] - 2026-07-27
 ### Gewijzigd
 - Spoelroutine: standaard duur verlaagd (analyse genereert kortere tijden), default 10s → 6s
