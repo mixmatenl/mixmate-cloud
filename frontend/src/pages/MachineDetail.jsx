@@ -962,28 +962,70 @@ function Pompen({ machineId }) {
     setSaving(null)
   }
 
+  async function toggleType(pump) {
+    const next = pump.pump_type === 'valve' ? 'peristaltic' : 'valve'
+    setSaving(pump.id)
+    try {
+      await api.updatePump(machineId, pump.id, { pump_type: next, ingredient_id: null })
+      setSaved(pump.id); setTimeout(() => setSaved(null), 1500)
+    } catch (e) { alert(e.message) }
+    setSaving(null)
+  }
+
   if (loading) return <Skeleton />
   return (
     <Group label="Pompindeling" >
       <ErrMsg msg={err} />
       {!pumps?.length ? (
         <div style={{ padding: '24px', textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen pompen gevonden.</div>
-      ) : pumps.map((p, i) => (
-        <div key={p.id} style={{ padding: '12px 16px', borderBottom: i < pumps.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 52, flexShrink: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>Pomp {p.slot}</div>
-            <div style={{ fontSize: 12, color: p.loaded ? '#30d158' : '#aeaeb2', marginTop: 1 }}>{p.loaded ? 'Geladen' : 'Leeg'}</div>
+      ) : pumps.map((p, i) => {
+        const isValve = p.pump_type === 'valve'
+        const compatible = (ingredients || []).filter(ing => isValve ? ing.is_carbonated : !ing.is_carbonated)
+        return (
+        <div key={p.id} style={{ padding: '12px 16px', borderBottom: i < pumps.length - 1 ? '1px solid #f2f2f7' : 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {/* Slot + type toggle */}
+            <div style={{ width: 80, flexShrink: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>Pomp {p.slot}</div>
+              <button
+                onClick={() => toggleType(p)}
+                disabled={saving === p.id}
+                style={{
+                  marginTop: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600,
+                  borderRadius: 20, border: 'none', cursor: 'pointer',
+                  background: isValve ? '#007aff' : '#e5e5ea',
+                  color: isValve ? '#fff' : '#3a3a3c',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {isValve ? 'Valve / CO₂' : 'Peristaltisch'}
+              </button>
+            </div>
+
+            {/* Ingrediënt select — gefilterd op type */}
+            <div style={{ flex: 1, position: 'relative' }}>
+              <select
+                value={p.ingredient_id || ''}
+                onChange={e => assign(p, e.target.value ? Number(e.target.value) : null)}
+                disabled={saving === p.id}
+                style={{ ...sel, paddingRight: 32 }}
+              >
+                <option value="">— Niet ingesteld —</option>
+                {compatible.map(ing => <option key={ing.id} value={ing.id}>{ing.name}</option>)}
+              </select>
+              <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+
+            {saved === p.id && <span style={{ fontSize: 12, color: '#30d158', flexShrink: 0 }}>Opgeslagen</span>}
           </div>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <select value={p.ingredient_id || ''} onChange={e => assign(p, e.target.value ? Number(e.target.value) : null)} disabled={saving === p.id} style={{ ...sel, paddingRight: 32 }}>
-              <option value="">— Niet ingesteld —</option>
-              {(ingredients || []).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </select>
-            <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </div>
-          {saved === p.id && <span style={{ fontSize: 12, color: '#30d158', flexShrink: 0 }}>Opgeslagen</span>}
+          {isValve && (
+            <div style={{ marginTop: 6, marginLeft: 94, fontSize: 11, color: '#007aff' }}>
+              Deze leiding ondersteunt CO₂ — toont alleen koolzuurhoudende ingrediënten
+            </div>
+          )}
         </div>
-      ))}
+        )
+      })}
     </Group>
   )
 }

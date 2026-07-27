@@ -1,3 +1,9 @@
+## [1.6.0] - 2026-07-27
+### Nieuw
+- Pompbeheer: per pomp instellen of het een peristaltische pomp of CO₂-valve is
+- Pompbeheer: ingrediënt-dropdown gefilterd op pomptype — valve toont alleen koolzuurhoudende ingrediënten
+- Wijzigen van pomptype reset het gekoppelde ingrediënt automatisch
+
 ## [1.5.0] - 2026-07-27
 ### Nieuw
 - `GlassProduct` heeft nu `volume_ml` veld (inhoud van het glas in ml)
