@@ -1886,7 +1886,7 @@ def get_products_public(db: Session = Depends(get_session)):
 def get_glass_catalog(db: Session = Depends(get_session)):
     """Publiek endpoint voor Pi-machines: geeft actieve glazen met volume en afbeelding."""
     products = db.exec(select(GlassProduct).where(GlassProduct.active == True).order_by(GlassProduct.series_id.nulls_last(), GlassProduct.id)).all()
-    return [{"id": p.id, "name": p.name, "volume_ml": p.volume_ml, "image_url": p.image_url} for p in products if p.volume_ml > 0]
+    return [{"id": p.id, "name": p.name, "volume_ml": p.volume_ml, "image_url": p.image_url} for p in products]
 
 @app.get("/api/shop/products")
 def get_products(db: Session = Depends(get_session), _=Depends(verify_admin_user)):
