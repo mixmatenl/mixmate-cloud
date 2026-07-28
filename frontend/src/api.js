@@ -57,9 +57,24 @@ export const api = {
   updateRecipe:     (mid, id, data) => req('PATCH',  `/api/machines/${mid}/recipes/${id}`, data),
   deleteRecipe:     (mid, id)       => req('DELETE', `/api/machines/${mid}/recipes/${id}`),
 
-  getIngredients:   (mid)           => req('GET',    `/api/machines/${mid}/ingredients`),
-  createIngredient: (mid, data)     => req('POST',   `/api/machines/${mid}/ingredients`, data),
-  deleteIngredient: (mid, id)       => req('DELETE', `/api/machines/${mid}/ingredients/${id}`),
+  getIngredients:        (mid)           => req('GET',    `/api/machines/${mid}/ingredients`),
+  createIngredient:      (mid, data)     => req('POST',   `/api/machines/${mid}/ingredients`, data),
+  updateIngredient:      (mid, id, data) => req('PATCH',  `/api/machines/${mid}/ingredients/${id}`, data),
+  deleteIngredient:      (mid, id)       => req('DELETE', `/api/machines/${mid}/ingredients/${id}`),
+  uploadIngredientImage: async (mid, id, file) => {
+    const token = localStorage.getItem('mm_token')
+    const form  = new FormData(); form.append('file', file)
+    const res   = await fetch(`${BASE}/api/machines/${mid}/ingredients/${id}/image`, {
+      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
+    })
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload mislukt') }
+    return res.json()
+  },
+
+  getIngredientCategories:    (mid)           => req('GET',    `/api/machines/${mid}/ingredient-categories`),
+  createIngredientCategory:   (mid, data)     => req('POST',   `/api/machines/${mid}/ingredient-categories`, data),
+  updateIngredientCategory:   (mid, id, data) => req('PATCH',  `/api/machines/${mid}/ingredient-categories/${id}`, data),
+  deleteIngredientCategory:   (mid, id)       => req('DELETE', `/api/machines/${mid}/ingredient-categories/${id}`),
 
   getGlasses:       (mid)           => req('GET',    `/api/machines/${mid}/glasses`),
   createGlass:      (mid, data)     => req('POST',   `/api/machines/${mid}/glasses`, data),

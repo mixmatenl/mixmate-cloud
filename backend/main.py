@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -1756,9 +1756,39 @@ async def get_ingredients(machine_id: str, customer_id: int = Depends(verify_tok
 async def create_ingredient(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     return await _get_conn(machine_id, customer_id, db).request({"type": "create_ingredient", "data": body})
 
+@app.patch("/api/machines/{machine_id}/ingredients/{ingredient_id}")
+async def update_ingredient(machine_id: str, ingredient_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "update_ingredient", "id": ingredient_id, "data": body})
+
 @app.delete("/api/machines/{machine_id}/ingredients/{ingredient_id}")
 async def delete_ingredient(machine_id: str, ingredient_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     return await _get_conn(machine_id, customer_id, db).request({"type": "delete_ingredient", "id": ingredient_id})
+
+@app.post("/api/machines/{machine_id}/ingredients/{ingredient_id}/image")
+async def upload_ingredient_image(machine_id: str, ingredient_id: int, file: UploadFile = File(...), customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    import base64
+    data = await file.read()
+    image_b64 = base64.b64encode(data).decode()
+    return await _get_conn(machine_id, customer_id, db).request(
+        {"type": "upload_ingredient_image", "id": ingredient_id, "image_b64": image_b64},
+        timeout=30,
+    )
+
+@app.get("/api/machines/{machine_id}/ingredient-categories")
+async def get_ingredient_categories(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_ingredient_categories"})
+
+@app.post("/api/machines/{machine_id}/ingredient-categories")
+async def create_ingredient_category(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "create_ingredient_category", "data": body})
+
+@app.patch("/api/machines/{machine_id}/ingredient-categories/{cat_id}")
+async def update_ingredient_category(machine_id: str, cat_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "update_ingredient_category", "id": cat_id, "data": body})
+
+@app.delete("/api/machines/{machine_id}/ingredient-categories/{cat_id}")
+async def delete_ingredient_category(machine_id: str, cat_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "delete_ingredient_category", "id": cat_id})
 
 # ── Glazen relay ──────────────────────────────────────────────────────────────
 

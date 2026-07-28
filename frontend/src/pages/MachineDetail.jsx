@@ -685,9 +685,10 @@ function RecipeForm({ recipe, ingredients, categories, glasses, onSave, onCancel
 
 function Catalogus({ machineId }) {
   const { items: recipes,     loading: rLoad, err: rErr, reload: rReload, setItems: setRecipes } = useList(() => api.getRecipes(machineId))
-  const { items: ingredients, loading: iLoad, setItems: setIngredients } = useList(() => api.getIngredients(machineId))
-  const { items: glasses,     loading: gLoad, setItems: setGlasses }     = useList(() => api.getGlasses(machineId))
-  const { items: categories,  loading: cLoad, setItems: setCategories }  = useList(() => api.getCategories(machineId))
+  const { items: ingredients,     loading: iLoad, setItems: setIngredients }    = useList(() => api.getIngredients(machineId))
+  const { items: glasses,         loading: gLoad, setItems: setGlasses }        = useList(() => api.getGlasses(machineId))
+  const { items: categories,      loading: cLoad, setItems: setCategories }     = useList(() => api.getCategories(machineId))
+  const { items: ingCategories,   loading: icLoad, setItems: setIngCategories } = useList(() => api.getIngredientCategories(machineId))
   const [editing,  setEditing]  = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [section,  setSection]  = useState('recepten')
@@ -709,7 +710,17 @@ function Catalogus({ machineId }) {
   }
 
   // Ingredient form state
-  const [ingName, setIngName] = useState(''); const [ingErr, setIngErr] = useState(null); const [ingSaving, setIngSaving] = useState(false)
+  const [ingName,        setIngName]        = useState('')
+  const [ingCatId,       setIngCatId]       = useState('')
+  const [ingErr,         setIngErr]         = useState(null)
+  const [ingSaving,      setIngSaving]      = useState(false)
+  const [ingEditing,     setIngEditing]     = useState(null)
+  const [ingUploading,   setIngUploading]   = useState(null)
+  // Ingredient category form state
+  const [icForm,         setIcForm]         = useState({ name: '' })
+  const [icEditing,      setIcEditing]      = useState(null)
+  const [icErr,          setIcErr]          = useState(null)
+  const [icSaving,       setIcSaving]       = useState(false)
   // Glass form state
   const [glForm, setGlForm] = useState({ name: '', volume_ml: '' }); const [glEditing, setGlEditing] = useState(null); const [glErr, setGlErr] = useState(null); const [glSaving, setGlSaving] = useState(false)
   // Category form state
@@ -729,13 +740,77 @@ function Catalogus({ machineId }) {
 
   async function saveIng(e) {
     e.preventDefault(); setIngSaving(true); setIngErr(null)
-    try { setIngredients([...ingredients, await api.createIngredient(machineId, { name: ingName })]); setIngName('') }
-    catch (e) { setIngErr(e.message) }; setIngSaving(false)
+    const data = { name: ingName, ingredient_category_id: ingCatId ? Number(ingCatId) : null }
+    try {
+      if (ingEditing) {
+        const updated = await api.updateIngredient(machineId, ingEditing.id, data)
+        setIngredients(ingredients.map(x => x.id === ingEditing.id ? updated : x))
+        setIngEditing(null)
+      } else {
+        setIngredients([...ingredients, await api.createIngredient(machineId, data)])
+      }
+      setIngName(''); setIngCatId('')
+    } catch (e) { setIngErr(e.message) }
+    setIngSaving(false)
   }
   async function delIng(item) {
     if (!confirm(`"${item.name}" verwijderen?`)) return
     try { await api.deleteIngredient(machineId, item.id); setIngredients(ingredients.filter(x => x.id !== item.id)) }
     catch (e) { alert(e.message) }
+  }
+  async function uploadIngImage(ing, file) {
+    setIngUploading(ing.id)
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onerror = reject
+        reader.onload = ev => {
+          const img = new Image()
+          img.onerror = reject
+          img.onload = () => {
+            const MAX = 600
+            let w = img.width, h = img.height
+            if (w > MAX || h > MAX) {
+              if (w > h) { h = Math.round(h * MAX / w); w = MAX }
+              else { w = Math.round(w * MAX / h); h = MAX }
+            }
+            const canvas = document.createElement('canvas')
+            canvas.width = w; canvas.height = h
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+            resolve(canvas.toDataURL('image/jpeg', 0.82))
+          }
+          img.src = ev.target.result
+        }
+        reader.readAsDataURL(file)
+      })
+      const blob     = await fetch(dataUrl).then(r => r.blob())
+      const formFile = new File([blob], 'photo.jpg', { type: 'image/jpeg' })
+      const updated  = await api.uploadIngredientImage(machineId, ing.id, formFile)
+      setIngredients(ingredients.map(x => x.id === ing.id ? updated : x))
+    } catch (err) { alert('Upload mislukt: ' + err.message) }
+    setIngUploading(null)
+  }
+
+  async function saveIc(e) {
+    e.preventDefault(); setIcSaving(true); setIcErr(null)
+    try {
+      if (icEditing) {
+        const updated = await api.updateIngredientCategory(machineId, icEditing.id, icForm)
+        setIngCategories(ingCategories.map(c => c.id === icEditing.id ? updated : c))
+      } else {
+        setIngCategories([...ingCategories, await api.createIngredientCategory(machineId, icForm)])
+      }
+      setIcForm({ name: '' }); setIcEditing(null)
+    } catch (e) { setIcErr(e.message) }
+    setIcSaving(false)
+  }
+  async function delIc(c) {
+    if (!confirm(`"${c.name}" verwijderen?`)) return
+    try {
+      await api.deleteIngredientCategory(machineId, c.id)
+      setIngCategories(ingCategories.filter(x => x.id !== c.id))
+      setIngredients(ingredients.map(x => x.ingredient_category_id === c.id ? { ...x, ingredient_category_id: null, ingredient_category_name: null } : x))
+    } catch (e) { alert(e.message) }
   }
 
   async function saveGl(e) {
@@ -776,10 +851,11 @@ function Catalogus({ machineId }) {
   }
 
   const sections = [
-    { key: 'recepten',     label: 'Recepten',     count: recipes?.length },
-    { key: 'ingredienten', label: 'Ingrediënten', count: ingredients?.length },
-    { key: 'glazen',       label: 'Glazen',       count: glasses?.length },
-    { key: 'categorieen',  label: 'Categorieën',  count: categories?.length },
+    { key: 'recepten',       label: 'Recepten',              count: recipes?.length },
+    { key: 'ingredienten',   label: 'Ingrediënten',          count: ingredients?.length },
+    { key: 'ing-categorieen',label: 'Ing. categorieën',      count: ingCategories?.length },
+    { key: 'glazen',         label: 'Glazen',                count: glasses?.length },
+    { key: 'categorieen',    label: 'Receptcategorieën',     count: categories?.length },
   ]
 
   if (editing) return (
@@ -860,9 +936,15 @@ function Catalogus({ machineId }) {
       {section === 'ingredienten' && (
         <div>
           <div style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-            <form onSubmit={saveIng} style={{ display: 'flex', gap: 10 }}>
-              <input required value={ingName} onChange={e => setIngName(e.target.value)} placeholder="Nieuw ingrediënt" style={{ ...inp, flex: 1 }} />
-              <button type="submit" disabled={ingSaving} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>{ingSaving ? '…' : 'Toevoegen'}</button>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', marginBottom: 10 }}>{ingEditing ? 'Ingrediënt bewerken' : 'Nieuw ingrediënt'}</div>
+            <form onSubmit={saveIng} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <input required value={ingName} onChange={e => setIngName(e.target.value)} placeholder="Naam" style={{ ...inp, flex: 1, minWidth: 140 }} />
+              <select value={ingCatId} onChange={e => setIngCatId(e.target.value)} style={{ ...sel, minWidth: 140 }}>
+                <option value="">— Geen categorie —</option>
+                {(ingCategories || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button type="submit" disabled={ingSaving} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>{ingSaving ? '…' : ingEditing ? 'Opslaan' : 'Toevoegen'}</button>
+              {ingEditing && <button type="button" onClick={() => { setIngEditing(null); setIngName(''); setIngCatId('') }} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '10px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Annuleer</button>}
             </form>
             <ErrMsg msg={ingErr} />
           </div>
@@ -870,10 +952,61 @@ function Catalogus({ machineId }) {
             <div style={{ background: '#fff', borderRadius: 14, padding: '32px', textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen ingrediënten.</div>
           ) : (
             <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-              {ingredients.map((item, i) => (
-                <div key={item.id} style={{ padding: '12px 16px', borderBottom: i < ingredients.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{item.name}</span>
-                  <button onClick={() => delIng(item)} style={{ fontSize: 13, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Verwijder</button>
+              {ingredients.map((item, i) => {
+                const isUploading = ingUploading === item.id
+                return (
+                <div key={item.id} style={{ padding: '12px 16px', borderBottom: i < ingredients.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {/* Foto */}
+                  <label style={{ cursor: isUploading ? 'wait' : 'pointer', flexShrink: 0, position: 'relative' }}>
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadIngImage(item, f); e.target.value = '' }} />
+                    <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', background: '#f2f2f7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {item.image_url
+                        ? <img src={item.image_url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <span style={{ fontSize: 18, opacity: .4 }}>{isUploading ? '⏳' : '🖼'}</span>}
+                    </div>
+                    {!isUploading && <div style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, background: '#007aff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    </div>}
+                  </label>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{item.name}</div>
+                    {item.ingredient_category_name && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 1 }}>{item.ingredient_category_name}</div>}
+                  </div>
+                  <button onClick={() => { setIngEditing(item); setIngName(item.name); setIngCatId(item.ingredient_category_id ?? '') }} style={{ fontSize: 13, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>Bewerk</button>
+                  <button onClick={() => delIng(item)} style={{ fontSize: 13, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>Verwijder</button>
+                </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Ingrediënt-categorieën */}
+      {section === 'ing-categorieen' && (
+        <div>
+          <div style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <form onSubmit={saveIc} style={{ display: 'flex', gap: 10 }}>
+              <input required value={icForm.name} onChange={e => setIcForm({ name: e.target.value })} placeholder={icEditing ? 'Naam aanpassen' : 'Nieuwe categorie (bijv. Sterke drank)'} style={{ ...inp, flex: 1 }} />
+              <button type="submit" disabled={icSaving} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>{icSaving ? '…' : icEditing ? 'Opslaan' : 'Toevoegen'}</button>
+              {icEditing && <button type="button" onClick={() => { setIcEditing(null); setIcForm({ name: '' }) }} style={{ background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '10px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Annuleer</button>}
+            </form>
+            <ErrMsg msg={icErr} />
+          </div>
+          {icLoad ? <Skeleton /> : !ingCategories?.length ? (
+            <div style={{ background: '#fff', borderRadius: 14, padding: '32px', textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Nog geen categorieën. Voeg er een toe, bijv. "Sterke drank", "Sappen", "Siropen".</div>
+          ) : (
+            <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+              {ingCategories.map((c, i) => (
+                <div key={c.id} style={{ padding: '12px 16px', borderBottom: i < ingCategories.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{c.name}</div>
+                    <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 1 }}>
+                      {ingredients?.filter(x => x.ingredient_category_id === c.id).length ?? 0} ingrediënten
+                    </div>
+                  </div>
+                  <button onClick={() => { setIcEditing(c); setIcForm({ name: c.name }) }} style={{ fontSize: 13, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', marginRight: 12 }}>Bewerk</button>
+                  <button onClick={() => delIc(c)} style={{ fontSize: 13, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Verwijder</button>
                 </div>
               ))}
             </div>
@@ -950,27 +1083,28 @@ function Catalogus({ machineId }) {
 function Pompen({ machineId }) {
   const { items: pumps, loading, err, setItems: setPumps } = useList(() => api.getPumps(machineId))
   const { items: ingredients }                              = useList(() => api.getIngredients(machineId))
-  const [saving, setSaving] = useState(null)
-  const [saved,  setSaved]  = useState(null)
+  const [saving,   setSaving]   = useState(null)
+  const [saved,    setSaved]    = useState(null)
+  const [saveErr,  setSaveErr]  = useState(null)
 
   async function assign(pump, ingredient_id) {
-    setSaving(pump.id)
+    setSaving(pump.id); setSaveErr(null)
     try {
       await api.updatePump(machineId, pump.id, { ingredient_id: ingredient_id || null })
       setPumps(prev => prev.map(p => p.id === pump.id ? { ...p, ingredient_id: ingredient_id ? Number(ingredient_id) : null } : p))
       setSaved(pump.id); setTimeout(() => setSaved(null), 1500)
-    } catch (e) { alert(e.message) }
+    } catch (e) { setSaveErr(e.message) }
     setSaving(null)
   }
 
   async function toggleType(pump) {
     const next = pump.pump_type === 'valve' ? 'peristaltic' : 'valve'
-    setSaving(pump.id)
+    setSaving(pump.id); setSaveErr(null)
     try {
       await api.updatePump(machineId, pump.id, { pump_type: next, ingredient_id: null })
       setPumps(prev => prev.map(p => p.id === pump.id ? { ...p, pump_type: next, ingredient_id: null } : p))
       setSaved(pump.id); setTimeout(() => setSaved(null), 1500)
-    } catch (e) { alert(e.message) }
+    } catch (e) { setSaveErr(e.message) }
     setSaving(null)
   }
 
@@ -978,6 +1112,7 @@ function Pompen({ machineId }) {
   return (
     <Group label="Pompindeling" >
       <ErrMsg msg={err} />
+      {saveErr && <ErrMsg msg={saveErr} />}
       {!pumps?.length ? (
         <div style={{ padding: '24px', textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen pompen gevonden.</div>
       ) : pumps.map((p, i) => {

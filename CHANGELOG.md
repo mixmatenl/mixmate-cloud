@@ -1,3 +1,14 @@
+## [1.9.0] - 2026-07-28
+### Nieuw
+- Ingrediënten: foto uploaden via portaal (resize + compress client-side, via WebSocket proxy naar Pi)
+- Ingrediënten: naam bewerken + categorie instellen via portaal (nieuwe "Bewerk" knop per rij)
+- Ingrediënt-categorieën: nieuw tabblad "Ing. categorieën" — volledig CRUD, categorienaam wordt getoond onder ingrediëntnaam
+- Receptformulier: gebruikt nu ook ingrediëntcategorieën in de toekomst (basis gelegd)
+
+## [1.8.2] - 2026-07-28
+### Opgelost
+- Pompbeheer: foutmelding bij verbindingsverlies (Machine offline, timeout) wordt nu inline getoond onder de pomplijst in plaats van een browser `alert()`-dialoog
+
 ## [1.8.1] - 2026-07-28
 ### Opgelost
 - Spoelroutine: verbindingsfout tijdens spoelen toont nu een foutmelding i.p.v. stil leegvallen
