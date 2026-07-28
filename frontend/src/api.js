@@ -76,6 +76,9 @@ export const api = {
   updateIngredientCategory:   (mid, id, data) => req('PATCH',  `/api/machines/${mid}/ingredient-categories/${id}`, data),
   deleteIngredientCategory:   (mid, id)       => req('DELETE', `/api/machines/${mid}/ingredient-categories/${id}`),
 
+  getBartenderPin:  (mid)           => req('GET',    `/api/machines/${mid}/bartender-pin`),
+  setBartenderPin:  (mid, new_pin)  => req('POST',   `/api/machines/${mid}/bartender-pin`, { admin_pin: '0502', new_pin }),
+
   getGlasses:       (mid)           => req('GET',    `/api/machines/${mid}/glasses`),
   createGlass:      (mid, data)     => req('POST',   `/api/machines/${mid}/glasses`, data),
   updateGlass:      (mid, id, data) => req('PATCH',  `/api/machines/${mid}/glasses/${id}`, data),

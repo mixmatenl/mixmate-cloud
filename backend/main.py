@@ -1826,6 +1826,20 @@ async def update_category(machine_id: str, cat_id: int, body: dict, customer_id:
 async def delete_category(machine_id: str, cat_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     return await _get_conn(machine_id, customer_id, db).request({"type": "delete_category", "id": cat_id})
 
+# ── Bartender PIN relay ───────────────────────────────────────────────────────
+
+@app.get("/api/machines/{machine_id}/bartender-pin")
+async def get_bartender_pin(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({"type": "get_bartender_pin"})
+
+@app.post("/api/machines/{machine_id}/bartender-pin")
+async def set_bartender_pin(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return await _get_conn(machine_id, customer_id, db).request({
+        "type":      "set_bartender_pin",
+        "admin_pin": body.get("admin_pin"),
+        "new_pin":   body.get("new_pin"),
+    })
+
 # ── Pompen relay ──────────────────────────────────────────────────────────────
 
 @app.patch("/api/machines/{machine_id}/pumps/{pump_id}")

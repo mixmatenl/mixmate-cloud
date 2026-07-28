@@ -1,3 +1,8 @@
+## [1.9.1] - 2026-07-28
+### Nieuw
+- Instellingen → Inlogcodes: backoffice PIN getoond (vast 0502), bartender PIN instelbaar
+- Huidige bartender PIN wordt opgehaald van de machine en getoond
+
 ## [1.9.0] - 2026-07-28
 ### Nieuw
 - Ingrediënten: foto uploaden via portaal (resize + compress client-side, via WebSocket proxy naar Pi)

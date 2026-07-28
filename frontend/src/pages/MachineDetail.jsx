@@ -1726,6 +1726,30 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
   const [demoLoading,  setDemoLoading] = useState(false)
   const [demoMsg,      setDemoMsg]     = useState(null)
 
+  // Bartender PIN
+  const [currentPin,   setCurrentPin]  = useState(null)
+  const [newPin,       setNewPin]      = useState('')
+  const [pinSaving,    setPinSaving]   = useState(false)
+  const [pinMsg,       setPinMsg]      = useState(null)
+
+  useEffect(() => {
+    api.getBartenderPin(machineId).then(r => setCurrentPin(r.pin)).catch(() => {})
+  }, [machineId])
+
+  async function savePin(e) {
+    e.preventDefault(); setPinSaving(true); setPinMsg(null)
+    if (!/^\d{4,}$/.test(newPin)) {
+      setPinMsg({ ok: false, text: 'PIN moet minimaal 4 cijfers zijn.' }); setPinSaving(false); return
+    }
+    try {
+      await api.setBartenderPin(machineId, newPin)
+      setCurrentPin(newPin); setNewPin('')
+      setPinMsg({ ok: true, text: 'PIN gewijzigd.' })
+      setTimeout(() => setPinMsg(null), 3000)
+    } catch (e) { setPinMsg({ ok: false, text: e.message || 'Kon PIN niet wijzigen.' }) }
+    setPinSaving(false)
+  }
+
   async function toggleDemo() {
     setDemoLoading(true); setDemoMsg(null)
     try {
@@ -1827,6 +1851,33 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
               {serialErr && <div style={{ fontSize: 13, color: '#ff3b30', marginTop: 6 }}>{serialErr}</div>}
             </>
           )}
+        </div>
+      </Group>
+
+      <Group label="Inlogcodes">
+        <div style={{ padding: '14px 16px' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 4 }}>Backoffice PIN</div>
+          <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 700, color: '#1d1d1f', letterSpacing: 4, marginBottom: 2 }}>0502</div>
+          <div style={{ fontSize: 12, color: '#aeaeb2' }}>Vaste code — niet wijzigbaar.</div>
+        </div>
+        <div style={{ padding: '14px 16px', borderTop: '1px solid #f2f2f7' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 8 }}>
+            Bartender PIN {currentPin && <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1d1d1f', fontSize: 13, letterSpacing: 3, marginLeft: 8 }}>{currentPin}</span>}
+          </div>
+          <form onSubmit={savePin} style={{ display: 'flex', gap: 10 }}>
+            <input
+              value={newPin}
+              onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="Nieuwe PIN (min. 4 cijfers)"
+              maxLength={8}
+              inputMode="numeric"
+              style={{ ...inp, flex: 1, fontFamily: 'monospace', letterSpacing: 3 }}
+            />
+            <button type="submit" disabled={pinSaving || !newPin} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: (pinSaving || !newPin) ? .4 : 1 }}>
+              {pinSaving ? 'Opslaan…' : 'Wijzigen'}
+            </button>
+          </form>
+          {pinMsg && <div style={{ fontSize: 13, color: pinMsg.ok ? '#34c759' : '#ff3b30', marginTop: 6 }}>{pinMsg.text}</div>}
         </div>
       </Group>
 
