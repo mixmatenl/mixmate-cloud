@@ -287,6 +287,18 @@ class EmployeeTask(SQLModel, table=True):
     form_fields: str = ""   # JSON: [{id, label, type: text|yesno|number, required}]
     form_response: str = "" # JSON: {field_id: antwoord}
 
+class PilotApplication(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = ""
+    company: str = ""
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    message: str = ""
+    status: str = "nieuw"  # nieuw | in_behandeling | goedgekeurd | afgewezen
+    notes: str = ""
+    applied_at: datetime = Field(default_factory=datetime.utcnow)
+
 class NewsletterSend(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     subject: str = ""
@@ -3152,6 +3164,57 @@ async def hr_delete_task(task_id: int, admin_id: int = Depends(verify_hr_admin),
 async def hr_delete_task_by_key(key: str, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
     """Verwijder alle taken met een bepaalde key (voor alle medewerkers tegelijk)."""
     db.exec(delete(EmployeeTask).where(EmployeeTask.key == key))
+    db.commit()
+    return {"ok": True}
+
+# ── Pilot aanvragen ───────────────────────────────────────────────────────────
+
+@app.post("/api/pilot/apply")
+async def pilot_apply(body: dict, db: Session = Depends(get_session)):
+    app_obj = PilotApplication(
+        name=body.get("name", ""),
+        company=body.get("company", ""),
+        email=body.get("email", ""),
+        phone=body.get("phone", ""),
+        location=body.get("location", ""),
+        message=body.get("message", ""),
+    )
+    db.add(app_obj)
+    db.commit()
+    db.refresh(app_obj)
+    return {"ok": True, "id": app_obj.id}
+
+@app.get("/api/pilot/applications")
+async def pilot_list(admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    apps = db.exec(select(PilotApplication).order_by(PilotApplication.applied_at.desc())).all()
+    return [
+        {
+            "id": a.id, "name": a.name, "company": a.company, "email": a.email,
+            "phone": a.phone, "location": a.location, "message": a.message,
+            "status": a.status, "notes": a.notes,
+            "applied_at": a.applied_at.isoformat() if a.applied_at else "",
+        }
+        for a in apps
+    ]
+
+@app.put("/api/pilot/applications/{app_id}")
+async def pilot_update(app_id: int, body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    a = db.get(PilotApplication, app_id)
+    if not a:
+        raise HTTPException(404)
+    if "status" in body:
+        a.status = body["status"]
+    if "notes" in body:
+        a.notes = body["notes"]
+    db.commit()
+    return {"ok": True}
+
+@app.delete("/api/pilot/applications/{app_id}")
+async def pilot_delete(app_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    a = db.get(PilotApplication, app_id)
+    if not a:
+        raise HTTPException(404)
+    db.delete(a)
     db.commit()
     return {"ok": True}
 
