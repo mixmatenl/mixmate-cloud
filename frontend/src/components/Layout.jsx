@@ -1,70 +1,154 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 
-function NavRow({ icon, label, to, color = '#636366', active, onClick, danger }) {
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const T = {
+  bg:       '#FAF9F6',
+  surface:  '#FFFFFF',
+  border:   'rgba(0,0,0,0.07)',
+  text1:    '#111110',
+  text2:    '#6B6B6B',
+  text3:    '#A0A09A',
+  accent:   '#111110',
+}
+
+// ── Iconen (Lucide-stijl stroke, 16×16) ──────────────────────────────────────
+const Icon = ({ d, size = 16, color = 'currentColor', strokeWidth = 1.6, children }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    {d ? <path d={d} /> : children}
+  </svg>
+)
+
+const Icons = {
+  dashboard:   <Icon><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></Icon>,
+  machine:     <Icon><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></Icon>,
+  chart:       <Icon><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></Icon>,
+  alert:       <Icon><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></Icon>,
+  doc:         <Icon><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></Icon>,
+  shop:        <Icon><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></Icon>,
+  check:       <Icon><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></Icon>,
+  users:       <Icon><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Icon>,
+  festival:    <Icon><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></Icon>,
+  task:        <Icon><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></Icon>,
+  email:       <Icon><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></Icon>,
+  user:        <Icon><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></Icon>,
+  logout:      <Icon><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Icon>,
+  contract:    <Icon><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></Icon>,
+  person:      <Icon><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></Icon>,
+  package:     <Icon><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></Icon>,
+  flask:       <Icon><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/></Icon>,
+  tool:        <Icon><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></Icon>,
+  quote:       <Icon><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></Icon>,
+  webshop:     <Icon><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></Icon>,
+}
+
+// ── NavRow ─────────────────────────────────────────────────────────────────────
+function NavRow({ icon, label, to, active, onClick, subtle }) {
   const navigate = useNavigate()
   function handleClick() {
     if (onClick) { onClick(); return }
     if (to) navigate(to)
   }
   return (
-    <button onClick={handleClick} style={{
-      width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-      padding: '11px 16px', background: active ? 'rgba(0,0,0,.04)' : 'none',
-      border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 10,
-      transition: 'background .15s',
-    }}
-    onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,.04)' }}
-    onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}
+    <button
+      onClick={handleClick}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '7px 10px', background: active ? 'rgba(0,0,0,0.05)' : 'transparent',
+        border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 8,
+        transition: 'background 0.12s',
+        color: subtle ? T.text3 : active ? T.text1 : T.text2,
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
     >
-      <div style={{
-        width: 32, height: 32, borderRadius: 8, background: danger ? '#ff3b30' : color,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      }}>
+      <span style={{ flexShrink: 0, opacity: active ? 1 : 0.6, color: active ? T.text1 : T.text2, display: 'flex' }}>
         {icon}
-      </div>
-      <span style={{
-        flex: 1, fontSize: 14, fontWeight: active ? 600 : 400,
-        color: danger ? '#ff3b30' : '#1d1d1f',
-      }}>{label}</span>
-      {to && (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round">
-          <path d="M9 18l6-6-6-6"/>
-        </svg>
-      )}
+      </span>
+      <span style={{ flex: 1, fontSize: 13.5, fontWeight: active ? 600 : 400, letterSpacing: '-0.01em', color: subtle ? T.text3 : active ? T.text1 : T.text2 }}>
+        {label}
+      </span>
     </button>
   )
 }
 
+// ── NavSubRow ─────────────────────────────────────────────────────────────────
 function NavSubRow({ label, to, active }) {
   const navigate = useNavigate()
   return (
-    <button onClick={() => navigate(to)} style={{
-      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-      padding: '7px 16px 7px 52px', background: active ? 'rgba(0,0,0,.05)' : 'none',
-      border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 8,
-      transition: 'background .15s',
-    }}
-    onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,.04)' }}
-    onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}
+    <button
+      onClick={() => navigate(to)}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+        padding: '5px 10px 5px 34px', background: active ? 'rgba(0,0,0,0.04)' : 'transparent',
+        border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6,
+        transition: 'background 0.12s',
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.03)' }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
     >
-      <div style={{ width: 5, height: 5, borderRadius: '50%', background: active ? '#1d1d1f' : '#c7c7cc', flexShrink: 0 }} />
-      <span style={{ fontSize: 13, fontWeight: active ? 600 : 400, color: active ? '#1d1d1f' : '#3a3a3c' }}>{label}</span>
+      <div style={{ width: 4, height: 4, borderRadius: '50%', background: active ? T.text1 : T.text3, flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: active ? T.text1 : T.text2, fontWeight: active ? 500 : 400 }}>{label}</span>
     </button>
   )
 }
 
-function NavGroup({ label, children }) {
+// ── NavSection ─────────────────────────────────────────────────────────────────
+function NavSection({ label, children }) {
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div style={{ marginBottom: 2 }}>
       {label && (
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#aeaeb2', letterSpacing: .5, textTransform: 'uppercase', padding: '0 16px', marginBottom: 4 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 600, color: T.text3, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '12px 10px 4px' }}>
           {label}
         </div>
       )}
-      <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden', padding: '4px 0' }}>
-        {children}
-      </div>
+      <div>{children}</div>
+    </div>
+  )
+}
+
+// ── Divider ───────────────────────────────────────────────────────────────────
+function Divider() {
+  return <div style={{ height: 1, background: T.border, margin: '6px 0' }} />
+}
+
+// ── Status dot ────────────────────────────────────────────────────────────────
+function StatusDot() {
+  const [online, setOnline] = useState(navigator.onLine)
+  const [apiOk, setApiOk] = useState(true)
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    const check = () => fetch('/api/health').then(r => setApiOk(r.ok)).catch(() => setApiOk(false))
+    check()
+    const iv = setInterval(check, 30000)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); clearInterval(iv) }
+  }, [])
+
+  const ok = online && apiOk
+  const color = ok ? '#22c55e' : '#ef4444'
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setShow(s => !s)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center', gap: 5, borderRadius: 6 }}
+      >
+        <div style={{ position: 'relative', width: 8, height: 8 }}>
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: color, opacity: 0.25, animation: ok ? 'pulse 2s infinite' : 'none' }} />
+          <div style={{ position: 'absolute', inset: '2px', borderRadius: '50%', background: color }} />
+        </div>
+      </button>
+      {show && (
+        <div style={{ position: 'absolute', bottom: '120%', right: 0, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 12px', whiteSpace: 'nowrap', boxShadow: '0 4px 20px rgba(0,0,0,.08)', zIndex: 100 }}>
+          <span style={{ fontSize: 12, color: T.text1, fontWeight: 500 }}>{ok ? 'Systeem actief' : online ? 'Server niet bereikbaar' : 'Geen verbinding'}</span>
+        </div>
+      )}
+      <style>{`@keyframes pulse { 0%,100%{transform:scale(1);opacity:.25} 50%{transform:scale(2.5);opacity:.1} }`}</style>
     </div>
   )
 }
@@ -76,200 +160,86 @@ function initials(name) {
 
 const ADMIN_EMAILS = ['r.muller@mixmate.nl', 'info@mixmate.nl', 'h.louwrink@mixmate.nl']
 
-function StatusDot() {
-  const [online, setOnline] = useState(navigator.onLine)
-  const [apiOk, setApiOk] = useState(true)
-  const [show, setShow] = useState(false)
-
-  useEffect(() => {
-    const onOnline = () => setOnline(true)
-    const onOffline = () => setOnline(false)
-    window.addEventListener('online', onOnline)
-    window.addEventListener('offline', onOffline)
-    const check = () => fetch('/api/health').then(r => setApiOk(r.ok)).catch(() => setApiOk(false))
-    check()
-    const iv = setInterval(check, 30000)
-    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); clearInterval(iv) }
-  }, [])
-
-  const ok = online && apiOk
-  const color = ok ? '#34c759' : '#ff3b30'
-  const label = ok ? 'Systeem actief' : online ? 'Serververbinding verbroken' : 'Geen internetverbinding'
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <button onClick={() => setShow(s => !s)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 0 2px ${color}33` }} />
-        <span style={{ fontSize: 11, color: '#6e6e73', fontWeight: 500 }}>Status</span>
-      </button>
-      {show && (
-        <div style={{ position: 'absolute', top: '110%', right: 0, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 12, padding: '10px 14px', whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(0,0,0,.1)', zIndex: 100 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-            <span style={{ fontSize: 13, color: '#1d1d1f', fontWeight: 500 }}>{label}</span>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function Layout({ user, onLogout, children }) {
-  const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
+  const isAdmin    = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
   const isEmployee = !!user?.is_employee
-  const location = useLocation()
+  const location   = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const path = location.pathname
 
   const sidebar = (
     <div style={{
-      width: 260, flexShrink: 0, padding: '24px 12px',
-      display: 'flex', flexDirection: 'column', gap: 0,
+      width: 232, flexShrink: 0, padding: '16px 10px 12px',
+      display: 'flex', flexDirection: 'column',
       overflowY: 'auto', height: '100%',
+      background: T.bg,
+      borderRight: `1px solid ${T.border}`,
     }}>
-      {/* Logo */}
-      <div style={{ padding: '0 16px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round">
+      {/* Logo + status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px 16px' }}>
+        <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round">
             <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
             <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
             <circle cx="12" cy="12" r="3"/>
           </svg>
         </div>
-        <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: -.4, color: '#1d1d1f', flex: 1 }}>MIXMATE</span>
+        <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.03em', color: T.text1, flex: 1 }}>MIXMATE</span>
         <StatusDot />
       </div>
 
-      {/* User */}
-      <NavGroup>
-        <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 20, background: '#1d1d1f',
-            color: '#fff', fontSize: 14, fontWeight: 700,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>{initials(user?.name || user?.email)}</div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name || 'Gebruiker'}</div>
-            <div style={{ fontSize: 12, color: '#aeaeb2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email || ''}</div>
-          </div>
+      {/* User chip */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', marginBottom: 4, background: 'rgba(0,0,0,0.03)', borderRadius: 9 }}>
+        <div style={{ width: 28, height: 28, borderRadius: '50%', background: T.accent, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: '0.02em' }}>
+          {initials(user?.name || user?.email)}
         </div>
-      </NavGroup>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.text1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name || 'Gebruiker'}</div>
+          <div style={{ fontSize: 11, color: T.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email || ''}</div>
+        </div>
+      </div>
 
-      <div style={{ marginTop: 8 }} />
+      <Divider />
 
+      {/* ── Medewerker nav ── */}
       {isEmployee && (() => {
         const empS = new URLSearchParams(location.search).get('s')
         const inPortaal = path === '/personeel'
         return (
-          <NavGroup label="Personeelsportaal">
-            <NavRow active={inPortaal && (!empS || empS === 'dashboard')} to="/personeel" color="#1d1d1f" label="Dashboard"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>}
-            />
-            <NavRow active={inPortaal && empS === 'festivals'} to="/personeel?s=festivals" color="#ff9500" label="Festivals"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
-            />
-            <NavRow active={inPortaal && empS === 'contract'} to="/personeel?s=contract" color="#5856d6" label="Contractgegevens"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
-            />
-            <NavRow active={inPortaal && empS === 'gegevens'} to="/personeel?s=gegevens" color="#007aff" label="Persoonlijke gegevens"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
-            />
-            <NavRow active={inPortaal && empS === 'melding'} to="/personeel?s=melding" color="#ff3b30" label="Probleem melden"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
-            />
-          </NavGroup>
+          <NavSection label="Portaal">
+            <NavRow active={inPortaal && (!empS || empS === 'dashboard')} to="/personeel" icon={Icons.dashboard} label="Dashboard" />
+            <NavRow active={inPortaal && empS === 'festivals'} to="/personeel?s=festivals" icon={Icons.festival} label="Festivals" />
+            <NavRow active={inPortaal && empS === 'contract'} to="/personeel?s=contract" icon={Icons.contract} label="Contractgegevens" />
+            <NavRow active={inPortaal && empS === 'gegevens'} to="/personeel?s=gegevens" icon={Icons.person} label="Persoonlijke gegevens" />
+            <NavRow active={inPortaal && empS === 'melding'} to="/personeel?s=melding" icon={Icons.alert} label="Probleem melden" />
+          </NavSection>
         )
       })()}
 
+      {/* ── Klant nav ── */}
       {!isAdmin && !isEmployee && (
         <>
-          <NavGroup label="Machines">
-            <NavRow
-              active={path === '/' || path.startsWith('/machine')}
-              to="/"
-              color="#007aff"
-              label="Mijn machines"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></svg>}
-            />
-            <NavRow
-              active={path === '/rapporten'}
-              to="/rapporten"
-              color="#34c759"
-              label="Rapporten"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>}
-            />
-          </NavGroup>
+          <NavSection label="Machines">
+            <NavRow active={path === '/' || path.startsWith('/machine')} to="/" icon={Icons.machine} label="Mijn machines" />
+            <NavRow active={path === '/rapporten'} to="/rapporten" icon={Icons.chart} label="Rapporten" />
+          </NavSection>
 
-          <NavGroup label="Ondersteuning">
-            <NavRow
-              active={path === '/support'}
-              to="/support"
-              color="#ff9500"
-              label="Problemen melden"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
-            />
-            <NavRow
-              active={path === '/meldingen'}
-              to="/meldingen"
-              color="#ff6b35"
-              label="Mijn meldingen"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>}
-            />
-          </NavGroup>
+          <NavSection label="Ondersteuning">
+            <NavRow active={path === '/support'} to="/support" icon={Icons.alert} label="Problemen melden" />
+            <NavRow active={path === '/meldingen'} to="/meldingen" icon={Icons.doc} label="Mijn meldingen" />
+          </NavSection>
 
-          <NavGroup label="Winkel">
-            <NavRow
-              active={path === '/bestellen'}
-              to="/bestellen"
-              color="#ff6b35"
-              label="Glazen & servies"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>}
-            />
-            <NavRow
-              active={path === '/verbruiksartikelen'}
-              to="/verbruiksartikelen"
-              color="#5856d6"
-              label="Verbruiksartikelen"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>}
-            />
-            <NavRow
-              active={path === '/ingredienten'}
-              to="/ingredienten"
-              color="#34c759"
-              label="Ingrediënten & siropen"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/></svg>}
-            />
-            <NavRow
-              active={path === '/onderhoud'}
-              to="/onderhoud"
-              color="#007aff"
-              label="Onderhoudssets"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>}
-            />
-            <NavRow
-              active={path === '/mijn-bestellingen'}
-              to="/mijn-bestellingen"
-              color="#8e8e93"
-              label="Mijn bestellingen"
-              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
-            />
-          </NavGroup>
-
+          <NavSection label="Winkel">
+            <NavRow active={path === '/bestellen'} to="/bestellen" icon={Icons.shop} label="Glazen & servies" />
+            <NavRow active={path === '/verbruiksartikelen'} to="/verbruiksartikelen" icon={Icons.package} label="Verbruiksartikelen" />
+            <NavRow active={path === '/ingredienten'} to="/ingredienten" icon={Icons.flask} label="Ingrediënten & siropen" />
+            <NavRow active={path === '/onderhoud'} to="/onderhoud" icon={Icons.tool} label="Onderhoudssets" />
+            <NavRow active={path === '/mijn-bestellingen'} to="/mijn-bestellingen" icon={Icons.check} label="Mijn bestellingen" />
+          </NavSection>
         </>
       )}
 
-      {isAdmin && (
-        <NavGroup label="Machines">
-          <NavRow
-            active={path === '/' || path.startsWith('/machine')}
-            to="/"
-            color="#1d1d1f"
-            label="Mijn machines"
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></svg>}
-          />
-        </NavGroup>
-      )}
-
+      {/* ── Admin nav ── */}
       {isAdmin && (() => {
         const sp = new URLSearchParams(window.location.search)
         const s = sp.get('s'), f = sp.get('f'), t = sp.get('t')
@@ -279,131 +249,123 @@ export default function Layout({ user, onLogout, children }) {
 
         return (
           <>
-            <NavGroup label="Service meldingen">
-              <NavRow active={inAdmin && s === 'meldingen' && !f} to="/admin?s=meldingen" color="#ff9500" label="Service meldingen"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>} />
-              <NavSubRow active={inAdmin && s === 'meldingen' && f === 'open'} to="/admin?s=meldingen&f=open" label="Open" />
-              <NavSubRow active={inAdmin && s === 'meldingen' && f === 'actief'} to="/admin?s=meldingen&f=actief" label="Actief" />
-              <NavSubRow active={inAdmin && s === 'meldingen' && f === 'opgelost'} to="/admin?s=meldingen&f=opgelost" label="Opgelost" />
-            </NavGroup>
+            <NavSection label="Machines">
+              <NavRow active={path === '/' || path.startsWith('/machine')} to="/" icon={Icons.machine} label="Machines" />
+            </NavSection>
 
-            <NavGroup label="Offerte aanvragen">
-              <NavRow active={inAdmin && s === 'offertes' && !f} to="/admin?s=offertes" color="#5856d6" label="Offerte aanvragen"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>} />
-              <NavSubRow active={inAdmin && s === 'offertes' && f === 'open'} to="/admin?s=offertes&f=open" label="Open" />
-              <NavSubRow active={inAdmin && s === 'offertes' && f === 'actief'} to="/admin?s=offertes&f=actief" label="Actief" />
-              <NavSubRow active={inAdmin && s === 'offertes' && f === 'voorstel'} to="/admin?s=offertes&f=voorstel" label="Voorstel" />
-              <NavSubRow active={inAdmin && s === 'offertes' && f === 'afgesloten'} to="/admin?s=offertes&f=afgesloten" label="Afgesloten" />
-            </NavGroup>
+            <NavSection label="Service">
+              <NavRow active={inAdmin && s === 'meldingen'} to="/admin?s=meldingen" icon={Icons.alert} label="Meldingen" />
+              {inAdmin && s === 'meldingen' && <>
+                <NavSubRow active={f === 'open'} to="/admin?s=meldingen&f=open" label="Open" />
+                <NavSubRow active={f === 'actief'} to="/admin?s=meldingen&f=actief" label="Actief" />
+                <NavSubRow active={f === 'opgelost'} to="/admin?s=meldingen&f=opgelost" label="Opgelost" />
+              </>}
+              <NavRow active={inAdmin && s === 'offertes'} to="/admin?s=offertes" icon={Icons.quote} label="Offertes" />
+              {inAdmin && s === 'offertes' && <>
+                <NavSubRow active={f === 'open'} to="/admin?s=offertes&f=open" label="Open" />
+                <NavSubRow active={f === 'actief'} to="/admin?s=offertes&f=actief" label="Actief" />
+                <NavSubRow active={f === 'voorstel'} to="/admin?s=offertes&f=voorstel" label="Voorstel" />
+                <NavSubRow active={f === 'afgesloten'} to="/admin?s=offertes&f=afgesloten" label="Afgesloten" />
+              </>}
+              <NavRow active={inAdmin && s === 'bestellingen'} to="/admin?s=bestellingen" icon={Icons.check} label="Bestellingen" />
+              {inAdmin && s === 'bestellingen' && <>
+                <NavSubRow active={f === 'nieuw'} to="/admin?s=bestellingen&f=nieuw" label="Nieuw" />
+                <NavSubRow active={f === 'verzonden'} to="/admin?s=bestellingen&f=verzonden" label="Verzonden" />
+                <NavSubRow active={f === 'facturen'} to="/admin?s=bestellingen&f=facturen" label="Facturen" />
+              </>}
+            </NavSection>
 
-            <NavGroup label="Klanten">
-              <NavRow active={inAdmin && s === 'klanten'} to="/admin?s=klanten" color="#34c759" label="Klanten opzoeken"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
-            </NavGroup>
+            <NavSection label="Klanten">
+              <NavRow active={inAdmin && s === 'klanten'} to="/admin?s=klanten" icon={Icons.users} label="Klanten" />
+              <NavRow active={inAdmin && s === 'nieuwsbrief'} to="/admin?s=nieuwsbrief" icon={Icons.email} label="Nieuwsbrief" />
+              {inAdmin && s === 'nieuwsbrief' && <>
+                <NavSubRow active={f === 'opstellen'} to="/admin?s=nieuwsbrief&f=opstellen" label="Opstellen" />
+                <NavSubRow active={f === 'historie'} to="/admin?s=nieuwsbrief&f=historie" label="Historie" />
+              </>}
+            </NavSection>
 
-            <NavGroup label="Nieuwsbrief">
-              <NavRow active={inAdmin && s === 'nieuwsbrief' && !f} to="/admin?s=nieuwsbrief" color="#007aff" label="Nieuwsbrief"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>} />
-              <NavSubRow active={inAdmin && s === 'nieuwsbrief' && f === 'opstellen'} to="/admin?s=nieuwsbrief&f=opstellen" label="Nieuwe opstellen" />
-              <NavSubRow active={inAdmin && s === 'nieuwsbrief' && f === 'historie'} to="/admin?s=nieuwsbrief&f=historie" label="Historie bekijken" />
-            </NavGroup>
+            {user?.email?.toLowerCase() === 'r.muller@mixmate.nl' && (
+              <NavSection label="Personeel">
+                <NavRow active={inPersoneel && (!t || t === 'medewerkers')} to="/personeel/beheer?t=medewerkers" icon={Icons.users} label="Medewerkers" />
+                {inPersoneel && <>
+                  <NavSubRow active={t === 'add'} to="/personeel/beheer?t=add" label="Toevoegen" />
+                  <NavSubRow active={t === 'medewerkers' || !t} to="/personeel/beheer?t=medewerkers" label="Overzicht" />
+                </>}
+                <NavRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" icon={Icons.festival} label="Festivals" />
+                <NavRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" icon={Icons.task} label="Taken" />
+              </NavSection>
+            )}
 
-            {user?.email?.toLowerCase() === 'r.muller@mixmate.nl' && (<>
-              <NavGroup label="Medewerkers">
-                <NavRow active={inPersoneel && (t === 'medewerkers' || !t)} to="/personeel/beheer?t=medewerkers" color="#5856d6" label="Medewerkers"
-                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
-                <NavSubRow active={inPersoneel && t === 'add'} to="/personeel/beheer?t=add" label="Medewerker toevoegen" />
-                <NavSubRow active={inPersoneel && t === 'medewerkers'} to="/personeel/beheer?t=medewerkers" label="Overzicht" />
-              </NavGroup>
-
-              <NavGroup label="Festivals">
-                <NavRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" color="#ff9500" label="Festivals"
-                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>} />
-              </NavGroup>
-
-              <NavGroup label="Taken">
-                <NavRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" color="#34c759" label="Taken beheren"
-                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>} />
-              </NavGroup>
-            </>)}
-
-            <NavGroup label="Webshop">
-              <NavRow active={inWebshop} to="/webshop" color="#ff6b35" label="Webshop"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>} />
-              <NavSubRow active={inWebshop && f === 'producten'} to="/webshop?f=producten" label="Producten" />
-              <NavSubRow active={inWebshop && f === 'categorieen'} to="/webshop?f=categorieen" label="Categorieën" />
-              <NavSubRow active={inWebshop && f === 'rapportages'} to="/webshop?f=rapportages" label="Rapportages" />
-            </NavGroup>
-
-            <NavGroup label="Bestellingen">
-              <NavRow active={inAdmin && s === 'bestellingen' && !f} to="/admin?s=bestellingen" color="#ff3b30" label="Bestellingen"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>} />
-              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'nieuw'} to="/admin?s=bestellingen&f=nieuw" label="Nieuwe bestellingen" />
-              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'verzonden'} to="/admin?s=bestellingen&f=verzonden" label="Verzonden" />
-              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'facturen'} to="/admin?s=bestellingen&f=facturen" label="Facturen" />
-              <NavSubRow active={inAdmin && s === 'bestellingen' && f === 'geannuleerd'} to="/admin?s=bestellingen&f=geannuleerd" label="Geannuleerde" />
-            </NavGroup>
+            <NavSection label="Webshop">
+              <NavRow active={inWebshop} to="/webshop" icon={Icons.webshop} label="Webshop" />
+              {inWebshop && <>
+                <NavSubRow active={f === 'producten'} to="/webshop?f=producten" label="Producten" />
+                <NavSubRow active={f === 'categorieen'} to="/webshop?f=categorieen" label="Categorieën" />
+                <NavSubRow active={f === 'rapportages'} to="/webshop?f=rapportages" label="Rapportages" />
+              </>}
+            </NavSection>
           </>
         )
       })()}
 
-      <NavGroup label="Account">
-        <NavRow
-          active={path === '/account'}
-          to="/account"
-          color="#636366"
-          label="Mijn account"
-          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
-        />
-        <NavRow
-          label="Uitloggen"
-          onClick={onLogout}
-          color="#8e8e93"
-          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>}
-        />
-      </NavGroup>
+      {/* Spacer */}
+      <div style={{ flex: 1 }} />
+
+      <Divider />
+
+      {/* Account */}
+      <NavSection>
+        <NavRow active={path === '/account'} to="/account" icon={Icons.user} label="Mijn account" />
+        <NavRow onClick={onLogout} icon={Icons.logout} label="Uitloggen" subtle />
+      </NavSection>
     </div>
   )
 
+  // ── Mobile hamburger ──────────────────────────────────────────────────────
+  const hamburger = (
+    <button onClick={() => setMobileOpen(o => !o)} style={{
+      position: 'fixed', top: 14, left: 14, zIndex: 200,
+      width: 36, height: 36, borderRadius: 9,
+      background: T.surface, border: `1px solid ${T.border}`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,.06)',
+    }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.text1} strokeWidth="2" strokeLinecap="round">
+        {mobileOpen ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></> : <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>}
+      </svg>
+    </button>
+  )
+
   return (
-    <div style={{ minHeight: '100vh', background: '#f2f2f7', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', display: 'flex', flexDirection: 'column' }}>
-
-      {/* Mobile header */}
-      <div style={{ display: 'none' }} className="mobile-header">
-        <div style={{ background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,.08)', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', position: 'sticky', top: 0, zIndex: 50 }}>
-          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: -.4, color: '#1d1d1f' }}>MIXMATE</span>
-          <button onClick={() => setMobileOpen(o => !o)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2" strokeLinecap="round">
-              {mobileOpen ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></> : <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>}
-            </svg>
-          </button>
-        </div>
-        {mobileOpen && (
-          <div style={{ position: 'fixed', inset: 0, top: 52, background: '#f2f2f7', zIndex: 40, overflowY: 'auto' }} onClick={() => setMobileOpen(false)}>
-            {sidebar}
-          </div>
-        )}
-      </div>
-
-      {/* Desktop layout */}
-      <div style={{ flex: 1, display: 'flex' }}>
-        {/* Sidebar */}
-        <div style={{ width: 260, flexShrink: 0, borderRight: '1px solid rgba(0,0,0,.06)', background: '#f2f2f7', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }} className="desktop-sidebar">
+    <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif', display: 'flex', flexDirection: 'column' }}>
+      {/* Desktop */}
+      <div style={{ display: 'flex', flex: 1, minHeight: '100vh' }}>
+        <div className="desktop-sidebar" style={{ display: 'none' }}>
           {sidebar}
         </div>
+        <style>{`
+          @media (min-width: 768px) { .desktop-sidebar { display: flex !important; } .mobile-fab { display: none !important; } }
+          @media (max-width: 767px) { .desktop-sidebar { display: none !important; } }
+        `}</style>
 
-        {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
-          {children}
+        {/* Mobile overlay */}
+        <div className="mobile-fab">
+          {hamburger}
+          {mobileOpen && (
+            <>
+              <div onClick={() => setMobileOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 150, backdropFilter: 'blur(2px)' }} />
+              <div style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 232, zIndex: 160, overflowY: 'auto' }}>
+                {sidebar}
+              </div>
+            </>
+          )}
         </div>
-      </div>
 
-      <style>{`
-        @media (max-width: 680px) {
-          .desktop-sidebar { display: none !important; }
-          .mobile-header { display: block !important; }
-        }
-      `}</style>
+        {/* Inhoud */}
+        <main style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+          {children}
+        </main>
+      </div>
     </div>
   )
 }

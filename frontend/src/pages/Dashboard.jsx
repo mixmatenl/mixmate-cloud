@@ -262,49 +262,48 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 24px' }}>
+    <div style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' }}>
+      <div style={{ maxWidth: 660, margin: '0 auto', padding: '40px 24px' }}>
 
         {/* Titel + knop */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
           <div>
-            <h1 style={{ fontSize: 28, fontWeight: 700, color: '#1d1d1f', margin: 0 }}>Mijn machines</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111110', margin: 0, letterSpacing: '-0.03em' }}>Machines</h1>
             {!loading && machines.length > 0 && (
-              <p style={{ fontSize: 14, color: '#6e6e73', margin: '4px 0 0' }}>{machines.length} {machines.length === 1 ? 'machine' : 'machines'} gekoppeld</p>
+              <p style={{ fontSize: 13, color: '#9B9B9B', margin: '3px 0 0', fontWeight: 400 }}>{machines.length} {machines.length === 1 ? 'machine' : 'machines'} gekoppeld</p>
             )}
           </div>
           <button onClick={() => setShowWizard(true)} style={{
             display: 'flex', alignItems: 'center', gap: 6,
-            background: '#1d1d1f', color: '#fff', border: 'none',
-            borderRadius: 20, padding: '10px 18px', fontSize: 14,
-            fontWeight: 600, cursor: 'pointer',
-          }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            background: '#111110', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '8px 14px', fontSize: 13,
+            fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.01em',
+            transition: 'opacity .15s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '.85'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Machine koppelen
           </button>
         </div>
 
         {/* Lege staat — onboarding */}
         {!loading && machines.length === 0 && (
-          <div style={{ background: '#fff', borderRadius: 24, padding: '48px 32px', textAlign: 'center' }}>
-            <div style={{
-              width: 72, height: 72, borderRadius: 20, background: '#f5f5f7',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 20px',
-            }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="1.5" strokeLinecap="round">
+          <div style={{ background: '#fff', borderRadius: 14, padding: '52px 32px', textAlign: 'center', border: '1px solid rgba(0,0,0,0.07)' }}>
+            <div style={{ width: 56, height: 56, borderRadius: 14, background: '#F5F4F1', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#A0A09A" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
                 <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
             </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1d1d1f', marginBottom: 8 }}>Koppel je eerste machine</h2>
-            <p style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6, maxWidth: 280, margin: '0 auto 28px' }}>
+            <h2 style={{ fontSize: 17, fontWeight: 600, color: '#111110', marginBottom: 6, letterSpacing: '-0.02em' }}>Koppel je eerste machine</h2>
+            <p style={{ fontSize: 13, color: '#9B9B9B', lineHeight: 1.6, maxWidth: 260, margin: '0 auto 28px' }}>
               Beheer je MIXMATE op afstand — recepten, flushing en realtime status.
             </p>
 
-            {/* Stappen */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 0, marginBottom: 32, maxWidth: 400, margin: '0 auto 32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, marginBottom: 32, maxWidth: 360, margin: '0 auto 32px' }}>
               {[
                 { n: '1', label: 'Schakel machine in' },
                 { n: '2', label: 'Klik op koppelen' },
@@ -312,18 +311,18 @@ export default function Dashboard({ user, onLogout }) {
               ].map((step, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>{step.n}</div>
-                    <div style={{ fontSize: 12, color: '#6e6e73', lineHeight: 1.4, textAlign: 'center' }}>{step.label}</div>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#111110', color: '#fff', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>{step.n}</div>
+                    <div style={{ fontSize: 11.5, color: '#9B9B9B', lineHeight: 1.4, textAlign: 'center' }}>{step.label}</div>
                   </div>
-                  {i < 2 && <div style={{ width: 24, height: 1, background: '#e5e5ea', flexShrink: 0, marginBottom: 20 }} />}
+                  {i < 2 && <div style={{ width: 24, height: 1, background: 'rgba(0,0,0,0.08)', flexShrink: 0, marginBottom: 22 }} />}
                 </div>
               ))}
             </div>
 
             <button onClick={() => setShowWizard(true)} style={{
-              background: '#1d1d1f', color: '#fff', border: 'none',
-              borderRadius: 14, padding: '14px 28px', fontSize: 15,
-              fontWeight: 600, cursor: 'pointer',
+              background: '#111110', color: '#fff', border: 'none',
+              borderRadius: 8, padding: '10px 20px', fontSize: 13,
+              fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.01em',
             }}>
               Machine koppelen
             </button>
@@ -332,58 +331,62 @@ export default function Dashboard({ user, onLogout }) {
 
         {/* Machine lijst */}
         {machines.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {machines.map(m => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+            {machines.map((m, idx) => (
               <button key={m.machine_id} onClick={() => navigate(`/machine/${m.machine_id}`)} style={{
-                background: '#fff', borderRadius: 18, width: '100%',
-                padding: '16px 20px', display: 'flex', alignItems: 'center',
-                gap: 16, border: 'none', cursor: 'pointer', textAlign: 'left',
-                boxShadow: '0 1px 4px rgba(0,0,0,.06)', transition: 'box-shadow .15s',
+                background: 'transparent', width: '100%',
+                padding: '14px 18px', display: 'flex', alignItems: 'center',
+                gap: 14, border: 'none', cursor: 'pointer', textAlign: 'left',
+                borderBottom: idx < machines.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                transition: 'background 0.1s',
               }}
-              onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.1)'}
-              onMouseLeave={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,.06)'}
+              onMouseEnter={e => e.currentTarget.style.background = '#FAFAF8'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <MachineIcon model={m.model} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                    <span style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f' }}>{m.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#111110', letterSpacing: '-0.01em' }}>{m.name}</span>
                     {m.flush_overdue && (
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>
-                        Spoelen vereist
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: '#b45309', background: '#fef3c7', borderRadius: 5, padding: '1px 6px', flexShrink: 0, letterSpacing: '0.01em' }}>
+                        Spoelen
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 13, color: '#aeaeb2' }}>
+                  <div style={{ fontSize: 12, color: '#A0A09A' }}>
                     {m.model || 'MIXMATE'}{m.version ? ` · v${m.version}` : ''}
                     {m.days_since_flush !== null && m.days_since_flush !== undefined
                       ? ` · ${m.days_since_flush === 0 ? 'Vandaag gespoeld' : m.days_since_flush === 1 ? 'Gisteren gespoeld' : `${m.days_since_flush}d geleden gespoeld`}`
                       : ' · Nog nooit gespoeld'}
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <div style={{
-                      width: 7, height: 7, borderRadius: 4,
-                      background: m.online ? '#30d158' : '#c7c7cc',
-                      boxShadow: m.online ? '0 0 0 3px rgba(48,209,88,.2)' : 'none',
-                    }} />
-                    <span style={{ fontSize: 12, color: m.online ? '#30d158' : '#c7c7cc', fontWeight: 500 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                  {/* Status badge */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: m.online ? 'rgba(34,197,94,0.08)' : 'rgba(0,0,0,0.04)', borderRadius: 20, padding: '3px 9px' }}>
+                    <div style={{ position: 'relative', width: 6, height: 6, flexShrink: 0 }}>
+                      {m.online && <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#22c55e', opacity: 0.3, animation: 'pulse 2s infinite' }} />}
+                      <div style={{ position: 'absolute', inset: '1px', borderRadius: '50%', background: m.online ? '#22c55e' : '#D0CFC9' }} />
+                    </div>
+                    <span style={{ fontSize: 11.5, color: m.online ? '#16a34a' : '#A0A09A', fontWeight: 500 }}>
                       {m.online ? 'Online' : 'Offline'}
                     </span>
                   </div>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#D0CFC9" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
                 </div>
               </button>
             ))}
           </div>
         )}
 
-        {/* Skeleton alleen als echt eerste load (leeg cache) */}
+        {/* Skeleton */}
         {loading && machines.length === 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[1,2].map(i => <div key={i} style={{ background: '#fff', borderRadius: 18, height: 80, animation: 'pulse 1.4s ease-in-out infinite' }} />)}
+          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+            {[1,2].map((i, idx) => (
+              <div key={i} style={{ height: 68, background: 'linear-gradient(90deg,#f5f4f1 25%,#eeede9 50%,#f5f4f1 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite', borderBottom: idx === 0 ? '1px solid rgba(0,0,0,0.05)' : 'none' }} />
+            ))}
           </div>
         )}
+        <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}} @keyframes pulse{0%,100%{opacity:.3}50%{opacity:.8}}`}</style>
       </div>
 
       {/* Wizard */}
