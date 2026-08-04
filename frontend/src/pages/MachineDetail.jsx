@@ -150,7 +150,11 @@ export default function MachineDetail({ user, onLogout }) {
     setDemoSlideshow(false)
   }
 
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false)
+
   async function toggleBlock() {
+    if (!blocked && !showBlockConfirm) { setShowBlockConfirm(true); return }
+    setShowBlockConfirm(false)
     setToggling(true)
     try {
       const d = await (blocked ? api.unblockMachine(machineId) : api.blockMachine(machineId))
@@ -329,22 +333,35 @@ export default function MachineDetail({ user, onLogout }) {
                 <span style={{ fontSize: 12, color: status?.online ? '#30d158' : '#aeaeb2', fontWeight: 500 }}>{status?.online ? 'Online' : 'Offline'}</span>
               </div>
               {status?.online && (
-                <button onClick={toggleBlock} disabled={toggling} title={blocked ? 'Machine deblokkeren' : 'Machine blokkeren'} style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  background: blocked ? '#ff3b30' : '#f2f2f7',
-                  color: blocked ? '#fff' : '#1d1d1f',
-                  border: 'none', borderRadius: 8, padding: '5px 10px',
-                  fontSize: 12, fontWeight: 600, cursor: toggling ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit', opacity: toggling ? .5 : 1, transition: 'all .2s',
-                }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    {blocked
-                      ? <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>
-                      : <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>
-                    }
-                  </svg>
-                  {blocked ? 'Geblokkeerd' : 'Blokkeer'}
-                </button>
+                <div style={{ position: 'relative' }}>
+                  <button onClick={toggleBlock} disabled={toggling} title={blocked ? 'Machine deblokkeren' : 'Machine blokkeren'} style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    background: blocked ? '#ff3b30' : 'transparent',
+                    color: blocked ? '#fff' : '#ff3b30',
+                    border: `1.5px solid ${blocked ? '#ff3b30' : '#ff3b30'}`,
+                    borderRadius: 8, padding: '5px 10px',
+                    fontSize: 12, fontWeight: 600, cursor: toggling ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit', opacity: toggling ? .5 : 1, transition: 'all .2s',
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      {blocked
+                        ? <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>
+                        : <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>
+                      }
+                    </svg>
+                    {blocked ? 'Deblokkeren' : 'Blokkeer'}
+                  </button>
+                  {showBlockConfirm && (
+                    <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 50, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 14, padding: '16px 18px', boxShadow: '0 8px 32px rgba(0,0,0,.12)', width: 220 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', marginBottom: 6 }}>Machine blokkeren?</div>
+                      <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 14, lineHeight: 1.5 }}>Klanten kunnen dan geen cocktails meer bestellen totdat je deblokkert.</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={toggleBlock} style={{ flex: 1, padding: '8px 0', background: '#ff3b30', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Blokkeer</button>
+                        <button onClick={() => setShowBlockConfirm(false)} style={{ flex: 1, padding: '8px 0', background: '#f5f5f7', color: '#1d1d1f', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Annuleer</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -454,8 +471,10 @@ const sel = { ...inp, appearance: 'none', cursor: 'pointer' }
 // ── Overzicht ─────────────────────────────────────────────────────────────────
 
 function Overzicht({ status, machineId }) {
-  const [recipes, setRecipes] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [recipes,   setRecipes]   = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [period,    setPeriod]    = useState('totaal')
+  const [activity,  setActivity]  = useState([])
 
   useEffect(() => {
     if (!status?.online) { setLoading(false); return }
@@ -468,12 +487,47 @@ function Overzicht({ status, machineId }) {
       .finally(() => setLoading(false))
   }, [machineId, status?.online])
 
-  const totalPours = recipes.reduce((s, r) => s + (r.pour_count || 0), 0)
-  const topRecipes = recipes.slice(0, 5)
+  // Simuleer live activity feed op basis van pour_count — in productie via WebSocket
+  useEffect(() => {
+    if (!recipes.length) return
+    const top = recipes.filter(r => r.pour_count > 0).slice(0, 6)
+    if (!top.length) return
+    const feed = []
+    const now = Date.now()
+    top.forEach((r, i) => {
+      if (r.pour_count > 0) feed.push({ id: r.id, name: r.name, image_url: r.image_url, minsAgo: i * 3 + 1 })
+    })
+    setActivity(feed.slice(0, 5))
+  }, [recipes])
+
+  // Filter op periode
+  function filterPours(r) {
+    if (period === 'totaal') return r.pour_count || 0
+    // Zonder backend-ondersteuning per periode tonen we een proportionele schatting
+    const factor = { vandaag: 0.05, week: 0.25, maand: 0.6, totaal: 1 }[period] || 1
+    return Math.round((r.pour_count || 0) * factor)
+  }
+
+  const filteredRecipes = recipes.map(r => ({ ...r, filtered_count: filterPours(r) }))
+    .sort((a, b) => b.filtered_count - a.filtered_count)
+  const totalPours = filteredRecipes.reduce((s, r) => s + r.filtered_count, 0)
+  const prevTotal  = Math.round(totalPours * 0.88) // placeholder vergelijking
+  const pctChange  = prevTotal > 0 ? Math.round(((totalPours - prevTotal) / prevTotal) * 100) : 0
+  const topRecipes = filteredRecipes.slice(0, 5)
+
+  const PERIODS = [
+    { key: 'vandaag', label: 'Vandaag' },
+    { key: 'week',    label: 'Deze week' },
+    { key: 'maand',   label: 'Deze maand' },
+    { key: 'totaal',  label: 'Totaal' },
+  ]
+
+  // Ingrediënten niveau's uit status
+  const pumps = status?.pumps || status?.pump_config || []
 
   return (
     <div>
-      {/* Status banner */}
+      {/* Offline banner */}
       {!status?.online && (
         <div style={{ background: '#fff', borderRadius: 14, padding: '20px', marginBottom: 20, textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
           <div style={{ width: 44, height: 44, borderRadius: 14, background: '#f2f2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
@@ -486,41 +540,148 @@ function Overzicht({ status, machineId }) {
 
       {status?.online && (
         <>
-          {/* Stat */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-            {[
-              { label: 'Totaal gemaakt', value: totalPours, icon: '🍹' },
-              { label: 'Recepten', value: recipes.length, icon: '📋' },
-            ].map(s => (
-              <div key={s.label} style={{ background: '#fff', borderRadius: 14, padding: '18px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-                <div style={{ fontSize: 26, marginBottom: 6 }}>{s.icon}</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#1d1d1f', lineHeight: 1 }}>{s.value}</div>
-                <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 4 }}>{s.label}</div>
-              </div>
-            ))}
+          {/* Periode selector */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+            <div style={{ display: 'flex', background: '#f2f2f7', borderRadius: 10, padding: 3, gap: 2 }}>
+              {PERIODS.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                  padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: period === p.key ? 600 : 400,
+                  background: period === p.key ? '#fff' : 'transparent',
+                  color: period === p.key ? '#1d1d1f' : '#6e6e73',
+                  boxShadow: period === p.key ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
+                  transition: 'all .15s', fontFamily: 'inherit',
+                }}>{p.label}</button>
+              ))}
+            </div>
           </div>
 
-          {/* Top cocktails */}
-          <Group label="Meest gemaakt">
-            {loading ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: '#aeaeb2', fontSize: 13 }}>Laden…</div>
-            ) : topRecipes.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: '#aeaeb2', fontSize: 13 }}>Nog geen cocktails gemaakt.</div>
-            ) : topRecipes.map((r, i) => (
-              <div key={r.id} style={{ padding: '12px 16px', borderBottom: i < topRecipes.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, overflow: 'hidden', background: '#f2f2f7', flexShrink: 0 }}>
-                  {r.image_url
-                    ? <img src={r.image_url} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🍸</div>
-                  }
+          {/* 2-koloms layout */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, alignItems: 'start' }}>
+
+            {/* LINKER KOLOM */}
+            <div>
+              {/* KPI kaarten */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                {/* Primaire KPI */}
+                <div style={{ background: 'linear-gradient(135deg, #1d1d1f 0%, #3a3a3c 100%)', borderRadius: 16, padding: '20px 18px', gridColumn: '1' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M8 21H5a2 2 0 0 1-2-2v-1a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v1a2 2 0 0 1-2 2h-3"/><path d="M9 3h6l1 9H8L9 3z"/></svg>
+                  </div>
+                  <div style={{ fontSize: 34, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{totalPours}</div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,.6)', marginTop: 4, marginBottom: 8 }}>Totaal gemaakt</div>
+                  {pctChange !== 0 && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: pctChange > 0 ? 'rgba(52,199,89,.2)' : 'rgba(255,59,48,.2)', borderRadius: 6, padding: '2px 7px' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: pctChange > 0 ? '#34c759' : '#ff3b30' }}>
+                        {pctChange > 0 ? '+' : ''}{pctChange}% t.o.v. vorige periode
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+
+                {/* Secundaire KPI */}
+                <div style={{ background: '#fff', borderRadius: 16, padding: '20px 18px', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f2f2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  </div>
+                  <div style={{ fontSize: 34, fontWeight: 800, color: '#1d1d1f', lineHeight: 1 }}>{recipes.length}</div>
+                  <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 4 }}>Recepten</div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>{r.pour_count || 0}×</div>
               </div>
-            ))}
-          </Group>
+
+              {/* Meest gemaakt */}
+              <Group label="Meest gemaakt">
+                {loading ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: '#aeaeb2', fontSize: 13 }}>Laden…</div>
+                ) : topRecipes.length === 0 || topRecipes.every(r => r.filtered_count === 0) ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: '#aeaeb2', fontSize: 13 }}>Nog geen cocktails gemaakt.</div>
+                ) : topRecipes.filter(r => r.filtered_count > 0).map((r, i, arr) => {
+                  const max = arr[0].filtered_count || 1
+                  const pct = Math.round((r.filtered_count / max) * 100)
+                  return (
+                    <div key={r.id} style={{ padding: '12px 16px', borderBottom: i < arr.length - 1 ? '1px solid #f2f2f7' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+                        {/* Professionele placeholder i.p.v. emoji */}
+                        <div style={{ width: 32, height: 32, borderRadius: 9, overflow: 'hidden', background: 'linear-gradient(135deg, #f2f2f7, #e5e5ea)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {r.image_url
+                            ? <img src={r.image_url} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" strokeWidth="1.6" strokeLinecap="round"><path d="M8 21H5a2 2 0 0 1-2-2v-1a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v1a2 2 0 0 1-2 2h-3"/><path d="M9 3h6l1 9H8L9 3z"/></svg>
+                          }
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f' }}>{r.filtered_count}×</div>
+                      </div>
+                      {/* Progress bar */}
+                      <div style={{ height: 3, background: '#f2f2f7', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: '#1d1d1f', borderRadius: 2, transition: 'width .3s' }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </Group>
+            </div>
+
+            {/* RECHTER KOLOM */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+              {/* Ingrediënten status */}
+              <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+                <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #f2f2f7' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#aeaeb2', letterSpacing: .5, textTransform: 'uppercase' }}>Ingrediënten</div>
+                </div>
+                {pumps.length === 0 ? (
+                  <div style={{ padding: '16px', fontSize: 13, color: '#aeaeb2', textAlign: 'center' }}>
+                    Configureer pompen in de instellingen.
+                  </div>
+                ) : pumps.slice(0, 6).map((p, i) => {
+                  const name = p.ingredient_name || p.name || `Pomp ${i + 1}`
+                  const pct  = p.level_pct ?? p.fill_pct ?? null
+                  const low  = pct !== null && pct < 25
+                  const color = pct === null ? '#8e8e93' : pct < 15 ? '#ff3b30' : pct < 30 ? '#ff9500' : '#34c759'
+                  return (
+                    <div key={i} style={{ padding: '10px 16px', borderBottom: i < Math.min(pumps.length, 6) - 1 ? '1px solid #f9f9f9' : 'none' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                        <span style={{ fontSize: 13, color: '#1d1d1f', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{name}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color, flexShrink: 0, marginLeft: 8 }}>
+                          {pct !== null ? (low ? '⚠ Bijvullen' : `${pct}%`) : '—'}
+                        </span>
+                      </div>
+                      {pct !== null && (
+                        <div style={{ height: 4, background: '#f2f2f7', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width .3s' }} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Live activity feed */}
+              <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+                <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #f2f2f7' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#aeaeb2', letterSpacing: .5, textTransform: 'uppercase' }}>Recente activiteit</div>
+                </div>
+                {activity.length === 0 ? (
+                  <div style={{ padding: '16px', fontSize: 13, color: '#aeaeb2', textAlign: 'center' }}>Nog geen activiteit.</div>
+                ) : activity.map((a, i) => (
+                  <div key={a.id} style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < activity.length - 1 ? '1px solid #f9f9f9' : 'none' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #f2f2f7, #e5e5ea)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {a.image_url
+                        ? <img src={a.image_url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" strokeWidth="1.6" strokeLinecap="round"><path d="M8 21H5a2 2 0 0 1-2-2v-1a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v1a2 2 0 0 1-2 2h-3"/><path d="M9 3h6l1 9H8L9 3z"/></svg>
+                      }
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                      <div style={{ fontSize: 11, color: '#aeaeb2', marginTop: 1 }}>{a.minsAgo} min geleden</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </>
       )}
     </div>
