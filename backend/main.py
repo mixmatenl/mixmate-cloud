@@ -3157,6 +3157,10 @@ async def hr_delete_task_by_key(key: str, admin_id: int = Depends(verify_hr_admi
 
 # ── Static file serving ────────────────────────────────────────────────────────
 
+@app.get("/api/health")
+async def health():
+    return {"ok": True}
+
 # Serve uploaded tickets via /uploads/tickets/{filename} (alleen intern — downloaden via API)
 app.mount("/uploads", StaticFiles(directory=str(Path(__file__).parent.parent / "uploads")), name="uploads")
 
@@ -3165,7 +3169,7 @@ if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(full_path: str):  # noqa: F811
         if full_path.startswith("api/") or full_path.startswith("ws/"):
             from fastapi import HTTPException
             raise HTTPException(status_code=404)

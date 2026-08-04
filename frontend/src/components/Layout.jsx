@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 
 function NavRow({ icon, label, to, color = '#636366', active, onClick, danger }) {
@@ -76,6 +76,44 @@ function initials(name) {
 
 const ADMIN_EMAILS = ['r.muller@mixmate.nl', 'info@mixmate.nl', 'h.louwrink@mixmate.nl']
 
+function StatusDot() {
+  const [online, setOnline] = useState(navigator.onLine)
+  const [apiOk, setApiOk] = useState(true)
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true)
+    const onOffline = () => setOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    const check = () => fetch('/api/health').then(r => setApiOk(r.ok)).catch(() => setApiOk(false))
+    check()
+    const iv = setInterval(check, 30000)
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); clearInterval(iv) }
+  }, [])
+
+  const ok = online && apiOk
+  const color = ok ? '#34c759' : '#ff3b30'
+  const label = ok ? 'Systeem actief' : online ? 'Serververbinding verbroken' : 'Geen internetverbinding'
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={() => setShow(s => !s)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 0 2px ${color}33` }} />
+        <span style={{ fontSize: 11, color: '#6e6e73', fontWeight: 500 }}>Status</span>
+      </button>
+      {show && (
+        <div style={{ position: 'absolute', top: '110%', right: 0, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 12, padding: '10px 14px', whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(0,0,0,.1)', zIndex: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+            <span style={{ fontSize: 13, color: '#1d1d1f', fontWeight: 500 }}>{label}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Layout({ user, onLogout, children }) {
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
   const isEmployee = !!user?.is_employee
@@ -91,14 +129,15 @@ export default function Layout({ user, onLogout, children }) {
     }}>
       {/* Logo */}
       <div style={{ padding: '0 16px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round">
             <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
             <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
             <circle cx="12" cy="12" r="3"/>
           </svg>
         </div>
-        <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: -.4, color: '#1d1d1f' }}>MIXMATE</span>
+        <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: -.4, color: '#1d1d1f', flex: 1 }}>MIXMATE</span>
+        <StatusDot />
       </div>
 
       {/* User */}
@@ -183,8 +222,29 @@ export default function Layout({ user, onLogout, children }) {
               active={path === '/bestellen'}
               to="/bestellen"
               color="#ff6b35"
-              label="Glazen bestellen"
+              label="Glazen & servies"
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>}
+            />
+            <NavRow
+              active={path === '/verbruiksartikelen'}
+              to="/verbruiksartikelen"
+              color="#5856d6"
+              label="Verbruiksartikelen"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>}
+            />
+            <NavRow
+              active={path === '/ingredienten'}
+              to="/ingredienten"
+              color="#34c759"
+              label="Ingrediënten & siropen"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/></svg>}
+            />
+            <NavRow
+              active={path === '/onderhoud'}
+              to="/onderhoud"
+              color="#007aff"
+              label="Onderhoudssets"
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>}
             />
             <NavRow
               active={path === '/mijn-bestellingen'}
@@ -296,9 +356,9 @@ export default function Layout({ user, onLogout, children }) {
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
         />
         <NavRow
-          danger
           label="Uitloggen"
           onClick={onLogout}
+          color="#8e8e93"
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>}
         />
       </NavGroup>

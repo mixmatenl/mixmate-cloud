@@ -280,28 +280,46 @@ export default function Dashboard({ user, onLogout }) {
             fontWeight: 600, cursor: 'pointer',
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Toevoegen
+            Machine koppelen
           </button>
         </div>
 
-        {/* Lege staat */}
+        {/* Lege staat — onboarding */}
         {!loading && machines.length === 0 && (
-          <div style={{ background: '#fff', borderRadius: 24, padding: '60px 32px', textAlign: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 24, padding: '48px 32px', textAlign: 'center' }}>
             <div style={{
-              width: 80, height: 80, borderRadius: 24, background: '#f5f5f7',
+              width: 72, height: 72, borderRadius: 20, background: '#f5f5f7',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               margin: '0 auto 20px',
             }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="1.5" strokeLinecap="round">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
                 <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
             </div>
-            <h2 style={{ fontSize: 20, fontWeight: 600, color: '#1d1d1f', marginBottom: 8 }}>Nog geen machine</h2>
-            <p style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6, maxWidth: 260, margin: '0 auto 28px' }}>
-              Koppel je MIXMATE machine om hem op afstand te beheren.
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1d1d1f', marginBottom: 8 }}>Koppel je eerste machine</h2>
+            <p style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6, maxWidth: 280, margin: '0 auto 28px' }}>
+              Beheer je MIXMATE op afstand — recepten, flushing en realtime status.
             </p>
+
+            {/* Stappen */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 0, marginBottom: 32, maxWidth: 400, margin: '0 auto 32px' }}>
+              {[
+                { n: '1', label: 'Schakel machine in' },
+                { n: '2', label: 'Klik op koppelen' },
+                { n: '3', label: 'Vul serienummer in' },
+              ].map((step, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>{step.n}</div>
+                    <div style={{ fontSize: 12, color: '#6e6e73', lineHeight: 1.4, textAlign: 'center' }}>{step.label}</div>
+                  </div>
+                  {i < 2 && <div style={{ width: 24, height: 1, background: '#e5e5ea', flexShrink: 0, marginBottom: 20 }} />}
+                </div>
+              ))}
+            </div>
+
             <button onClick={() => setShowWizard(true)} style={{
               background: '#1d1d1f', color: '#fff', border: 'none',
               borderRadius: 14, padding: '14px 28px', fontSize: 15,
