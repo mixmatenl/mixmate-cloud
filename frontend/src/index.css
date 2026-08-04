@@ -5,13 +5,13 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 :root {
-  --bg:        #FAF9F6;
+  --bg:        #F5F4F0;
   --surface:   #FFFFFF;
-  --border:    rgba(0,0,0,0.07);
-  --border-md: rgba(0,0,0,0.10);
-  --text-1:    #111110;
-  --text-2:    #6B6B6B;
-  --text-3:    #9B9B9B;
+  --border:    rgba(0,0,0,0.11);
+  --border-md: rgba(0,0,0,0.16);
+  --text-1:    #0F0F0E;
+  --text-2:    #4B4B4B;
+  --text-3:    #8A8A84;
   --accent:    #111110;
   --radius-sm: 8px;
   --radius-md: 12px;

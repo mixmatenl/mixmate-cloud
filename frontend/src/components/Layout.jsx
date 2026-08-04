@@ -3,12 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom'
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
-  bg:       '#FAF9F6',
+  bg:       '#F5F4F0',
   surface:  '#FFFFFF',
-  border:   'rgba(0,0,0,0.07)',
-  text1:    '#111110',
-  text2:    '#6B6B6B',
-  text3:    '#A0A09A',
+  border:   'rgba(0,0,0,0.11)',
+  text1:    '#0F0F0E',
+  text2:    '#4B4B4B',
+  text3:    '#8A8A84',
   accent:   '#111110',
 }
 
@@ -54,7 +54,7 @@ function NavRow({ icon, label, to, active, onClick, subtle }) {
       onClick={handleClick}
       style={{
         width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-        padding: '7px 10px', background: active ? 'rgba(0,0,0,0.05)' : 'transparent',
+        padding: '7px 10px', background: active ? 'rgba(0,0,0,0.08)' : 'transparent',
         border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 8,
         transition: 'background 0.12s',
         color: subtle ? T.text3 : active ? T.text1 : T.text2,
@@ -189,7 +189,7 @@ export default function Layout({ user, onLogout, children }) {
       </div>
 
       {/* User chip */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', marginBottom: 4, background: 'rgba(0,0,0,0.03)', borderRadius: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', marginBottom: 4, background: 'rgba(0,0,0,0.06)', borderRadius: 9 }}>
         <div style={{ width: 28, height: 28, borderRadius: '50%', background: T.accent, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: '0.02em' }}>
           {initials(user?.name || user?.email)}
         </div>
