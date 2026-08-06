@@ -146,6 +146,153 @@ function Toggle({ checked, onChange, disabled }) {
   )
 }
 
+function AdminMachineCard({ machine: m }) {
+  const [expanded, setExpanded] = useState(false)
+  const [busy, setBusy] = useState({})
+  const [msg, setMsg] = useState(null)
+  const [pinModal, setPinModal] = useState(null) // 'bartender' | 'admin' | 'remove-bartender'
+  const [pinVal, setPinVal] = useState('')
+  const [oldPin, setOldPin] = useState('')
+
+  const act = async (label, fn) => {
+    setBusy(b => ({ ...b, [label]: true }))
+    setMsg(null)
+    try {
+      await fn()
+      setMsg({ ok: true, text: `${label} geslaagd.` })
+    } catch (e) {
+      setMsg({ ok: false, text: e.message || `${label} mislukt.` })
+    }
+    setBusy(b => ({ ...b, [label]: false }))
+    setTimeout(() => setMsg(null), 5000)
+  }
+
+  const post = (path, body) => api.adminRaw('POST', path, body)
+  const get  = (path)       => api.adminRaw('GET',  path)
+
+  const doRestart    = () => act('Herstart',          () => post(`/api/admin/machines/${m.machine_id}/restart`))
+  const doUpdate     = () => act('Software update',   () => post(`/api/admin/machines/${m.machine_id}/trigger-update`))
+  const doUnpair     = async () => {
+    if (!confirm(`Machine "${m.name}" ontkoppelen van dit account?`)) return
+    act('Ontkoppelen', () => post(`/api/admin/machines/${m.machine_id}/unpair`))
+  }
+
+  const submitPin = async () => {
+    if (pinModal === 'bartender')        await act('Bartender pin instellen',  () => post(`/api/admin/machines/${m.machine_id}/set-bartender-pin`,    { pin: pinVal, admin_pin: oldPin }))
+    else if (pinModal === 'admin')       await act('Admin pin wijzigen',       () => post(`/api/admin/machines/${m.machine_id}/set-admin-pin`,         { pin: pinVal, old_pin: oldPin }))
+    else if (pinModal === 'remove-bart') await act('Bartender pin verwijderen',() => post(`/api/admin/machines/${m.machine_id}/remove-bartender-pin`,  { admin_pin: oldPin }))
+    setPinModal(null); setPinVal(''); setOldPin('')
+  }
+
+  const inp = { padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit', width: '100%', boxSizing: 'border-box', marginTop: 4 }
+
+  return (
+    <div style={{ ...s.card, overflow: 'hidden' }}>
+      {/* Pin modal */}
+      {pinModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={e => e.target === e.currentTarget && setPinModal(null)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: 24, maxWidth: 360, width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
+              {pinModal === 'bartender' ? 'Bartender pin instellen' : pinModal === 'admin' ? 'Admin pin wijzigen' : 'Bartender pin verwijderen'}
+            </div>
+            {pinModal !== 'remove-bart' && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73' }}>Nieuwe pin</div>
+                <input value={pinVal} onChange={e => setPinVal(e.target.value)} placeholder="Nieuwe pin" type="password" style={inp} />
+              </div>
+            )}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73' }}>{pinModal === 'admin' ? 'Huidige admin pin' : 'Admin pin (ter bevestiging)'}</div>
+              <input value={oldPin} onChange={e => setOldPin(e.target.value)} placeholder="Admin pin" type="password" style={inp} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={submitPin} style={{ ...s.btn, flex: 1 }}>Bevestigen</button>
+              <button onClick={() => { setPinModal(null); setPinVal(''); setOldPin('') }} style={{ ...s.btnSm, flex: 1 }}>Annuleren</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <button onClick={() => setExpanded(e => !e)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{m.name}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: m.online ? '#34c759' : '#aeaeb2' }}>{m.online ? '● Online' : '○ Offline'}</span>
+          </div>
+          <div style={{ fontSize: 12, color: '#6e6e73', fontFamily: 'monospace' }}>{m.machine_id}</div>
+          {m.model && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{m.model}{m.version ? ` · v${m.version}` : ''}</div>}
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          style={{ flexShrink: 0, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+
+      {/* Uitklapbaar beheer */}
+      {expanded && (
+        <div style={{ borderTop: '1px solid #f2f2f7', padding: '16px' }}>
+          {msg && <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: msg.ok ? '#f0faf3' : '#fff1f0', color: msg.ok ? '#1c7a37' : '#c0392b', fontSize: 13, fontWeight: 600 }}>{msg.text}</div>}
+
+          {/* Machine acties */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Machine acties</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={doRestart} disabled={!m.online || busy['Herstart']} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
+                {busy['Herstart'] ? 'Herstarten…' : '↺ Herstarten'}
+              </button>
+              <button onClick={doUpdate} disabled={!m.online || busy['Software update']} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
+                {busy['Software update'] ? 'Updaten…' : '⬆ Software updaten'}
+              </button>
+            </div>
+          </div>
+
+          {/* Pin beheer */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Pin beheer</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => { setPinModal('bartender'); setPinVal(''); setOldPin('') }} disabled={!m.online} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
+                Bartender pin instellen
+              </button>
+              <button onClick={() => { setPinModal('remove-bart'); setOldPin('') }} disabled={!m.online} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
+                Bartender pin verwijderen
+              </button>
+              <button onClick={() => { setPinModal('admin'); setPinVal(''); setOldPin('') }} disabled={!m.online} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
+                Admin pin wijzigen
+              </button>
+            </div>
+          </div>
+
+          {/* Recepten / ingrediënten / pompen */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Inhoud</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[['Recepten', 'get_recipes'], ['Ingrediënten', 'get_ingredients'], ['Pompen', 'get_pumps']].map(([lbl, type]) => (
+                <button key={type} disabled={!m.online} onClick={() => act(lbl, async () => {
+                  const data = await get(`/api/admin/machines/${m.machine_id}/${type.replace('get_', '')}`)
+                  alert(JSON.stringify(data, null, 2))
+                })} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
+                  {busy[lbl] ? `${lbl} laden…` : `${lbl} bekijken`}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 8 }}>Recepten/ingrediënten/pompen aanpassen → open het klantportaal van deze klant</div>
+          </div>
+
+          {/* Danger */}
+          <div style={{ borderTop: '1px solid #ffd6d3', paddingTop: 14, marginTop: 4 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#ff3b30', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Danger zone</div>
+            <button onClick={doUnpair} style={{ ...s.btnSm, background: '#fff1f0', color: '#ff3b30' }}>
+              {busy['Ontkoppelen'] ? 'Ontkoppelen…' : 'Machine ontkoppelen'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
   const [klant, setKlant]         = useState(initialKlant)
   const [name, setName]           = useState(initialKlant.name || '')
@@ -156,8 +303,7 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
   const [resetting, setResetting] = useState(false)
   const [resetMsg, setResetMsg]   = useState(null)
   const [deleting, setDeleting]   = useState(false)
-  const [restarting, setRestarting]   = useState({})
-  const [machineMsgs, setMachineMsgs] = useState({})
+
 
   const dirty = name !== klant.name || email !== klant.email || newsletter !== !!klant.newsletter_subscribed
 
@@ -195,18 +341,6 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
       onDelete(klant.id)
       onClose()
     } catch (e) { alert(e.message); setDeleting(false) }
-  }
-
-  async function restartMachine(machineId) {
-    setRestarting(r => ({ ...r, [machineId]: true }))
-    try {
-      await api.adminRestartMachine(machineId)
-      setMachineMsgs(m => ({ ...m, [machineId]: { ok: true, text: 'Herstart verstuurd.' } }))
-    } catch (e) {
-      setMachineMsgs(m => ({ ...m, [machineId]: { ok: false, text: e.message } }))
-    }
-    setRestarting(r => ({ ...r, [machineId]: false }))
-    setTimeout(() => setMachineMsgs(m => { const n = { ...m }; delete n[machineId]; return n }), 4000)
   }
 
   const labelStyle = { fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 6 }
@@ -285,28 +419,7 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
       <div style={s.label}>Machines ({klant.machines?.length || 0})</div>
       {(klant.machines || []).length === 0 && <div style={{ color: '#aeaeb2', fontSize: 14 }}>Geen machines gekoppeld.</div>}
       {(klant.machines || []).map(m => (
-        <div key={m.machine_id} style={s.card}>
-          <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{m.name}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: m.online ? '#34c759' : '#aeaeb2' }}>{m.online ? '● Online' : '○ Offline'}</span>
-              </div>
-              <div style={{ fontSize: 12, color: '#6e6e73', fontFamily: 'monospace' }}>{m.machine_id}</div>
-              {m.model && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{m.model}{m.version ? ` · v${m.version}` : ''}</div>}
-              {m.serial_number && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>S/N: {m.serial_number}{m.serial_number_confirmed ? ' ✓' : ''}</div>}
-            </div>
-            <button onClick={() => restartMachine(m.machine_id)} disabled={!m.online || restarting[m.machine_id]}
-              style={{ ...s.btnSm, background: m.online ? '#fff1f0' : '#f2f2f7', color: m.online ? '#ff3b30' : '#aeaeb2', cursor: m.online && !restarting[m.machine_id] ? 'pointer' : 'not-allowed' }}>
-              {restarting[m.machine_id] ? 'Herstarten…' : 'Herstart'}
-            </button>
-          </div>
-          {machineMsgs[m.machine_id] && (
-            <div style={{ padding: '8px 16px', borderTop: '1px solid #f2f2f7', fontSize: 13, color: machineMsgs[m.machine_id].ok ? '#34c759' : '#ff3b30' }}>
-              {machineMsgs[m.machine_id].text}
-            </div>
-          )}
-        </div>
+        <AdminMachineCard key={m.machine_id} machine={m} />
       ))}
 
       {/* Danger zone */}

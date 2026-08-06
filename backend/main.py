@@ -1067,12 +1067,72 @@ def admin_delete_customer(cid: int, _: int = Depends(verify_admin_user), db: Ses
     db.commit()
     return {"ok": True}
 
-@app.post("/api/admin/machines/{machine_id}/restart")
-async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+def _admin_conn(machine_id: str) -> "MachineConnection":
     conn = connected_machines.get(machine_id)
     if not conn:
         raise HTTPException(status_code=503, detail="Machine is offline")
-    await conn.request({"type": "trigger_update"}, timeout=10)
+    return conn
+
+@app.post("/api/admin/machines/{machine_id}/restart")
+async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_user)):
+    await _admin_conn(machine_id).request({"type": "restart"}, timeout=10)
+    return {"ok": True}
+
+@app.post("/api/admin/machines/{machine_id}/trigger-update")
+async def admin_trigger_update(machine_id: str, _: int = Depends(verify_admin_user)):
+    await _admin_conn(machine_id).send({"type": "trigger_update"})
+    return {"ok": True}
+
+@app.post("/api/admin/machines/{machine_id}/set-bartender-pin")
+async def admin_set_bartender_pin(machine_id: str, body: dict, _: int = Depends(verify_admin_user)):
+    return await _admin_conn(machine_id).request({
+        "type": "set_bartender_pin",
+        "pin": body.get("pin"),
+        "admin_pin": body.get("admin_pin"),
+    }, timeout=10)
+
+@app.post("/api/admin/machines/{machine_id}/remove-bartender-pin")
+async def admin_remove_bartender_pin(machine_id: str, body: dict, _: int = Depends(verify_admin_user)):
+    return await _admin_conn(machine_id).request({
+        "type": "remove_bartender_pin",
+        "admin_pin": body.get("admin_pin"),
+    }, timeout=10)
+
+@app.post("/api/admin/machines/{machine_id}/set-admin-pin")
+async def admin_set_admin_pin(machine_id: str, body: dict, _: int = Depends(verify_admin_user)):
+    return await _admin_conn(machine_id).request({
+        "type": "set_admin_pin",
+        "pin": body.get("pin"),
+        "old_pin": body.get("old_pin"),
+    }, timeout=10)
+
+@app.get("/api/admin/machines/{machine_id}/recipes")
+async def admin_get_recipes(machine_id: str, _: int = Depends(verify_admin_user)):
+    return await _admin_conn(machine_id).request({"type": "get_recipes"})
+
+@app.get("/api/admin/machines/{machine_id}/pumps")
+async def admin_get_pumps(machine_id: str, _: int = Depends(verify_admin_user)):
+    return await _admin_conn(machine_id).request({"type": "get_pumps"})
+
+@app.get("/api/admin/machines/{machine_id}/ingredients")
+async def admin_get_ingredients(machine_id: str, _: int = Depends(verify_admin_user)):
+    return await _admin_conn(machine_id).request({"type": "get_ingredients"})
+
+@app.post("/api/admin/machines/{machine_id}/unpair")
+async def admin_unpair_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    machine.paired = False
+    machine.customer_id = None
+    db.add(machine)
+    db.commit()
+    conn = connected_machines.get(machine_id)
+    if conn:
+        try:
+            await conn.send({"type": "unpaired"})
+        except Exception:
+            pass
     return {"ok": True}
 
 @app.post("/api/admin/customers/{customer_id}/reset-password")

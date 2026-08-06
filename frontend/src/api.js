@@ -135,6 +135,7 @@ export const api = {
   adminMe:              ()              => req('GET',   '/api/admin/me'),
   adminSearchCustomers: (q)             => req('GET',   `/api/admin/customers?q=${encodeURIComponent(q || '')}`),
   adminRestartMachine:  (machine_id)    => req('POST',  `/api/admin/machines/${machine_id}/restart`),
+  adminRaw:             (method, path, body) => req(method, path, body),
   adminUpdateCustomer:  (id, data)      => req('PATCH',  `/api/admin/customers/${id}`, data),
   adminDeleteCustomer:  (id)            => req('DELETE', `/api/admin/customers/${id}`),
   adminResetPassword:   (id)            => req('POST',   `/api/admin/customers/${id}/reset-password`),
