@@ -273,6 +273,7 @@ export default function Layout({ user, onLogout, children }) {
                 <NavSubRow active={f === 'verzonden'} to="/admin?s=bestellingen&f=verzonden" label="Verzonden" />
                 <NavSubRow active={f === 'facturen'} to="/admin?s=bestellingen&f=facturen" label="Facturen" />
               </>}
+              <NavRow active={inPersoneel && t === 'pilot'} to="/personeel/beheer?t=pilot" icon={Icons.doc} label="Pilot" />
             </NavSection>
 
             <NavSection label="Klanten">
@@ -293,7 +294,6 @@ export default function Layout({ user, onLogout, children }) {
                 </>}
                 <NavRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" icon={Icons.festival} label="Festivals" />
                 <NavRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" icon={Icons.task} label="Taken" />
-                <NavRow active={inPersoneel && t === 'pilot'} to="/personeel/beheer?t=pilot" icon={Icons.doc} label="Pilot" />
               </NavSection>
             )}
 
