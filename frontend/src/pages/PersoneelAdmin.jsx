@@ -966,20 +966,6 @@ export default function PersoneelAdmin() {
         <div style={{ fontSize: 14, color: '#6e6e73', marginTop: 4 }}>Alleen zichtbaar voor jou</div>
       </div>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f5f5f7', borderRadius: 12, padding: 4 }}>
-        {['medewerkers', 'festivals', 'taken', 'pilot'].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            flex: 1, padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer',
-            background: tab === t ? '#fff' : 'transparent',
-            color: tab === t ? '#1d1d1f' : '#6e6e73',
-            fontSize: 13, fontWeight: tab === t ? 600 : 400, fontFamily: 'inherit',
-            boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-          }}>
-            {t === 'medewerkers' ? '👥 Medewerkers' : t === 'festivals' ? '🎪 Festivals' : t === 'taken' ? '✅ Taken' : '🚀 Pilot'}
-          </button>
-        ))}
-      </div>
-
       {tab === 'medewerkers' && <EmployeesTab openAdd={urlTab === 'add'} />}
       {tab === 'festivals' && <FestivalsTab />}
       {tab === 'taken' && <TakenTab />}

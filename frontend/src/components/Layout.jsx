@@ -288,10 +288,6 @@ export default function Layout({ user, onLogout, children }) {
             {user?.email?.toLowerCase() === 'r.muller@mixmate.nl' && (
               <NavSection label="Personeel">
                 <NavRow active={inPersoneel && (!t || t === 'medewerkers')} to="/personeel/beheer?t=medewerkers" icon={Icons.users} label="Medewerkers" />
-                {inPersoneel && <>
-                  <NavSubRow active={t === 'add'} to="/personeel/beheer?t=add" label="Toevoegen" />
-                  <NavSubRow active={t === 'medewerkers' || !t} to="/personeel/beheer?t=medewerkers" label="Overzicht" />
-                </>}
                 <NavRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" icon={Icons.festival} label="Festivals" />
                 <NavRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" icon={Icons.task} label="Taken" />
               </NavSection>
