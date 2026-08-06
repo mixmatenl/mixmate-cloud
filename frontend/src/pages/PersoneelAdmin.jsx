@@ -957,6 +957,15 @@ export default function PersoneelAdmin() {
     else if (t === 'add' || t === 'medewerkers') setTab('medewerkers')
   }, [location.search])
 
+  if (tab === 'pilot') {
+    return (
+      <div style={{ maxWidth: 780, margin: '0 auto', padding: '32px 20px', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <PilotTab />
+      </div>
+    )
+  }
+
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', padding: '32px 20px', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
@@ -969,7 +978,6 @@ export default function PersoneelAdmin() {
       {tab === 'medewerkers' && <EmployeesTab openAdd={urlTab === 'add'} />}
       {tab === 'festivals' && <FestivalsTab />}
       {tab === 'taken' && <TakenTab />}
-      {tab === 'pilot' && <PilotTab />}
     </div>
   )
 }
