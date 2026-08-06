@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { fetchApi, api } from '../api.js'
+import { fetchApi } from '../api.js'
+const api = fetchApi
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
