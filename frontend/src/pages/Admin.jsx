@@ -333,7 +333,7 @@ function KlantDetail({ klant: initialKlant, onClose, onDelete }) {
 function TicketTab({ ticketType, initialFilter }) {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState(initialFilter || 'open')
+  const [filter] = useState(initialFilter || 'alle')
   const [selected, setSelected] = useState(null)
   const isMobile = useIsMobile()
 
@@ -376,30 +376,9 @@ function TicketTab({ ticketType, initialFilter }) {
     )
   }
 
-  const filterBtns = isOfferte
-    ? [['open','Open'], ['actief','Actief'], ['prijsvoorstel','Voorstel'], ['opgelost','Afgesloten'], ['alle','Alle']]
-    : [['open','Open'], ['actief','Actief'], ['opgelost','Opgelost'], ['alle','Alle']]
-
   return (
     <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: selected ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
       <div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          {filterBtns.map(([val, lbl]) => (
-            <button key={val} onClick={() => setFilter(val)} style={{
-              ...s.btnSm,
-              background: filter === val ? '#1d1d1f' : '#f2f2f7',
-              color:      filter === val ? '#fff'    : '#1d1d1f',
-            }}>
-              {lbl}
-              <span style={{ marginLeft: 6, background: filter === val ? 'rgba(255,255,255,.2)' : '#e5e5ea', borderRadius: 10, padding: '1px 6px', fontSize: 11 }}>
-                {val === 'alle' ? tickets.length
-                  : val === 'actief' ? tickets.filter(t => activeStatuses.includes(t.status)).length
-                  : tickets.filter(t => t.status === val).length}
-              </span>
-            </button>
-          ))}
-        </div>
-
         <div style={s.card}>
           {loading && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2' }}>Laden…</div>}
           {!loading && filtered.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen {isOfferte ? 'offertes' : 'meldingen'}.</div>}
