@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { fetchApi as api } from '../api.js'
+import { fetchApi, api } from '../api.js'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -432,22 +432,84 @@ function FestivalsTab() {
 // ── Pilot tab ─────────────────────────────────────────────────────────────────
 
 const PILOT_STATUSES = ['nieuw', 'in_behandeling', 'goedgekeurd', 'afgewezen']
-const PILOT_LABELS = { nieuw: '🆕 Nieuw', in_behandeling: '🔄 In behandeling', goedgekeurd: '✅ Goedgekeurd', afgewezen: '❌ Afgewezen' }
+const PILOT_LABELS = { nieuw: '\u{1F195} Nieuw', in_behandeling: '\u{1F504} In behandeling', goedgekeurd: '✅ Goedgekeurd', afgewezen: '❌ Afgewezen' }
 const PILOT_COLORS = { nieuw: '#0071e3', in_behandeling: '#bf5900', goedgekeurd: '#1c7a37', afgewezen: '#c0392b' }
 
+function OfferForm({ initial, onSave, onCancel }) {
+  const [title, setTitle] = useState(initial?.title || 'Pilot aanbieding')
+  const [price, setPrice] = useState(initial?.price ?? 949)
+  const [conditions, setConditions] = useState(initial?.conditions || [])
+  const [extra, setExtra] = useState(initial?.extra_info || '')
+  const [newCond, setNewCond] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const addCond = () => {
+    const t = newCond.trim()
+    if (t) { setConditions(c => [...c, t]); setNewCond('') }
+  }
+
+  const submit = async () => {
+    setSaving(true)
+    await onSave({ title, price: parseFloat(price), conditions, extra_info: extra })
+    setSaving(false)
+  }
+
+  return (
+    <div>
+      <Field label="Naam aanbieding" value={title} onChange={setTitle} />
+      <Field label="Prijs (€)" value={price} onChange={setPrice} type="number" />
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 6 }}>Voorwaarden / bullet points</label>
+        {conditions.map((c, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 13, flex: 1, background: '#f5f5f7', borderRadius: 8, padding: '7px 12px' }}>{c}</span>
+            <button onClick={() => setConditions(cc => cc.filter((_, j) => j !== i))}
+              style={{ background: 'none', border: 'none', color: '#c0392b', cursor: 'pointer', fontSize: 16, padding: '4px 6px' }}>✕</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input value={newCond} onChange={e => setNewCond(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addCond()}
+            placeholder="Typ een voorwaarde en druk Enter…"
+            style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: 13, fontFamily: 'inherit' }} />
+          <button onClick={addCond} style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: '#1d1d1f', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>+</button>
+        </div>
+      </div>
+      <div style={{ marginBottom: 20 }}>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 6 }}>Extra informatie (optioneel)</label>
+        <textarea value={extra} onChange={e => setExtra(e.target.value)} rows={3}
+          placeholder="Extra toelichting die op de website verschijnt…"
+          style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Btn onClick={submit} disabled={saving}>{saving ? 'Opslaan…' : 'Opslaan'}</Btn>
+        <Btn onClick={onCancel} color="#f5f5f7" textColor="#1d1d1f">Annuleren</Btn>
+      </div>
+    </div>
+  )
+}
+
 function PilotTab() {
+  const [offers, setOffers] = useState([])
   const [apps, setApps] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState(null)
+  const [selectedApp, setSelectedApp] = useState(null)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState('alle')
+  const [showNewOffer, setShowNewOffer] = useState(false)
+  const [editOffer, setEditOffer] = useState(null)
+  const [activating, setActivating] = useState(null)
 
   const load = async () => {
     setLoading(true)
     try {
-      const data = await api.get('/api/pilot/applications')
-      setApps(data)
+      const [o, a] = await Promise.all([
+        fetchApi('/api/pilot/offers', { method: 'GET' }),
+        fetchApi('/api/pilot/applications', { method: 'GET' }),
+      ])
+      setOffers(o)
+      setApps(a)
     } finally {
       setLoading(false)
     }
@@ -455,21 +517,46 @@ function PilotTab() {
 
   useEffect(() => { load() }, [])
 
-  const open = (a) => { setSelected(a); setNotes(a.notes || '') }
-
-  const save = async (status) => {
-    setSaving(true)
-    await api.put(`/api/pilot/applications/${selected.id}`, { status, notes })
+  const activate = async (id) => {
+    setActivating(id)
+    await fetchApi(`/api/pilot/offers/${id}/activate`, { method: 'PUT', body: JSON.stringify({}) })
     await load()
-    setSelected(null)
+    setActivating(null)
+  }
+
+  const deleteOffer = async (id) => {
+    if (!confirm('Verwijder deze aanbieding?')) return
+    await fetchApi(`/api/pilot/offers/${id}`, { method: 'DELETE' })
+    await load()
+  }
+
+  const createOffer = async (data) => {
+    await fetchApi('/api/pilot/offers', { method: 'POST', body: JSON.stringify(data) })
+    setShowNewOffer(false)
+    await load()
+  }
+
+  const updateOffer = async (data) => {
+    await fetchApi(`/api/pilot/offers/${editOffer.id}`, { method: 'PUT', body: JSON.stringify(data) })
+    setEditOffer(null)
+    await load()
+  }
+
+  const openApp = (a) => { setSelectedApp(a); setNotes(a.notes || '') }
+
+  const saveApp = async (status) => {
+    setSaving(true)
+    await fetchApi(`/api/pilot/applications/${selectedApp.id}`, { method: 'PUT', body: JSON.stringify({ status, notes }) })
+    await load()
+    setSelectedApp(null)
     setSaving(false)
   }
 
-  const remove = async (id) => {
+  const deleteApp = async (id) => {
     if (!confirm('Verwijder deze aanvraag?')) return
-    await api.delete(`/api/pilot/applications/${id}`)
+    await fetchApi(`/api/pilot/applications/${id}`, { method: 'DELETE' })
     await load()
-    setSelected(null)
+    setSelectedApp(null)
   }
 
   const visible = filter === 'alle' ? apps : apps.filter(a => a.status === filter)
@@ -478,21 +565,21 @@ function PilotTab() {
 
   return (
     <div>
-      {selected && (
-        <Modal title={selected.name || 'Aanvraag'} onClose={() => setSelected(null)}>
+      {selectedApp && (
+        <Modal title={selectedApp.name || 'Aanvraag'} onClose={() => setSelectedApp(null)}>
           <div style={{ display: 'grid', gap: 8, marginBottom: 20 }}>
-            {[['Naam', selected.name], ['Bedrijf', selected.company], ['E-mail', selected.email],
-              ['Telefoon', selected.phone], ['Locatie', selected.location]].map(([l, v]) => v ? (
+            {[['Naam', selectedApp.name], ['Bedrijf', selectedApp.company], ['E-mail', selectedApp.email],
+              ['Telefoon', selectedApp.phone], ['Locatie', selectedApp.location]].map(([l, v]) => v ? (
               <div key={l} style={{ display: 'flex', gap: 8 }}>
                 <span style={{ fontSize: 13, color: '#6e6e73', width: 80, flexShrink: 0 }}>{l}</span>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{v}</span>
               </div>
             ) : null)}
           </div>
-          {selected.message && (
+          {selectedApp.message && (
             <div style={{ background: '#f5f5f7', borderRadius: 10, padding: 14, marginBottom: 16 }}>
               <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6 }}>Bericht</div>
-              <div style={{ fontSize: 14 }}>{selected.message}</div>
+              <div style={{ fontSize: 14 }}>{selectedApp.message}</div>
             </div>
           )}
           <div style={{ marginBottom: 16 }}>
@@ -502,14 +589,14 @@ function PilotTab() {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {PILOT_STATUSES.map(s => (
-              <button key={s} onClick={() => save(s)} disabled={saving || selected.status === s} style={{
-                padding: '8px 14px', borderRadius: 8, border: 'none', cursor: selected.status === s ? 'default' : 'pointer',
-                background: selected.status === s ? PILOT_COLORS[s] : '#f5f5f7',
-                color: selected.status === s ? '#fff' : '#1d1d1f',
+              <button key={s} onClick={() => saveApp(s)} disabled={saving || selectedApp.status === s} style={{
+                padding: '8px 14px', borderRadius: 8, border: 'none', cursor: selectedApp.status === s ? 'default' : 'pointer',
+                background: selectedApp.status === s ? PILOT_COLORS[s] : '#f5f5f7',
+                color: selectedApp.status === s ? '#fff' : '#1d1d1f',
                 fontSize: 13, fontWeight: 600, fontFamily: 'inherit', opacity: saving ? 0.6 : 1,
               }}>{PILOT_LABELS[s]}</button>
             ))}
-            <button onClick={() => remove(selected.id)} style={{
+            <button onClick={() => deleteApp(selectedApp.id)} style={{
               marginLeft: 'auto', padding: '8px 14px', borderRadius: 8, border: 'none',
               background: '#fff0f0', color: '#c0392b', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
             }}>Verwijderen</button>
@@ -517,52 +604,120 @@ function PilotTab() {
         </Modal>
       )}
 
-      {apps.length === 0 ? (
-        <Card style={{ padding: 48, textAlign: 'center' }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>🚀</div>
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Nog geen pilot-aanvragen</div>
-          <div style={{ fontSize: 14, color: '#6e6e73', maxWidth: 380, margin: '0 auto' }}>
-            Zodra mensen zich aanmelden via de website verschijnen ze hier. Je kunt dan hun status bijhouden en interne notities toevoegen.
+      {showNewOffer && (
+        <Modal title="Nieuwe pilot aanbieding" onClose={() => setShowNewOffer(false)}>
+          <OfferForm onSave={createOffer} onCancel={() => setShowNewOffer(false)} />
+        </Modal>
+      )}
+
+      {editOffer && (
+        <Modal title="Aanbieding bewerken" onClose={() => setEditOffer(null)}>
+          <OfferForm initial={editOffer} onSave={updateOffer} onCancel={() => setEditOffer(null)} />
+        </Modal>
+      )}
+
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Pilot aanbiedingen</div>
+            <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>
+              De actieve aanbieding wordt automatisch overgenomen op de website
+            </div>
           </div>
-        </Card>
-      ) : (
-        <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-            {['alle', ...PILOT_STATUSES].map(s => (
-              <button key={s} onClick={() => setFilter(s)} style={{
-                padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                background: filter === s ? '#1d1d1f' : '#f5f5f7',
-                color: filter === s ? '#fff' : '#1d1d1f', fontSize: 13, fontWeight: 500,
-              }}>{s === 'alle' ? `Alle (${apps.length})` : `${PILOT_LABELS[s]} (${apps.filter(a => a.status === s).length})`}</button>
-            ))}
-          </div>
+          <Btn small onClick={() => setShowNewOffer(true)}>+ Nieuwe aanbieding</Btn>
+        </div>
+
+        {offers.length === 0 ? (
+          <Card style={{ padding: 28, textAlign: 'center' }}>
+            <div style={{ fontSize: 14, color: '#6e6e73' }}>Nog geen aanbiedingen aangemaakt.</div>
+          </Card>
+        ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {visible.map(a => (
-              <Card key={a.id} style={{ padding: '16px 20px', cursor: 'pointer', transition: 'box-shadow .15s' }}
-                onClick={() => open(a)}>
+            {offers.map(o => (
+              <Card key={o.id} style={{ padding: '16px 20px', border: o.is_active ? '2px solid #1c7a37' : undefined }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 15 }}>{a.name || '—'}</div>
-                    <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>
-                      {[a.company, a.location].filter(Boolean).join(' · ')}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>{o.title}</span>
+                      {o.is_active && <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#eafbf0', color: '#1c7a37' }}>● ACTIEF</span>}
                     </div>
-                    <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 4 }}>
-                      {a.email}{a.phone ? ` · ${a.phone}` : ''}
-                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', marginBottom: 6 }}>€{o.price.toLocaleString('nl-NL')}</div>
+                    {o.conditions.length > 0 && (
+                      <ul style={{ margin: '0 0 0 16px', padding: 0, fontSize: 13, color: '#4b4b4b', lineHeight: 1.7 }}>
+                        {o.conditions.map((c, i) => <li key={i}>{c}</li>)}
+                      </ul>
+                    )}
+                    {o.extra_info && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 6 }}>{o.extra_info}</div>}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
-                    <span style={{
-                      padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                      background: `${PILOT_COLORS[a.status]}18`, color: PILOT_COLORS[a.status],
-                    }}>{PILOT_LABELS[a.status]}</span>
-                    <span style={{ fontSize: 11, color: '#aeaeb2' }}>{new Date(a.applied_at).toLocaleDateString('nl-NL')}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                    {!o.is_active && (
+                      <button onClick={() => activate(o.id)} disabled={activating === o.id} style={{
+                        padding: '7px 12px', borderRadius: 8, border: '1.5px solid #1c7a37', background: '#fff',
+                        color: '#1c7a37', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}>{activating === o.id ? 'Activeren…' : 'Activeren'}</button>
+                    )}
+                    <button onClick={() => setEditOffer(o)} style={{
+                      padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e5e5ea', background: '#fff',
+                      color: '#1d1d1f', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>Bewerken</button>
+                    <button onClick={() => deleteOffer(o.id)} style={{
+                      padding: '7px 12px', borderRadius: 8, border: 'none', background: '#fff0f0',
+                      color: '#c0392b', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>Verwijderen</button>
                   </div>
                 </div>
               </Card>
             ))}
           </div>
-        </>
-      )}
+        )}
+      </div>
+
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Pilot aanvragen</div>
+        <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 14 }}>Aanmeldingen via de website</div>
+
+        {apps.length === 0 ? (
+          <Card style={{ padding: 32, textAlign: 'center' }}>
+            <div style={{ fontSize: 14, color: '#6e6e73' }}>Nog geen aanvragen ontvangen</div>
+          </Card>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+              {['alle', ...PILOT_STATUSES].map(s => (
+                <button key={s} onClick={() => setFilter(s)} style={{
+                  padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  background: filter === s ? '#1d1d1f' : '#f5f5f7',
+                  color: filter === s ? '#fff' : '#1d1d1f', fontSize: 12, fontWeight: 500,
+                }}>{s === 'alle' ? `Alle (${apps.length})` : `${PILOT_LABELS[s].split(' ')[1]} (${apps.filter(a => a.status === s).length})`}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {visible.map(a => (
+                <Card key={a.id} style={{ padding: '14px 18px', cursor: 'pointer' }} onClick={() => openApp(a)}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{a.name || '—'}</div>
+                      <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>
+                        {[a.company, a.location].filter(Boolean).join(' · ')}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 3 }}>
+                        {a.email}{a.phone ? ` · ${a.phone}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                      <span style={{
+                        padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                        background: `${PILOT_COLORS[a.status]}18`, color: PILOT_COLORS[a.status],
+                      }}>{PILOT_LABELS[a.status]}</span>
+                      <span style={{ fontSize: 11, color: '#aeaeb2' }}>{new Date(a.applied_at).toLocaleDateString('nl-NL')}</span>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

@@ -287,8 +287,18 @@ class EmployeeTask(SQLModel, table=True):
     form_fields: str = ""   # JSON: [{id, label, type: text|yesno|number, required}]
     form_response: str = "" # JSON: {field_id: antwoord}
 
+class PilotOffer(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = ""
+    price: float = 949.0
+    conditions: str = ""   # JSON list of bullet strings
+    extra_info: str = ""   # extra vrije tekst
+    is_active: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class PilotApplication(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    pilot_offer_id: Optional[int] = Field(default=None, foreign_key="pilotoffer.id")
     name: str = ""
     company: str = ""
     email: str = ""
@@ -3167,14 +3177,95 @@ async def hr_delete_task_by_key(key: str, admin_id: int = Depends(verify_hr_admi
     db.commit()
     return {"ok": True}
 
-# ── Pilot aanvragen ───────────────────────────────────────────────────────────
+# ── Pilot: actieve aanbieding (publiek) ────────────────────────────────────────
+
+@app.get("/api/pilot/active")
+async def pilot_active_offer(db: Session = Depends(get_session)):
+    """Publiek endpoint — website haalt actieve pilot-aanbieding op."""
+    offer = db.exec(select(PilotOffer).where(PilotOffer.is_active == True)).first()
+    if not offer:
+        raise HTTPException(404, "Geen actieve pilot-aanbieding")
+    return {
+        "id": offer.id, "title": offer.title, "price": offer.price,
+        "conditions": json.loads(offer.conditions) if offer.conditions else [],
+        "extra_info": offer.extra_info,
+    }
+
+# ── Pilot: aanbiedingen beheer (admin) ────────────────────────────────────────
+
+@app.get("/api/pilot/offers")
+async def pilot_offers_list(admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    offers = db.exec(select(PilotOffer).order_by(PilotOffer.created_at.desc())).all()
+    return [
+        {
+            "id": o.id, "title": o.title, "price": o.price,
+            "conditions": json.loads(o.conditions) if o.conditions else [],
+            "extra_info": o.extra_info, "is_active": o.is_active,
+            "created_at": o.created_at.isoformat() if o.created_at else "",
+        }
+        for o in offers
+    ]
+
+@app.post("/api/pilot/offers")
+async def pilot_offer_create(body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    offer = PilotOffer(
+        title=body.get("title", "Pilot aanbieding"),
+        price=float(body.get("price", 949.0)),
+        conditions=json.dumps(body.get("conditions", []), ensure_ascii=False),
+        extra_info=body.get("extra_info", ""),
+        is_active=False,
+    )
+    db.add(offer)
+    db.commit()
+    db.refresh(offer)
+    return {"ok": True, "id": offer.id}
+
+@app.put("/api/pilot/offers/{offer_id}")
+async def pilot_offer_update(offer_id: int, body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    offer = db.get(PilotOffer, offer_id)
+    if not offer:
+        raise HTTPException(404)
+    if "title" in body:       offer.title = body["title"]
+    if "price" in body:       offer.price = float(body["price"])
+    if "conditions" in body:  offer.conditions = json.dumps(body["conditions"], ensure_ascii=False)
+    if "extra_info" in body:  offer.extra_info = body["extra_info"]
+    db.commit()
+    return {"ok": True}
+
+@app.put("/api/pilot/offers/{offer_id}/activate")
+async def pilot_offer_activate(offer_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    offers = db.exec(select(PilotOffer)).all()
+    for o in offers:
+        o.is_active = (o.id == offer_id)
+    db.commit()
+    return {"ok": True}
+
+@app.delete("/api/pilot/offers/{offer_id}")
+async def pilot_offer_delete(offer_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+    offer = db.get(PilotOffer, offer_id)
+    if not offer:
+        raise HTTPException(404)
+    db.delete(offer)
+    db.commit()
+    return {"ok": True}
+
+# ── Pilot: aanvragen ──────────────────────────────────────────────────────────
 
 @app.post("/api/pilot/apply")
 async def pilot_apply(body: dict, db: Session = Depends(get_session)):
+    name  = (body.get("name")  or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    if not name or not email:
+        raise HTTPException(400, "Naam en e-mailadres zijn verplicht")
+
+    # Koppel aan actieve pilot-aanbieding
+    active = db.exec(select(PilotOffer).where(PilotOffer.is_active == True)).first()
+
     app_obj = PilotApplication(
-        name=body.get("name", ""),
+        pilot_offer_id=active.id if active else None,
+        name=name,
         company=body.get("company", ""),
-        email=body.get("email", ""),
+        email=email,
         phone=body.get("phone", ""),
         location=body.get("location", ""),
         message=body.get("message", ""),
@@ -3182,6 +3273,38 @@ async def pilot_apply(body: dict, db: Session = Depends(get_session)):
     db.add(app_obj)
     db.commit()
     db.refresh(app_obj)
+
+    # Notificatie-e-mail
+    rows = (
+        _email_info_row("Naam", name)
+        + _email_info_row("E-mail", email)
+        + (_email_info_row("Bedrijf", body["company"]) if body.get("company") else "")
+        + (_email_info_row("Telefoon", body["phone"])  if body.get("phone")   else "")
+        + (_email_info_row("Locatie",  body["location"]) if body.get("location") else "")
+        + (_email_info_row("Pilot aanbieding", active.title if active else "—"))
+    )
+    email_body = (
+        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+        f"letter-spacing:-0.5px;'>Nieuwe pilot-aanvraag #{app_obj.id}</h2>"
+        f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Via mixmate.nl</p>"
+        f"<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;"
+        f"margin-bottom:20px;'>{rows}</table>"
+        + (
+            f"<div style='background:#f5f5f7;border-radius:14px;padding:18px;margin-bottom:20px;'>"
+            f"<p style='margin:0 0 8px;font-size:11px;font-weight:700;color:#6e6e73;"
+            f"text-transform:uppercase;letter-spacing:1px;'>Bericht</p>"
+            f"<p style='margin:0;font-size:14px;color:#1d1d1f;line-height:1.6;"
+            f"white-space:pre-wrap;'>{body['message']}</p></div>"
+            if body.get("message") else ""
+        )
+        + _email_button("https://portaal.mixmate.nl/admin?t=pilot", "Bekijk aanvraag →")
+    )
+    try:
+        await _resend("info@mixmate.nl", f"Nieuwe pilot-aanvraag #{app_obj.id}",
+                      _email_html(email_body), reply_to=email)
+    except Exception as exc:
+        print(f"[PILOT MAIL ERR] {exc}", flush=True)
+
     return {"ok": True, "id": app_obj.id}
 
 @app.get("/api/pilot/applications")
@@ -3192,6 +3315,7 @@ async def pilot_list(admin_id: int = Depends(verify_hr_admin), db: Session = Dep
             "id": a.id, "name": a.name, "company": a.company, "email": a.email,
             "phone": a.phone, "location": a.location, "message": a.message,
             "status": a.status, "notes": a.notes,
+            "pilot_offer_id": a.pilot_offer_id,
             "applied_at": a.applied_at.isoformat() if a.applied_at else "",
         }
         for a in apps
@@ -3202,10 +3326,8 @@ async def pilot_update(app_id: int, body: dict, admin_id: int = Depends(verify_h
     a = db.get(PilotApplication, app_id)
     if not a:
         raise HTTPException(404)
-    if "status" in body:
-        a.status = body["status"]
-    if "notes" in body:
-        a.notes = body["notes"]
+    if "status" in body: a.status = body["status"]
+    if "notes"  in body: a.notes  = body["notes"]
     db.commit()
     return {"ok": True}
 
