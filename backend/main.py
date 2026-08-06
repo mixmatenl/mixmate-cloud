@@ -348,6 +348,7 @@ def create_tables():
         "ALTER TABLE festivalticket ADD COLUMN release_date VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE employeetask ADD COLUMN form_fields TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE employeetask ADD COLUMN form_response TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE pilotapplication ADD COLUMN pilot_offer_id INTEGER REFERENCES pilotoffer(id)",
     ]
     for sql in migrations:
         try:
