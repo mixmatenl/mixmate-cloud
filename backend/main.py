@@ -1080,7 +1080,7 @@ async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_u
 
 @app.post("/api/admin/machines/{machine_id}/trigger-update")
 async def admin_trigger_update(machine_id: str, _: int = Depends(verify_admin_user)):
-    await _admin_conn(machine_id).send({"type": "trigger_update"})
+    await _admin_conn(machine_id).request({"type": "trigger_update"}, timeout=15)
     return {"ok": True}
 
 @app.post("/api/admin/machines/{machine_id}/set-bartender-pin")
