@@ -2017,11 +2017,6 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
 
       <Group label="Inlogcodes">
         <div style={{ padding: '14px 16px' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 4 }}>Backoffice PIN</div>
-          <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 700, color: '#1d1d1f', letterSpacing: 4, marginBottom: 2 }}>0502</div>
-          <div style={{ fontSize: 12, color: '#aeaeb2' }}>Vaste code — niet wijzigbaar.</div>
-        </div>
-        <div style={{ padding: '14px 16px', borderTop: '1px solid #f2f2f7' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 8 }}>
             Bartender PIN {currentPin && <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1d1d1f', fontSize: 13, letterSpacing: 3, marginLeft: 8 }}>{currentPin}</span>}
           </div>
