@@ -146,12 +146,67 @@ function Toggle({ checked, onChange, disabled }) {
   )
 }
 
+function VerificatieGate({ machine: m, onVerified }) {
+  const [busyM, setBusyM] = useState(false)
+  const [busyE, setBusyE] = useState(false)
+  const [msg,   setMsg]   = useState(null)
+
+  async function stuurNaarMachine() {
+    setBusyM(true); setMsg(null)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${m.machine_id}/send-contact-verification`)
+      setMsg({ ok: true, text: 'Melding verstuurd naar het scherm van de machine.' })
+      onVerified()
+    } catch (e) { setMsg({ ok: false, text: e.message || 'Versturen mislukt.' }) }
+    setBusyM(false)
+  }
+
+  async function stuurNaarMail() {
+    setBusyE(true); setMsg(null)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${m.machine_id}/send-contact-email`)
+      setMsg({ ok: true, text: 'E-mail verstuurd naar de klant.' })
+      onVerified()
+    } catch (e) { setMsg({ ok: false, text: e.message || 'Versturen mislukt.' }) }
+    setBusyE(false)
+  }
+
+  return (
+    <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 14, padding: '20px 18px', marginBottom: 16 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Verificatie vereist</div>
+      <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.6, marginBottom: 16 }}>
+        Voordat u de controls kunt gebruiken, moet er een verificatie worden verstuurd naar de klant.
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {m.online && (
+          <button
+            disabled={busyM || busyE}
+            onClick={stuurNaarMachine}
+            style={{ ...s.btn, fontSize: 13, padding: '10px 18px', opacity: busyM ? 0.5 : 1 }}
+          >
+            {busyM ? 'Versturen…' : '📲 Verstuur naar machine'}
+          </button>
+        )}
+        <button
+          disabled={busyM || busyE}
+          onClick={stuurNaarMail}
+          style={{ ...s.btnSm, fontSize: 13, padding: '10px 18px', opacity: busyE ? 0.5 : 1 }}
+        >
+          {busyE ? 'Versturen…' : '✉ Verstuur per mail'}
+        </button>
+      </div>
+      {msg && (
+        <div style={{ marginTop: 12, fontSize: 13, color: msg.ok ? '#1c7a37' : '#c0392b', fontWeight: 500 }}>
+          {msg.text}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AdminMachineCard({ machine: m }) {
   const [expanded,   setExpanded]   = useState(false)
-  const [verified,   setVerified]   = useState(false)  // melding verstuurd → controls vrijgegeven
-  const [notifSent,  setNotifSent]  = useState(false)
-  const [notifBusy,  setNotifBusy]  = useState(false)
-  const [notifMsg,   setNotifMsg]   = useState(null)
+  const [verified, setVerified] = useState(false)
   const [busy, setBusy] = useState({})
   const [msg, setMsg] = useState(null)
   const [pinModal, setPinModal] = useState(null) // 'bartender' | 'admin' | 'remove-bartender'
@@ -239,44 +294,7 @@ function AdminMachineCard({ machine: m }) {
         <div style={{ borderTop: '1px solid #f2f2f7', padding: '16px' }}>
 
           {/* Verificatielaag */}
-          {!verified && (
-            <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 14, padding: '20px 18px', marginBottom: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Verificatie vereist</div>
-              <div style={{ fontSize: 14, color: '#3a3a3c', lineHeight: 1.6, marginBottom: 20 }}>
-                Heeft u op dit moment contact met de klant van deze machine?
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  disabled={notifBusy}
-                  onClick={() => setVerified(true)}
-                  style={{ ...s.btn, background: '#34c759', fontSize: 14, padding: '11px 28px', opacity: notifBusy ? 0.5 : 1 }}
-                >
-                  ✓ Ja
-                </button>
-                <button
-                  disabled={notifBusy}
-                  onClick={async () => {
-                    setNotifBusy(true); setNotifMsg(null)
-                    try {
-                      await api.adminRaw('POST', `/api/admin/machines/${m.machine_id}/report-unauthorized-access`)
-                      setNotifMsg({ ok: false, text: 'Melding verstuurd. U kunt geen wijzigingen doorvoeren zonder toestemming van de klant.' })
-                    } catch (e) {
-                      setNotifMsg({ ok: false, text: e.message || 'Versturen mislukt.' })
-                    }
-                    setNotifBusy(false)
-                  }}
-                  style={{ ...s.btnSm, background: '#fff1f0', color: '#ff3b30', fontSize: 14, padding: '11px 28px', opacity: notifBusy ? 0.5 : 1 }}
-                >
-                  ✗ Nee
-                </button>
-              </div>
-              {notifMsg && (
-                <div style={{ marginTop: 14, fontSize: 13, color: notifMsg.ok ? '#1c7a37' : '#c0392b', fontWeight: 500, lineHeight: 1.5 }}>
-                  {notifMsg.text}
-                </div>
-              )}
-            </div>
-          )}
+          {!verified && <VerificatieGate machine={m} onVerified={() => setVerified(true)} />}
 
           {/* Controls — alleen zichtbaar na bevestiging */}
           {verified && <>

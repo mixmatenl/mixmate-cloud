@@ -1147,6 +1147,81 @@ async def admin_unpair_machine(machine_id: str, _: int = Depends(verify_admin_us
 
 # ── Admin verificatie e-mail ──────────────────────────────────────────────────
 
+@app.get("/api/machines/{machine_id}/customer-verify")
+async def customer_verify_response(machine_id: str, token: str, response: str, db: Session = Depends(get_session)):
+    """Klant klikt JA of NEE in de verificatie-e-mail."""
+    from fastapi.responses import HTMLResponse
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        if payload.get("purpose") != "customer_verify" or payload.get("machine_id") != machine_id:
+            raise ValueError("ongeldig token")
+    except Exception:
+        return HTMLResponse("<h2>Link verlopen of ongeldig.</h2>", status_code=400)
+
+    machine  = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    customer = db.exec(select(Customer).where(Customer.id == machine.customer_id)).first() if machine else None
+    name     = machine.name or machine_id
+
+    if response.lower() == "ja":
+        # Bevestig aan de beheerder
+        await _resend(
+            to=["r.muller@mixmate.nl", "h.louwrink@mixmate.nl"],
+            subject=f"✅ Klant akkoord — {name}",
+            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft <strong>akkoord gegeven</strong> voor het beheer van de machine.</p>"),
+        )
+        html = "<h2 style='font-family:sans-serif;color:#34c759'>✅ Bedankt! MIXMATE kan nu aan de slag.</h2><p style='font-family:sans-serif'>U kunt dit venster sluiten.</p>"
+    else:
+        # Klant geeft geen toestemming
+        await _resend(
+            to=["r.muller@mixmate.nl", "h.louwrink@mixmate.nl"],
+            subject=f"❌ Klant niet akkoord — {name}",
+            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft <strong>geen toestemming gegeven</strong> voor beheer van de machine.</p><p>Neem eerst contact op met de klant voordat u wijzigingen doorvoert.</p>"),
+        )
+        html = "<h2 style='font-family:sans-serif;color:#ff3b30'>❌ Bericht ontvangen.</h2><p style='font-family:sans-serif'>MIXMATE is op de hoogte gesteld. U kunt dit venster sluiten.</p>"
+
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'></head><body style='margin:0;padding:40px 24px;background:#f9f9fb;'>{html}</body></html>""")
+
+
+@app.post("/api/admin/machines/{machine_id}/send-contact-email")
+async def admin_send_contact_email(
+    machine_id: str,
+    _: int = Depends(verify_admin_user),
+    db: Session = Depends(get_session),
+):
+    """Stuurt verificatie-e-mail naar de klant met JA/NEE knoppen."""
+    machine  = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    customer = db.exec(select(Customer).where(Customer.id == machine.customer_id)).first()
+    if not customer or not customer.email:
+        raise HTTPException(status_code=404, detail="Klantgegevens niet gevonden")
+
+    token = jwt.encode(
+        {"purpose": "customer_verify", "machine_id": machine_id, "exp": datetime.utcnow() + timedelta(hours=24)},
+        JWT_SECRET, algorithm="HS256",
+    )
+    ja_url  = f"{PORTAL_URL}/api/machines/{machine_id}/customer-verify?token={token}&response=ja"
+    nee_url = f"{PORTAL_URL}/api/machines/{machine_id}/customer-verify?token={token}&response=nee"
+    name    = machine.name or "uw MIXMATE machine"
+
+    body = f"""
+    <p>Beste {customer.name or 'klant'},</p>
+    <p>Een MIXMATE-medewerker wil instellingen wijzigen op <strong>{name}</strong>.<br>
+    Gaat u hiermee akkoord?</p>
+    <div style="margin:28px 0;display:flex;gap:12px;">
+      <a href="{ja_url}" style="background:#34c759;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-weight:700;font-size:15px;font-family:sans-serif;">✓ Ja, akkoord</a>
+      <a href="{nee_url}" style="background:#ff3b30;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-weight:700;font-size:15px;font-family:sans-serif;">✗ Nee, niet akkoord</a>
+    </div>
+    <p style="color:#6e6e73;font-size:13px">Deze link is 24 uur geldig.<br>Heeft u vragen? Mail naar <a href="mailto:info@mixmate.nl">info@mixmate.nl</a>.</p>
+    """
+    await _resend(
+        to=customer.email,
+        subject=f"MIXMATE vraagt toestemming — {name}",
+        html=_email_html(body),
+    )
+    return {"ok": True, "to": customer.email}
+
+
 @app.post("/api/admin/machines/{machine_id}/report-unauthorized-access")
 async def admin_report_unauthorized_access(
     machine_id: str,
