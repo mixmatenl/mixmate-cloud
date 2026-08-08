@@ -605,6 +605,16 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
 
+            elif msg_type == "request_maintenance_token":
+                token = create_maintenance_token(machine_id)
+                url   = f"{PORTAL_URL}/onderhoud/{token}"
+                await websocket.send_json({
+                    "type":          "maintenance_token",
+                    "token":         token,
+                    "url":           url,
+                    "expires_hours": 8,
+                })
+
             elif msg_type and msg_type.startswith("pour_"):
                 if conn.pour_queue:
                     await conn.pour_queue.put(data)
