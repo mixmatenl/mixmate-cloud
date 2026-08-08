@@ -1844,6 +1844,54 @@ def machine_self_unpair(machine_id: str, db: Session = Depends(get_session)):
     db.commit()
     return {"ok": True}
 
+
+@app.post("/api/machines/{machine_id}/factory-reset")
+def machine_factory_reset(machine_id: str, db: Session = Depends(get_session)):
+    """
+    Volledige fabrieksreset vanuit de machine zelf.
+    - Ontkoppelt van klant
+    - Verwijdert alle leden-koppelingen
+    - Verwijdert flush-logs, recipe-locks, flush-schedule
+    - Genereert nieuwe koppelcode
+    Machine blijft geregistreerd (hardware verandert niet).
+    """
+    import secrets, string
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+
+    # Ontkoppel van klant
+    machine.paired      = False
+    machine.customer_id = None
+    machine.name        = "Mijn Machine"
+    # Nieuwe koppelcode genereren
+    machine.pair_code         = "".join(secrets.choice(string.digits) for _ in range(6))
+    machine.pair_code_expires = datetime.utcnow().replace(year=datetime.utcnow().year + 10)
+    db.add(machine)
+
+    # Verwijder alle leden-koppelingen
+    members = db.exec(select(MachineMember).where(MachineMember.machine_id == machine_id)).all()
+    for m in members:
+        db.delete(m)
+
+    # Verwijder flush-logs
+    flush_logs = db.exec(select(FlushLog).where(FlushLog.machine_id == machine_id)).all()
+    for fl in flush_logs:
+        db.delete(fl)
+
+    # Verwijder recipe-locks
+    locks = db.exec(select(RecipeLock).where(RecipeLock.machine_id == machine_id)).all()
+    for l in locks:
+        db.delete(l)
+
+    # Verwijder flush-schedule
+    schedule = db.exec(select(FlushSchedule).where(FlushSchedule.machine_id == machine_id)).first()
+    if schedule:
+        db.delete(schedule)
+
+    db.commit()
+    return {"ok": True, "new_pair_code": machine.pair_code}
+
 # ── Doorstuur-API (portaal → machine) ────────────────────────────────────────
 
 def _check_machine_access(machine_id: str, customer_id: int, db: Session, owner_only: bool = False) -> Machine:
