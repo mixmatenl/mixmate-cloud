@@ -1147,10 +1147,58 @@ async def admin_unpair_machine(machine_id: str, _: int = Depends(verify_admin_us
 
 # ── Admin verificatie e-mail ──────────────────────────────────────────────────
 
+# In-memory verificatiestatus per machine: {machine_id: {status, ts}}
+_verification_state: dict[str, dict] = {}
+
+
+@app.get("/api/admin/machines/{machine_id}/verification-status")
+async def admin_verification_status(machine_id: str, _: int = Depends(verify_admin_user)):
+    """Admin pollt dit endpoint totdat de klant reageert."""
+    state = _verification_state.get(machine_id)
+    if not state:
+        return {"status": "none"}
+    import time
+    if time.time() - state["ts"] > 3600:
+        _verification_state.pop(machine_id, None)
+        return {"status": "expired"}
+    return {"status": state["status"]}
+
+
+@app.post("/api/machines/{machine_id}/customer-verify-machine")
+async def customer_verify_machine(machine_id: str, body: dict):
+    """Pompmodule stuurt klantrespons (JA/NEE van het scherm) naar de cloud."""
+    import time
+    response = body.get("response", "").lower()
+    state    = _verification_state.get(machine_id, {})
+    if state.get("status") != "pending":
+        return {"ok": False, "detail": "Geen actieve verificatie"}
+
+    db = next(get_session())
+    machine  = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    name     = machine.name if machine else machine_id
+
+    if response == "ja":
+        _verification_state[machine_id] = {"status": "approved", "ts": time.time()}
+        await _resend(
+            to=["r.muller@mixmate.nl", "h.louwrink@mixmate.nl"],
+            subject=f"✅ Klant akkoord (machine) — {name}",
+            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft via het machinescherm <strong>akkoord gegeven</strong>.</p>"),
+        )
+    else:
+        _verification_state[machine_id] = {"status": "denied", "ts": time.time()}
+        await _resend(
+            to=["r.muller@mixmate.nl", "h.louwrink@mixmate.nl"],
+            subject=f"❌ Klant niet akkoord (machine) — {name}",
+            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft via het machinescherm <strong>geen toestemming gegeven</strong>.</p>"),
+        )
+    return {"ok": True}
+
+
 @app.get("/api/machines/{machine_id}/customer-verify")
 async def customer_verify_response(machine_id: str, token: str, response: str, db: Session = Depends(get_session)):
     """Klant klikt JA of NEE in de verificatie-e-mail."""
     from fastapi.responses import HTMLResponse
+    import time
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         if payload.get("purpose") != "customer_verify" or payload.get("machine_id") != machine_id:
@@ -1163,19 +1211,19 @@ async def customer_verify_response(machine_id: str, token: str, response: str, d
     name     = machine.name or machine_id
 
     if response.lower() == "ja":
-        # Bevestig aan de beheerder
+        _verification_state[machine_id] = {"status": "approved", "ts": time.time()}
         await _resend(
             to=["r.muller@mixmate.nl", "h.louwrink@mixmate.nl"],
-            subject=f"✅ Klant akkoord — {name}",
-            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft <strong>akkoord gegeven</strong> voor het beheer van de machine.</p>"),
+            subject=f"✅ Klant akkoord (mail) — {name}",
+            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft via e-mail <strong>akkoord gegeven</strong> voor het beheer van de machine.</p>"),
         )
         html = "<h2 style='font-family:sans-serif;color:#34c759'>✅ Bedankt! MIXMATE kan nu aan de slag.</h2><p style='font-family:sans-serif'>U kunt dit venster sluiten.</p>"
     else:
-        # Klant geeft geen toestemming
+        _verification_state[machine_id] = {"status": "denied", "ts": time.time()}
         await _resend(
             to=["r.muller@mixmate.nl", "h.louwrink@mixmate.nl"],
-            subject=f"❌ Klant niet akkoord — {name}",
-            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft <strong>geen toestemming gegeven</strong> voor beheer van de machine.</p><p>Neem eerst contact op met de klant voordat u wijzigingen doorvoert.</p>"),
+            subject=f"❌ Klant niet akkoord (mail) — {name}",
+            html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft via e-mail <strong>geen toestemming gegeven</strong> voor beheer van de machine.</p>"),
         )
         html = "<h2 style='font-family:sans-serif;color:#ff3b30'>❌ Bericht ontvangen.</h2><p style='font-family:sans-serif'>MIXMATE is op de hoogte gesteld. U kunt dit venster sluiten.</p>"
 
@@ -1196,6 +1244,8 @@ async def admin_send_contact_email(
     if not customer or not customer.email:
         raise HTTPException(status_code=404, detail="Klantgegevens niet gevonden")
 
+    import time as _time
+    _verification_state[machine_id] = {"status": "pending", "ts": _time.time()}
     token = jwt.encode(
         {"purpose": "customer_verify", "machine_id": machine_id, "exp": datetime.utcnow() + timedelta(hours=24)},
         JWT_SECRET, algorithm="HS256",
@@ -1276,39 +1326,42 @@ async def admin_send_contact_verification(
     customer = db.exec(select(Customer).where(Customer.id == machine.customer_id)).first()
     machine_name = machine.name or "uw MIXMATE machine"
 
+    import time as _time
+    _verification_state[machine_id] = {"status": "pending", "ts": _time.time()}
+
     conn = connected_machines.get(machine_id)
     if conn:
-        # Machine is online: stuur melding direct naar het scherm
         try:
             await conn.send({
                 "type": "admin_contact_notification",
-                "message": "Een MIXMATE-medewerker neemt binnenkort contact met u op.",
-                "admin": "MIXMATE",
+                "message": "Een MIXMATE-medewerker wil instellingen wijzigen. Gaat u akkoord?",
+                "machine_id": machine_id,
             })
             return {"ok": True, "channel": "websocket"}
         except Exception:
-            pass  # fallback naar e-mail
+            pass
 
-    # Machine offline of WS mislukt: stuur e-mail
     if not customer or not customer.email:
         raise HTTPException(status_code=404, detail="Klantgegevens niet gevonden")
+    # Fallback: stuur verificatie-mail met JA/NEE
+    token = jwt.encode(
+        {"purpose": "customer_verify", "machine_id": machine_id, "exp": datetime.utcnow() + timedelta(hours=24)},
+        JWT_SECRET, algorithm="HS256",
+    )
+    ja_url  = f"{PORTAL_URL}/api/machines/{machine_id}/customer-verify?token={token}&response=ja"
+    nee_url = f"{PORTAL_URL}/api/machines/{machine_id}/customer-verify?token={token}&response=nee"
     body = f"""
     <p>Beste {customer.name or 'klant'},</p>
-    <p>
-      Een MIXMATE-medewerker neemt binnenkort contact met u op met betrekking tot
-      <strong>{machine_name}</strong>.
-    </p>
-    <p>
-      Heeft u vragen of wilt u ons bereiken? Stuur dan een e-mail naar
-      <a href="mailto:info@mixmate.nl" style="color:#007aff;text-decoration:none">info@mixmate.nl</a>.
-    </p>
-    <p style="margin-top:24px;color:#6e6e73;font-size:13px;">
-      Met vriendelijke groet,<br/>Het MIXMATE-team
-    </p>
+    <p>Een MIXMATE-medewerker wil instellingen wijzigen op <strong>{machine_name}</strong>.<br>Gaat u hiermee akkoord?</p>
+    <div style="margin:28px 0;display:flex;gap:12px;">
+      <a href="{ja_url}" style="background:#34c759;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-weight:700;font-size:15px;font-family:sans-serif;">✓ Ja, akkoord</a>
+      <a href="{nee_url}" style="background:#ff3b30;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-weight:700;font-size:15px;font-family:sans-serif;">✗ Nee, niet akkoord</a>
+    </div>
+    <p style="color:#6e6e73;font-size:13px">Link geldig 24 uur.</p>
     """
     await _resend(
         to=customer.email,
-        subject=f"MIXMATE neemt contact met u op — {machine_name}",
+        subject=f"MIXMATE vraagt toestemming — {machine_name}",
         html=_email_html(body),
     )
     return {"ok": True, "channel": "email", "to": customer.email}

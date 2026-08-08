@@ -1,3 +1,13 @@
+## [1.9.6] - 2026-08-08
+### Toegevoegd
+- _verification_state per machine: pending/approved/denied
+- GET /api/admin/machines/{id}/verification-status (admin pollt)
+- POST /api/machines/{id}/customer-verify-machine (Pompmodule stuurt klantrespons)
+- send-contact-verification zet status pending + stuurt JA/NEE mail als fallback
+- send-contact-email zet status pending
+- customer-verify endpoint update _verification_state
+- Admin gate pollt elke 3s, geeft controls vrij bij approved
+
 ## [1.9.4] - 2026-08-08
 ### Gewijzigd
 - Verificatielaag: JA/NEE vraag "Heeft u contact met de klant?"
