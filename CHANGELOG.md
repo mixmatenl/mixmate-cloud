@@ -1,3 +1,10 @@
+## [1.9.2] - 2026-08-08
+### Gewijzigd
+- Admin verificatielaag verwijderd — controls direct zichtbaar
+- Knop "Stuur melding naar machine" stuurt notificatie via WebSocket als machine online is
+- Fallback naar e-mail als machine offline is
+- send-contact-verification endpoint stuurt nu admin_contact_notification via WS
+
 ## [1.9.1] - 2026-07-28
 ### Nieuw
 - Instellingen → Inlogcodes: backoffice PIN getoond (vast 0502), bartender PIN instelbaar

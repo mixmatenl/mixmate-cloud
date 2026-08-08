@@ -1153,15 +1153,32 @@ async def admin_send_contact_verification(
     _: int = Depends(verify_admin_user),
     db: Session = Depends(get_session),
 ):
-    """Stuurt een e-mail naar de klant dat een MIXMATE-medewerker contact opneemt."""
+    """
+    Stuurt een contactmelding naar de machine (via WebSocket als online),
+    anders per e-mail naar de klant.
+    """
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404, detail="Machine niet gevonden")
     customer = db.exec(select(Customer).where(Customer.id == machine.customer_id)).first()
+    machine_name = machine.name or "uw MIXMATE machine"
+
+    conn = connected_machines.get(machine_id)
+    if conn:
+        # Machine is online: stuur melding direct naar het scherm
+        try:
+            await conn.send({
+                "type": "admin_contact_notification",
+                "message": "Een MIXMATE-medewerker neemt binnenkort contact met u op.",
+                "admin": "MIXMATE",
+            })
+            return {"ok": True, "channel": "websocket"}
+        except Exception:
+            pass  # fallback naar e-mail
+
+    # Machine offline of WS mislukt: stuur e-mail
     if not customer or not customer.email:
         raise HTTPException(status_code=404, detail="Klantgegevens niet gevonden")
-
-    machine_name = machine.name or "uw MIXMATE machine"
     body = f"""
     <p>Beste {customer.name or 'klant'},</p>
     <p>
@@ -1181,7 +1198,7 @@ async def admin_send_contact_verification(
         subject=f"MIXMATE neemt contact met u op — {machine_name}",
         html=_email_html(body),
     )
-    return {"ok": True, "to": customer.email}
+    return {"ok": True, "channel": "email", "to": customer.email}
 
 # ── Onderhoud tokens ─────────────────────────────────────────────────────────
 
