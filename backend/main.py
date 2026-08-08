@@ -800,10 +800,10 @@ def _email_info_row(label: str, value: str, last: bool = False) -> str:
         f"</tr>"
     )
 
-async def _resend(to: str, subject: str, html: str, reply_to: str = "") -> None:
+async def _resend(to: str | list, subject: str, html: str, reply_to: str = "") -> None:
     if not RESEND_API_KEY:
         return
-    payload: dict = {"from": FROM_EMAIL, "to": [to], "subject": subject, "html": html}
+    payload: dict = {"from": FROM_EMAIL, "to": to if isinstance(to, list) else [to], "subject": subject, "html": html}
     if reply_to:
         payload["reply_to"] = reply_to
     try:
@@ -1146,6 +1146,44 @@ async def admin_unpair_machine(machine_id: str, _: int = Depends(verify_admin_us
     return {"ok": True}
 
 # ── Admin verificatie e-mail ──────────────────────────────────────────────────
+
+@app.post("/api/admin/machines/{machine_id}/report-unauthorized-access")
+async def admin_report_unauthorized_access(
+    machine_id: str,
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_session),
+):
+    """Stuurt een waarschuwingsmail naar MIXMATE-beheerders als iemand zonder klantcontact wijzigingen probeert door te voeren."""
+    admin_id = verify_admin_user(credentials)
+    admin = db.get(Customer, admin_id)
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    customer = db.exec(select(Customer).where(Customer.id == machine.customer_id)).first() if machine else None
+
+    admin_name  = admin.name or admin.email if admin else "Onbekend"
+    machine_str = f"{machine.name} ({machine_id})" if machine else machine_id
+    klant_str   = f"{customer.name} <{customer.email}>" if customer else "onbekend"
+
+    body = f"""
+    <p>⚠️ <strong>Waarschuwing: ongeautoriseerde toegangspoging</strong></p>
+    <p>Een beheerder heeft geprobeerd instellingen te wijzigen van een machine <strong>zonder dat de klant hierom heeft gevraagd</strong>.</p>
+    <table style="border-collapse:collapse;font-size:14px;margin-top:12px">
+      <tr><td style="padding:4px 12px 4px 0;color:#6e6e73">Beheerder</td><td><strong>{admin_name}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#6e6e73">Machine</td><td><strong>{machine_str}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#6e6e73">Klant</td><td><strong>{klant_str}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#6e6e73">Tijdstip</td><td><strong>{datetime.utcnow().strftime('%d-%m-%Y %H:%M UTC')}</strong></td></tr>
+    </table>
+    <p style="margin-top:16px;color:#6e6e73;font-size:13px">
+      Controleer of dit een vergissing was of neem contact op met de betreffende beheerder.
+    </p>
+    """
+    await _resend(
+        to=["r.muller@mixmate.nl", "h.louwrink@mixmate.nl"],
+        subject=f"⚠️ Ongeautoriseerde toegangspoging — {machine_str}",
+        html=_email_html(body),
+    )
+    return {"ok": True}
+
 
 @app.post("/api/admin/machines/{machine_id}/send-contact-verification")
 async def admin_send_contact_verification(

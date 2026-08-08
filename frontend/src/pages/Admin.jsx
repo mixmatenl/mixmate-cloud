@@ -238,50 +238,47 @@ function AdminMachineCard({ machine: m }) {
       {expanded && (
         <div style={{ borderTop: '1px solid #f2f2f7', padding: '16px' }}>
 
-          {/* Verificatielaag: stuur eerst melding naar klant */}
+          {/* Verificatielaag */}
           {!verified && (
             <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 14, padding: '20px 18px', marginBottom: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Melding vereist</div>
-              <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.6, marginBottom: 16 }}>
-                Stuur eerst een melding naar de klant voordat u wijzigingen doorvoert.
-                {m.online ? ' De melding verschijnt op het scherm van de machine.' : ' De machine is offline — de melding wordt per e-mail verstuurd.'}
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Verificatie vereist</div>
+              <div style={{ fontSize: 14, color: '#3a3a3c', lineHeight: 1.6, marginBottom: 20 }}>
+                Heeft u op dit moment contact met de klant van deze machine?
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 10 }}>
                 <button
-                  disabled={notifBusy || notifSent}
+                  disabled={notifBusy}
+                  onClick={() => setVerified(true)}
+                  style={{ ...s.btn, background: '#34c759', fontSize: 14, padding: '11px 28px', opacity: notifBusy ? 0.5 : 1 }}
+                >
+                  ✓ Ja
+                </button>
+                <button
+                  disabled={notifBusy}
                   onClick={async () => {
                     setNotifBusy(true); setNotifMsg(null)
                     try {
-                      await api.adminRaw('POST', `/api/admin/machines/${m.machine_id}/send-contact-verification`)
-                      setNotifSent(true)
-                      setNotifMsg({ ok: true, text: m.online ? 'Melding verstuurd naar machine.' : 'E-mail verstuurd naar klant.' })
+                      await api.adminRaw('POST', `/api/admin/machines/${m.machine_id}/report-unauthorized-access`)
+                      setNotifMsg({ ok: false, text: 'Melding verstuurd. U kunt geen wijzigingen doorvoeren zonder toestemming van de klant.' })
                     } catch (e) {
                       setNotifMsg({ ok: false, text: e.message || 'Versturen mislukt.' })
                     }
                     setNotifBusy(false)
                   }}
-                  style={{ ...s.btn, fontSize: 13, padding: '9px 18px', opacity: notifBusy ? 0.5 : 1, cursor: notifBusy ? 'default' : 'pointer' }}
+                  style={{ ...s.btnSm, background: '#fff1f0', color: '#ff3b30', fontSize: 14, padding: '11px 28px', opacity: notifBusy ? 0.5 : 1 }}
                 >
-                  {notifBusy ? 'Versturen…' : notifSent ? '✓ Opnieuw sturen' : m.online ? '📲 Stuur melding naar machine' : '✉ Stuur e-mail naar klant'}
+                  ✗ Nee
                 </button>
-                {notifSent && (
-                  <button
-                    onClick={() => setVerified(true)}
-                    style={{ ...s.btnSm, fontSize: 13, background: '#f0faf3', color: '#1c7a37' }}
-                  >
-                    ✓ Doorgaan naar beheer
-                  </button>
-                )}
               </div>
               {notifMsg && (
-                <div style={{ marginTop: 10, fontSize: 13, color: notifMsg.ok ? '#1c7a37' : '#c0392b', fontWeight: 500 }}>
+                <div style={{ marginTop: 14, fontSize: 13, color: notifMsg.ok ? '#1c7a37' : '#c0392b', fontWeight: 500, lineHeight: 1.5 }}>
                   {notifMsg.text}
                 </div>
               )}
             </div>
           )}
 
-          {/* Controls — alleen zichtbaar na verstuurde melding */}
+          {/* Controls — alleen zichtbaar na bevestiging */}
           {verified && <>
           {msg && <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: msg.ok ? '#f0faf3' : '#fff1f0', color: msg.ok ? '#1c7a37' : '#c0392b', fontSize: 13, fontWeight: 600 }}>{msg.text}</div>}
 

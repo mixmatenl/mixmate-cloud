@@ -1,3 +1,11 @@
+## [1.9.4] - 2026-08-08
+### Gewijzigd
+- Verificatielaag: JA/NEE vraag "Heeft u contact met de klant?"
+- NEE stuurt waarschuwingsmail naar r.muller@mixmate.nl en h.louwrink@mixmate.nl
+- JA geeft controls vrij
+- Nieuw endpoint: POST /api/admin/machines/{id}/report-unauthorized-access
+- _resend accepteert nu ook een lijst als `to`
+
 ## [1.9.3] - 2026-08-08
 ### Gewijzigd
 - Verificatielaag vereist nu het versturen van een melding naar de klant/machine
