@@ -15,6 +15,8 @@ import MijnBestellingen from './pages/MijnBestellingen.jsx'
 import Personeel from './pages/Personeel.jsx'
 import PersoneelAdmin from './pages/PersoneelAdmin.jsx'
 import PersoneelInvite from './pages/PersoneelInvite.jsx'
+import Onderhoud from './pages/Onderhoud.jsx'
+import OnderhoudMonteur from './pages/OnderhoudMonteur.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 import { api } from './api.js'
@@ -347,6 +349,7 @@ export default function App() {
   if (!token) {
     return (
       <Routes>
+        <Route path="/onderhoud/:token" element={<OnderhoudMonteur />} />
         <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={onLogin} />} />
         <Route path="*" element={<Login onLogin={onLogin} />} />
       </Routes>
@@ -379,7 +382,9 @@ export default function App() {
         <Route path="/meldingen" element={<Meldingen />} />
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
-        <Route path="/admin"     element={<Admin />} />
+        <Route path="/admin"        element={<Admin />} />
+        <Route path="/onderhoud"    element={<Onderhoud />} />
+        <Route path="/onderhoud/:token" element={<OnderhoudMonteur />} />
         <Route path="/webshop"   element={<Webshop />} />
         <Route path="/apps"      element={<Apps />} />
         <Route path="/bestellen" element={<Bestellen user={user} />} />

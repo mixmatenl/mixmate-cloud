@@ -1135,6 +1135,79 @@ async def admin_unpair_machine(machine_id: str, _: int = Depends(verify_admin_us
             pass
     return {"ok": True}
 
+# ── Onderhoud tokens ─────────────────────────────────────────────────────────
+
+def create_maintenance_token(machine_id: str) -> str:
+    payload = {
+        "sub": machine_id,
+        "type": "maintenance",
+        "exp": datetime.utcnow() + timedelta(hours=8),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+def verify_maintenance_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        if payload.get("type") != "maintenance":
+            raise ValueError("Ongeldig tokentype")
+        return payload["sub"]
+    except Exception:
+        raise HTTPException(status_code=401, detail="Ongeldige of verlopen onderhoudssessie")
+
+@app.post("/api/admin/machines/{machine_id}/maintenance-token")
+async def admin_create_maintenance_token(
+    machine_id: str,
+    _: int = Depends(verify_admin_user),
+    db: Session = Depends(get_session),
+):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    token = create_maintenance_token(machine_id)
+    url = f"{PORTAL_URL}/onderhoud/{token}"
+    return {
+        "token": token,
+        "url": url,
+        "expires_hours": 8,
+        "machine_name": machine.name or machine_id,
+    }
+
+@app.get("/api/maintenance/{token}/status")
+async def maintenance_status(token: str, db: Session = Depends(get_session)):
+    machine_id = verify_maintenance_token(token)
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    customer = db.get(Customer, machine.customer_id) if machine.customer_id else None
+    return {
+        "machine_id": machine_id,
+        "machine_name": machine.name or machine_id,
+        "online": machine_id in connected_machines,
+        "customer_name": customer.name if customer else None,
+    }
+
+@app.post("/api/maintenance/{token}/proxy")
+async def maintenance_proxy(token: str, body: dict):
+    machine_id = verify_maintenance_token(token)
+    conn = connected_machines.get(machine_id)
+    if not conn:
+        raise HTTPException(status_code=503, detail="Machine is offline")
+    method = body.get("method", "GET")
+    path   = body.get("path", "/")
+    data   = body.get("body")
+    result = await conn.request({
+        "type":   "http_proxy",
+        "method": method,
+        "path":   path,
+        "body":   data,
+    }, timeout=20)
+    status = result.get("status", 200)
+    data_out = result.get("data")
+    if status >= 400:
+        raise HTTPException(status_code=status, detail=data_out.get("detail", "Fout") if isinstance(data_out, dict) else "Fout")
+    return data_out if data_out is not None else {}
+
+
 @app.post("/api/admin/customers/{customer_id}/reset-password")
 async def admin_reset_password(customer_id: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     customer = db.get(Customer, customer_id)
