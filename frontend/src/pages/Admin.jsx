@@ -147,7 +147,11 @@ function Toggle({ checked, onChange, disabled }) {
 }
 
 function AdminMachineCard({ machine: m }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded,   setExpanded]   = useState(false)
+  const [verified,   setVerified]   = useState(false)  // verificatielaag doorlopen
+  const [mailSent,   setMailSent]   = useState(false)
+  const [mailBusy,   setMailBusy]   = useState(false)
+  const [mailMsg,    setMailMsg]    = useState(null)
   const [busy, setBusy] = useState({})
   const [msg, setMsg] = useState(null)
   const [pinModal, setPinModal] = useState(null) // 'bartender' | 'admin' | 'remove-bartender'
@@ -233,6 +237,51 @@ function AdminMachineCard({ machine: m }) {
       {/* Uitklapbaar beheer */}
       {expanded && (
         <div style={{ borderTop: '1px solid #f2f2f7', padding: '16px' }}>
+
+          {/* Verificatielaag */}
+          {!verified && (
+            <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 14, padding: '20px 18px', marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>Bevestiging vereist</div>
+              <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.6, marginBottom: 16 }}>
+                Bevestig dat u contact heeft opgenomen met de klant van deze machine voordat u wijzigingen doorvoert.
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  onClick={() => setVerified(true)}
+                  style={{ ...s.btn, fontSize: 13, padding: '9px 18px' }}
+                >
+                  ✓ Ik heb contact opgenomen
+                </button>
+                {!m.online && (
+                  <button
+                    disabled={mailBusy || mailSent}
+                    onClick={async () => {
+                      setMailBusy(true); setMailMsg(null)
+                      try {
+                        await api.adminRaw('POST', `/api/admin/machines/${m.machine_id}/send-contact-verification`)
+                        setMailSent(true)
+                        setMailMsg({ ok: true, text: 'E-mail verstuurd naar klant.' })
+                      } catch (e) {
+                        setMailMsg({ ok: false, text: e.message || 'Versturen mislukt.' })
+                      }
+                      setMailBusy(false)
+                    }}
+                    style={{ ...s.btnSm, fontSize: 13, opacity: mailBusy || mailSent ? 0.5 : 1, cursor: mailBusy || mailSent ? 'default' : 'pointer' }}
+                  >
+                    {mailBusy ? 'Versturen…' : mailSent ? '✓ Verstuurd' : '✉ Verzend per mail'}
+                  </button>
+                )}
+              </div>
+              {mailMsg && (
+                <div style={{ marginTop: 10, fontSize: 13, color: mailMsg.ok ? '#1c7a37' : '#c0392b', fontWeight: 500 }}>
+                  {mailMsg.text}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Controls — alleen zichtbaar na verificatie */}
+          {verified && <>
           {msg && <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: msg.ok ? '#f0faf3' : '#fff1f0', color: msg.ok ? '#1c7a37' : '#c0392b', fontSize: 13, fontWeight: 600 }}>{msg.text}</div>}
 
           {/* Machine acties */}
@@ -287,6 +336,7 @@ function AdminMachineCard({ machine: m }) {
               {busy['Ontkoppelen'] ? 'Ontkoppelen…' : 'Machine ontkoppelen'}
             </button>
           </div>
+          </>}
         </div>
       )}
     </div>

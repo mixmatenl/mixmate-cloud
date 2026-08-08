@@ -1145,6 +1145,44 @@ async def admin_unpair_machine(machine_id: str, _: int = Depends(verify_admin_us
             pass
     return {"ok": True}
 
+# ── Admin verificatie e-mail ──────────────────────────────────────────────────
+
+@app.post("/api/admin/machines/{machine_id}/send-contact-verification")
+async def admin_send_contact_verification(
+    machine_id: str,
+    _: int = Depends(verify_admin_user),
+    db: Session = Depends(get_session),
+):
+    """Stuurt een e-mail naar de klant dat een MIXMATE-medewerker contact opneemt."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    customer = db.exec(select(Customer).where(Customer.id == machine.customer_id)).first()
+    if not customer or not customer.email:
+        raise HTTPException(status_code=404, detail="Klantgegevens niet gevonden")
+
+    machine_name = machine.name or "uw MIXMATE machine"
+    body = f"""
+    <p>Beste {customer.name or 'klant'},</p>
+    <p>
+      Een MIXMATE-medewerker neemt binnenkort contact met u op met betrekking tot
+      <strong>{machine_name}</strong>.
+    </p>
+    <p>
+      Heeft u vragen of wilt u ons bereiken? Stuur dan een e-mail naar
+      <a href="mailto:info@mixmate.nl" style="color:#007aff;text-decoration:none">info@mixmate.nl</a>.
+    </p>
+    <p style="margin-top:24px;color:#6e6e73;font-size:13px;">
+      Met vriendelijke groet,<br/>Het MIXMATE-team
+    </p>
+    """
+    await _resend(
+        to=customer.email,
+        subject=f"MIXMATE neemt contact met u op — {machine_name}",
+        html=_email_html(body),
+    )
+    return {"ok": True, "to": customer.email}
+
 # ── Onderhoud tokens ─────────────────────────────────────────────────────────
 
 def create_maintenance_token(machine_id: str) -> str:
