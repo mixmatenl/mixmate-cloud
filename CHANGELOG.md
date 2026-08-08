@@ -1,9 +1,13 @@
+## [1.9.3] - 2026-08-08
+### Gewijzigd
+- Verificatielaag vereist nu het versturen van een melding naar de klant/machine
+- Admin moet eerst melding sturen (machine-scherm of e-mail) voordat controls vrijkomen
+
 ## [1.9.2] - 2026-08-08
 ### Gewijzigd
-- Admin verificatielaag verwijderd — controls direct zichtbaar
-- Knop "Stuur melding naar machine" stuurt notificatie via WebSocket als machine online is
+- Admin verificatielaag vervangen — melding wordt naar machine gestuurd
+- Knop stuurt notificatie via WebSocket als machine online is
 - Fallback naar e-mail als machine offline is
-- send-contact-verification endpoint stuurt nu admin_contact_notification via WS
 
 ## [1.9.1] - 2026-07-28
 ### Nieuw
