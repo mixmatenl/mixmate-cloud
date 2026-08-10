@@ -1,3 +1,16 @@
+## [2.0.6] - 2026-08-10
+### Toegevoegd
+- Machine model: installation_date, warranty_start, warranty_years, warranty_type
+- GET/PATCH /api/admin/machines/{id}/warranty — admin garantiebeheer
+- GET/POST /api/machines/{id}/warranty-public + /request-mixcare — machine-zijde endpoints
+- POST /api/machines/{id}/warranty/set-installation-date — vanuit monteurswizard
+- GET /api/account/warranty + POST /api/account/warranty/request-mixcare — klantportaal
+- Garantie-pagina (/garantie) in klantportaal met MIXCARE aanvraag (binnen 30 dagen)
+- WarrantyCard in admin machine-zoeken sectie
+- Garantie-link in klant sidebar (Ondersteuning)
+### Gewijzigd
+- Dashboard verouderd-check gebruikt GitHub-versie als bron
+
 ## [2.0.5] - 2026-08-10
 ### Gewijzigd
 - Dashboard auto-refresh elke 30 seconden

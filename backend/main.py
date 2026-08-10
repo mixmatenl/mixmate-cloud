@@ -10,7 +10,7 @@ import json
 import os
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Optional
 
@@ -72,6 +72,10 @@ class Machine(SQLModel, table=True):
     last_error_at: Optional[datetime] = None
     linked_machine_id: str = ""            # machine_id van gekoppelde Cocktailmachine (Pi 5)
     linked_machine_version: str = ""       # Softwareversie van de Cocktailmachine
+    installation_date: Optional[date] = None   # datum van fysieke installatie (door monteur)
+    warranty_start: Optional[date] = None      # ingangsdatum garantie (kan eerder zijn)
+    warranty_years: int = 2                    # totale garantieduur in jaren (2 t/m 5)
+    warranty_type: str = "factory"             # "factory" | "mixcare"
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     customer: Optional[Customer] = Relationship(back_populates="machines")
 
@@ -361,6 +365,10 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN linked_machine_id VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE machine ADD COLUMN linked_machine_version VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE customer ADD COLUMN last_login TIMESTAMP",
+        "ALTER TABLE machine ADD COLUMN installation_date DATE",
+        "ALTER TABLE machine ADD COLUMN warranty_start DATE",
+        "ALTER TABLE machine ADD COLUMN warranty_years INTEGER NOT NULL DEFAULT 2",
+        "ALTER TABLE machine ADD COLUMN warranty_type VARCHAR NOT NULL DEFAULT 'factory'",
     ]
     for sql in migrations:
         try:
@@ -1715,6 +1723,143 @@ def verify_maintenance_token(token: str) -> str:
         return payload["sub"]
     except Exception:
         raise HTTPException(status_code=401, detail="Ongeldige of verlopen onderhoudssessie")
+
+@app.get("/api/admin/machines/{machine_id}/warranty")
+def admin_get_warranty(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    return _warranty_info(machine)
+
+
+@app.patch("/api/admin/machines/{machine_id}/warranty")
+def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    if "installation_date" in body and body["installation_date"]:
+        machine.installation_date = date.fromisoformat(body["installation_date"])
+    if "warranty_start" in body and body["warranty_start"]:
+        machine.warranty_start = date.fromisoformat(body["warranty_start"])
+    if "warranty_years" in body:
+        years = int(body["warranty_years"])
+        if years not in (2, 3, 4, 5):
+            raise HTTPException(status_code=400, detail="warranty_years moet 2, 3, 4 of 5 zijn")
+        machine.warranty_years = years
+        machine.warranty_type = "factory" if years == 2 else "mixcare"
+    db.add(machine); db.commit(); db.refresh(machine)
+    return _warranty_info(machine)
+
+
+@app.get("/api/machines/{machine_id}/warranty-public")
+def machine_warranty_public(machine_id: str, db: Session = Depends(get_session)):
+    """Publiek garantie-overzicht voor de machine zelf (geen auth — machine_id is voldoende)."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    return _warranty_info(machine)
+
+
+@app.post("/api/machines/{machine_id}/request-mixcare")
+def machine_request_mixcare(machine_id: str, body: dict, db: Session = Depends(get_session)):
+    """Machine vraagt MIXCARE aan — doorgegeven vanuit de Pompmodule."""
+    years = int(body.get("years", 3))
+    if years not in (3, 4, 5):
+        raise HTTPException(status_code=400, detail="MIXCARE is 3, 4 of 5 jaar")
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    if not machine.installation_date:
+        raise HTTPException(status_code=400, detail="Installatiedatum niet bekend — neem contact op met MIXMATE")
+    days_since = (date.today() - machine.installation_date).days
+    if days_since > 30:
+        raise HTTPException(status_code=400, detail=f"MIXCARE aanvragen is alleen mogelijk binnen 30 dagen na installatie ({days_since} dagen geleden)")
+    machine.warranty_years = years
+    machine.warranty_type = "mixcare"
+    db.add(machine); db.commit(); db.refresh(machine)
+    return _warranty_info(machine)
+
+
+@app.post("/api/machines/{machine_id}/warranty/set-installation-date")
+def machine_set_installation_date(machine_id: str, body: dict, db: Session = Depends(get_session)):
+    """Aangeroepen door de Pompmodule vanuit de monteurswizard."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    raw_install = body.get("installation_date")
+    raw_warranty = body.get("warranty_start")
+    if raw_install:
+        machine.installation_date = date.fromisoformat(str(raw_install))
+    if raw_warranty:
+        machine.warranty_start = date.fromisoformat(str(raw_warranty))
+    elif raw_install and not machine.warranty_start:
+        machine.warranty_start = date.fromisoformat(str(raw_install))
+    if not machine.warranty_years or machine.warranty_years < 2:
+        machine.warranty_years = 2
+        machine.warranty_type = "factory"
+    db.add(machine); db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/account/warranty/request-mixcare")
+def request_mixcare(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    """Klant vraagt MIXCARE aan via portaal — alleen binnen 30 dagen na installatie."""
+    machine_id = body.get("machine_id", "")
+    years = int(body.get("years", 3))
+    if years not in (3, 4, 5):
+        raise HTTPException(status_code=400, detail="MIXCARE is 3, 4 of 5 jaar")
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id, Machine.customer_id == customer_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    if not machine.installation_date:
+        raise HTTPException(status_code=400, detail="Installatiedatum niet bekend — neem contact op met MIXMATE")
+    days_since = (date.today() - machine.installation_date).days
+    if days_since > 30:
+        raise HTTPException(status_code=400, detail=f"MIXCARE aanvragen is alleen mogelijk binnen 30 dagen na installatie ({days_since} dagen geleden)")
+    machine.warranty_years = years
+    machine.warranty_type = "mixcare"
+    db.add(machine); db.commit()
+    return {"ok": True, "warranty_years": years}
+
+
+@app.get("/api/account/warranty")
+def customer_warranty(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    """Garantiestatus voor alle machines van de ingelogde klant."""
+    machines = db.exec(select(Machine).where(Machine.customer_id == customer_id)).all()
+    return [{"machine_id": m.machine_id, "name": m.name, **_warranty_info(m)} for m in machines]
+
+
+def _warranty_info(machine: "Machine") -> dict:
+    today = date.today()
+    start = machine.warranty_start
+    years = machine.warranty_years or 2
+    w_type = machine.warranty_type or "factory"
+    if start:
+        end = date(start.year + years, start.month, start.day)
+        days_left = (end - today).days
+        active = days_left >= 0
+    else:
+        end = None
+        days_left = None
+        active = False
+    install = machine.installation_date
+    mixcare_eligible = (
+        install is not None and
+        (today - install).days <= 30 and
+        w_type == "factory"
+    )
+    return {
+        "installation_date": install.isoformat() if install else None,
+        "warranty_start": start.isoformat() if start else None,
+        "warranty_end": end.isoformat() if end else None,
+        "warranty_years": years,
+        "warranty_type": w_type,
+        "days_left": days_left,
+        "active": active,
+        "mixcare_eligible": mixcare_eligible,
+        "mixcare_days_remaining": max(0, 30 - (today - install).days) if install else None,
+    }
+
 
 @app.post("/api/admin/machines/{machine_id}/maintenance-token")
 async def admin_create_maintenance_token(

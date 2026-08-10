@@ -1534,6 +1534,86 @@ function DashboardTab() {
 }
 
 // ── Machines zoeken tab ───────────────────────────────────────────────────────
+function WarrantyCard({ machineId }) {
+  const [w, setW] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    api.adminRaw('GET', `/api/admin/machines/${machineId}/warranty`)
+      .then(d => { setW(d); setForm({ installation_date: d.installation_date || '', warranty_start: d.warranty_start || '', warranty_years: d.warranty_years || 2 }) })
+      .catch(() => {})
+  }, [machineId])
+
+  async function save() {
+    setSaving(true); setMsg(null)
+    try {
+      const d = await api.adminRaw('PATCH', `/api/admin/machines/${machineId}/warranty`, form)
+      setW(d); setEditing(false); setMsg({ ok: true, text: 'Garantie opgeslagen.' })
+    } catch (e) { setMsg({ ok: false, text: e?.detail || String(e) }) }
+    setSaving(false)
+  }
+
+  const typeLabel = w?.warranty_type === 'mixcare' ? `MIXCARE (${w.warranty_years} jaar)` : `Fabrieksgarantie (${w?.warranty_years || 2} jaar)`
+
+  return (
+    <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', flex: 1 }}>Garantie</span>
+        {w && <button onClick={() => setEditing(e => !e)}
+          style={{ background: 'none', border: '1px solid #a8d0ff', color: '#007aff', borderRadius: 7, padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {editing ? 'Annuleren' : 'Wijzigen'}
+        </button>}
+      </div>
+
+      {!w ? <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>Laden…</p>
+        : !editing
+        ? <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '4px 12px', fontSize: 13 }}>
+            <span style={{ color: '#6e6e73' }}>Type</span>
+            <span style={{ fontWeight: 600, color: w.warranty_type === 'mixcare' ? '#5856d6' : '#1d1d1f' }}>{typeLabel}</span>
+            <span style={{ color: '#6e6e73' }}>Installatiedatum</span>
+            <span>{w.installation_date || '—'}</span>
+            <span style={{ color: '#6e6e73' }}>Ingangsdatum</span>
+            <span>{w.warranty_start || '—'}</span>
+            <span style={{ color: '#6e6e73' }}>Einddatum</span>
+            <span style={{ fontWeight: 600 }}>{w.warranty_end || '—'}</span>
+            <span style={{ color: '#6e6e73' }}>Status</span>
+            <span style={{ fontWeight: 600, color: w.active ? '#34c759' : w.warranty_end ? '#ff3b30' : '#6e6e73' }}>
+              {!w.warranty_start ? 'Niet ingesteld' : w.active ? `Actief (${w.days_left} dagen resterend)` : 'Verlopen'}
+            </span>
+            {w.mixcare_eligible && <><span style={{ color: '#6e6e73' }}>MIXCARE</span><span style={{ color: '#ff9500', fontWeight: 600 }}>Aanvraag mogelijk ({w.mixcare_days_remaining} dagen)</span></>}
+          </div>
+        : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[['installation_date', 'Installatiedatum'], ['warranty_start', 'Ingangsdatum garantie']].map(([key, label]) => (
+              <label key={key} style={{ fontSize: 13 }}>
+                <span style={{ color: '#6e6e73', display: 'block', marginBottom: 4 }}>{label}</span>
+                <input type="date" value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #d1d1d6', fontSize: 13, boxSizing: 'border-box' }} />
+              </label>
+            ))}
+            <label style={{ fontSize: 13 }}>
+              <span style={{ color: '#6e6e73', display: 'block', marginBottom: 4 }}>Garantieduur</span>
+              <select value={form.warranty_years} onChange={e => setForm(f => ({ ...f, warranty_years: Number(e.target.value) }))}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #d1d1d6', fontSize: 13 }}>
+                <option value={2}>2 jaar — Fabrieksgarantie</option>
+                <option value={3}>3 jaar — MIXCARE</option>
+                <option value={4}>4 jaar — MIXCARE</option>
+                <option value={5}>5 jaar — MIXCARE</option>
+              </select>
+            </label>
+            <button onClick={save} disabled={saving}
+              style={{ padding: '10px 0', borderRadius: 10, border: 'none', background: saving ? '#e5e5ea' : '#007aff', color: saving ? '#6e6e73' : '#fff', fontSize: 14, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
+              {saving ? 'Opslaan…' : 'Garantie opslaan'}
+            </button>
+          </div>
+      }
+      {msg && <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13, background: msg.ok ? '#f0faf3' : '#fff5f5', color: msg.ok ? '#1a7a3a' : '#cc2200', border: `1px solid ${msg.ok ? '#a3e6b4' : '#ffb8b8'}` }}>{msg.text}</div>}
+    </div>
+  )
+}
+
 function MachineZoekenTab() {
   const [q, setQ] = useState('')
   const [results, setResults] = useState(null)
@@ -1651,6 +1731,9 @@ function MachineZoekenTab() {
               }
             </div>
           </div>
+
+          {/* Garantie sectie */}
+          <WarrantyCard machineId={selected.machine_id} key={selected.machine_id} />
 
           {/* Cocktailmachine sectie */}
           <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
