@@ -1044,14 +1044,39 @@ def _version_tuple(v: str):
     return tuple(int(x) for x in parts[:3]) if parts else (0,)
 
 
+_cached_latest_version: dict = {"version": "", "fetched_at": None}
+
+def _get_latest_mixmate_version() -> str:
+    """Haal de nieuwste versie op uit GitHub (gecached per uur)."""
+    import urllib.request, json as _json
+    from datetime import datetime, timedelta
+    cache = _cached_latest_version
+    if cache["fetched_at"] and datetime.utcnow() - cache["fetched_at"] < timedelta(hours=1):
+        return cache["version"]
+    try:
+        url = "https://raw.githubusercontent.com/mixmatenl/mixmate/main/frontend/package.json"
+        with urllib.request.urlopen(url, timeout=5) as r:
+            data = _json.loads(r.read())
+            ver = data.get("version", "")
+            cache["version"] = ver
+            cache["fetched_at"] = datetime.utcnow()
+            return ver
+    except Exception:
+        return cache.get("version", "")
+
+
 @app.get("/api/admin/dashboard")
 def admin_dashboard(_: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     all_machines = db.exec(select(Machine)).all()
     now = datetime.utcnow()
 
-    # Bepaal "huidige" versie = hoogste versie die we ooit gezien hebben
+    # Bepaal "huidige" versie = nieuwste op GitHub (of als fallback: hoogste geziene versie)
+    github_version = _get_latest_mixmate_version()
     versions = [m.version for m in all_machines if m.version]
-    current_version = max(versions, key=_version_tuple) if versions else ""
+    local_max = max(versions, key=_version_tuple) if versions else ""
+    current_version = github_version if github_version else local_max
+    if local_max and _version_tuple(local_max) > _version_tuple(current_version):
+        current_version = local_max
 
     offline, errors, outdated = [], [], []
 

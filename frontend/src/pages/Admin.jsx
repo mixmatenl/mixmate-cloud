@@ -1226,7 +1226,11 @@ function DashboardTab() {
       .catch(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    const interval = setInterval(load, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Sync lokale lijsten zodra data binnenkomt
   useEffect(() => {
@@ -1533,27 +1537,19 @@ function DashboardTab() {
 function MachineZoekenTab() {
   const [q, setQ] = useState('')
   const [results, setResults] = useState(null)
-  const [allMachines, setAllMachines] = useState([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState(null)
   const [updating, setUpdating] = useState(false)
   const [updateMsg, setUpdateMsg] = useState(null)
-  const [linkMode, setLinkMode] = useState(false)
-  const [linkId, setLinkId] = useState('')
 
   const search = async (val) => {
     const term = val ?? q
     setLoading(true)
     setSelected(null)
     setUpdateMsg(null)
-    setLinkMode(false)
     try {
-      const [data, all] = await Promise.all([
-        api.adminRaw('GET', `/api/admin/machines/search?q=${encodeURIComponent(term)}`),
-        api.adminRaw('GET', '/api/admin/machines/search?q='),
-      ])
+      const data = await api.adminRaw('GET', `/api/admin/machines/search?q=${encodeURIComponent(term)}`)
       setResults(data)
-      setAllMachines(all)
     } catch { setResults([]) }
     setLoading(false)
   }
@@ -1564,25 +1560,6 @@ function MachineZoekenTab() {
     try { setUpdateMsg({ ok: true, text: await fn() }) }
     catch (e) { setUpdateMsg({ ok: false, text: e?.detail || String(e) }) }
     setUpdating(false)
-  }
-
-  const linkCocktailMachine = async (pump_id) => {
-    await act(async () => {
-      await api.adminRaw('POST', `/api/admin/machines/${pump_id}/link-cocktailmachine`,
-        { cocktail_machine_id: linkId })
-      setSelected(s => ({ ...s, linked_machine_id: linkId, linked_online: allMachines.find(m => m.machine_id === linkId)?.online || false }))
-      setLinkMode(false)
-      return 'Cocktailmachine gekoppeld.'
-    })
-  }
-
-  const unlinkCocktailMachine = async (pump_id) => {
-    if (!confirm('Koppeling verwijderen?')) return
-    await act(async () => {
-      await api.adminRaw('DELETE', `/api/admin/machines/${pump_id}/link-cocktailmachine`)
-      setSelected(s => ({ ...s, linked_machine_id: '', linked_machine_version: '', linked_online: false }))
-      return 'Koppeling verwijderd.'
-    })
   }
 
   useEffect(() => { search('') }, [])
@@ -1614,7 +1591,7 @@ function MachineZoekenTab() {
         <div style={s.card}>
           {results.map(m => (
             <div key={m.machine_id}
-              onClick={() => { setSelected(sel => sel?.machine_id === m.machine_id ? null : m); setUpdateMsg(null); setLinkMode(false) }}
+              onClick={() => { setSelected(sel => sel?.machine_id === m.machine_id ? null : m); setUpdateMsg(null) }}
               style={{ ...s.row, flexWrap: 'wrap', cursor: 'pointer', background: selected?.machine_id === m.machine_id ? '#f5f5f7' : '#fff' }}>
               <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, background: '#f2f2f7', borderRadius: 6, padding: '2px 9px' }}>
                 {m.short_code}
@@ -1677,50 +1654,17 @@ function MachineZoekenTab() {
 
           {/* Cocktailmachine sectie */}
           <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', margin: 0, flex: 1 }}>Cocktailmachine (Pi 5)</p>
-              {selected.linked_machine_id
-                ? <button onClick={() => unlinkCocktailMachine(selected.machine_id)} disabled={updating}
-                    style={{ background: 'none', border: '1px solid #ffb8b8', color: '#ff3b30', borderRadius: 7, padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    Ontkoppelen
-                  </button>
-                : <button onClick={() => setLinkMode(l => !l)}
-                    style={{ background: 'none', border: '1px solid #a8d0ff', color: '#007aff', borderRadius: 7, padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {linkMode ? 'Annuleren' : 'Koppelen'}
-                  </button>
-              }
-            </div>
-
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', margin: '0 0 10px' }}>Cocktailmachine (Pi 5)</p>
             {selected.linked_machine_id
               ? <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '4px 12px', fontSize: 13 }}>
-                  <span style={{ color: '#6e6e73' }}>Machine ID</span>
-                  <span style={{ fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>{selected.linked_machine_id}</span>
+                  <span style={{ color: '#6e6e73' }}>Serienummer</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{selected.linked_machine_id}</span>
                   <span style={{ color: '#6e6e73' }}>Versie</span>
                   <span>{selected.linked_machine_version ? `v${selected.linked_machine_version}` : '—'}</span>
-                  <span style={{ color: '#6e6e73' }}>Status</span>
-                  <span><Dot online={selected.linked_online} />{selected.linked_online ? 'Online' : 'Offline'}</span>
                 </div>
-              : linkMode
-                ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <select value={linkId} onChange={e => setLinkId(e.target.value)}
-                      style={{ ...s.inp, flex: 1, minWidth: 200 }}>
-                      <option value="">— Kies een machine —</option>
-                      {allMachines.filter(m => m.machine_id !== selected.machine_id).map(m => (
-                        <option key={m.machine_id} value={m.machine_id}>
-                          {m.short_code} · {m.name}{m.online ? ' (online)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <button onClick={() => linkCocktailMachine(selected.machine_id)}
-                      disabled={!linkId || updating}
-                      style={{ ...s.btn, opacity: linkId ? 1 : 0.4 }}>
-                      Koppelen
-                    </button>
-                  </div>
-                : <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>
-                    Geen Cocktailmachine gekoppeld. Klik op "Koppelen" om een machine te selecteren,
-                    of laat de Pompmodule automatisch <code>cocktail_machine_id</code> meesturen in zijn heartbeat.
-                  </p>
+              : <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>
+                  Geen Cocktailmachine verbonden. De Pompmodule registreert de Cocktailmachine automatisch zodra ze verbonden zijn.
+                </p>
             }
           </div>
 

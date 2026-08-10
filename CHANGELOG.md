@@ -1,3 +1,10 @@
+## [2.0.5] - 2026-08-10
+### Gewijzigd
+- Dashboard auto-refresh elke 30 seconden
+- Verouderde software: versie vergeleken met actuele GitHub-versie (ipv hoogste geziene versie)
+- Cocktailmachine koppelstatus: automatisch via heartbeat, geen handmatige koppeling meer nodig
+- Machine zoeken: Cocktailmachine sectie toont alleen serienummer + versie (read-only)
+
 ## [2.0.4] - 2026-08-10
 ### Gewijzigd
 - Machine zoeken: klantnaam + bedrijf + telefoon zichtbaar in detailkaart
