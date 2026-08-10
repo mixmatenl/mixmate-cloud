@@ -52,6 +52,7 @@ class Customer(SQLModel, table=True):
     city: str = ""
     country: str = "Nederland"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_login: Optional[datetime] = None
     machines: list["Machine"] = Relationship(back_populates="customer")
 
 class Machine(SQLModel, table=True):
@@ -69,6 +70,8 @@ class Machine(SQLModel, table=True):
     last_seen: Optional[datetime] = None
     last_error: str = ""                   # Laatste foutmelding van de machine
     last_error_at: Optional[datetime] = None
+    linked_machine_id: str = ""            # machine_id van gekoppelde Cocktailmachine (Pi 5)
+    linked_machine_version: str = ""       # Softwareversie van de Cocktailmachine
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     customer: Optional[Customer] = Relationship(back_populates="machines")
 
@@ -355,6 +358,9 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN short_code VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE machine ADD COLUMN last_error VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE machine ADD COLUMN last_error_at TIMESTAMP",
+        "ALTER TABLE machine ADD COLUMN linked_machine_id VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE machine ADD COLUMN linked_machine_version VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE customer ADD COLUMN last_login TIMESTAMP",
     ]
     for sql in migrations:
         try:
@@ -612,6 +618,10 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                 if data.get("local_port"):   conn.local_port   = int(data["local_port"])
                 if "ssl" in data:            conn.ssl          = bool(data["ssl"])
                 if "pairing_mode" in data:   conn.pairing_mode = bool(data["pairing_mode"])
+                if data.get("cocktail_machine_id"):
+                    machine.linked_machine_id = data["cocktail_machine_id"]
+                if data.get("cocktail_machine_version"):
+                    machine.linked_machine_version = data["cocktail_machine_version"]
                 db.add(machine)
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
@@ -655,6 +665,10 @@ def login(body: dict, db: Session = Depends(get_session)):
     if not customer or not verify_password(password, customer.password_hash):
         raise HTTPException(status_code=401, detail="Onjuist e-mailadres of wachtwoord")
 
+    customer.last_login = datetime.utcnow()
+    db.add(customer)
+    db.commit()
+
     emp = db.exec(select(Employee).where(Employee.customer_id == customer.id)).first()
     return {
         "token": create_token(customer.id),
@@ -662,6 +676,7 @@ def login(body: dict, db: Session = Depends(get_session)):
         "email": customer.email,
         "must_change_password": customer.must_change_password,
         "is_employee": emp is not None,
+        "is_admin": customer.email in ADMIN_EMAILS,
     }
 
 @app.post("/api/auth/register")
@@ -1020,7 +1035,7 @@ def get_responses(ticket_id: int, customer_id: int = Depends(verify_token), db: 
 def admin_me(customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     """Check of de ingelogde gebruiker admin is."""
     customer = db.get(Customer, customer_id)
-    return {"is_admin": True, "name": customer.name, "email": customer.email}
+    return {"is_admin": True, "name": customer.name, "email": customer.email, "id": customer.id}
 
 
 def _version_tuple(v: str):
@@ -1097,12 +1112,72 @@ def admin_dashboard(_: int = Depends(verify_admin_user), db: Session = Depends(g
             "total_excl": round(sum(i.price_excl * i.quantity for i in items), 2),
         })
 
+    # Koppelstatus
+    paired_machines = [m for m in all_machines if m.paired]
+    unpaired_machines = [m for m in all_machines if not m.paired]
+    coupling = {
+        "paired": [{"machine_id": m.machine_id, "short_code": m.short_code or m.machine_id[-4:].upper(), "name": m.name, "online": m.machine_id in connected_machines} for m in paired_machines],
+        "unpaired": [{"machine_id": m.machine_id, "short_code": m.short_code or m.machine_id[-4:].upper(), "name": m.name, "pair_code": m.pair_code, "online": m.machine_id in connected_machines} for m in unpaired_machines],
+    }
+
+    # Lang offline (>7 dagen)
+    cutoff_long = now - timedelta(days=7)
+    long_offline = []
+    for m in all_machines:
+        if m.machine_id not in connected_machines and m.last_seen and m.last_seen < cutoff_long:
+            delta = int((now - m.last_seen).total_seconds())
+            long_offline.append({
+                "machine_id": m.machine_id,
+                "short_code": m.short_code or m.machine_id[-4:].upper(),
+                "name": m.name,
+                "version": m.version,
+                "last_seen": m.last_seen.isoformat(),
+                "last_seen_seconds_ago": delta,
+            })
+    long_offline.sort(key=lambda x: x["last_seen_seconds_ago"], reverse=True)
+
+    # Open servicetickets
+    open_tickets = db.exec(
+        select(SupportTicket)
+        .where(SupportTicket.status.in_(["open", "ingepland", "in_behandeling"]))
+        .where(SupportTicket.ticket_type == "service")
+        .order_by(SupportTicket.created_at.desc())
+        .limit(20)
+    ).all()
+    tickets = [{
+        "id": t.id,
+        "machine_name": t.machine_name,
+        "category": t.category,
+        "urgency": t.urgency,
+        "status": t.status,
+        "created_at": t.created_at.isoformat(),
+    } for t in open_tickets]
+
+    # Klantactiviteit (recent ingelogd)
+    active_customers = db.exec(
+        select(Customer)
+        .where(Customer.last_login.is_not(None))
+        .order_by(Customer.last_login.desc())
+        .limit(15)
+    ).all()
+    customer_activity = [{
+        "id": c.id,
+        "name": c.name,
+        "email": c.email,
+        "last_login": c.last_login.isoformat() if c.last_login else None,
+        "last_login_seconds_ago": int((now - c.last_login).total_seconds()) if c.last_login else None,
+    } for c in active_customers]
+
     return {
         "current_version": current_version,
         "offline": offline,
         "errors": errors,
         "outdated": outdated,
         "orders": orders,
+        "coupling": coupling,
+        "long_offline": long_offline,
+        "tickets": tickets,
+        "customer_activity": customer_activity,
         "counts": {
             "total_machines": len(all_machines),
             "online_machines": sum(1 for m in all_machines if m.machine_id in connected_machines),
@@ -1110,6 +1185,10 @@ def admin_dashboard(_: int = Depends(verify_admin_user), db: Session = Depends(g
             "error_machines": len(errors),
             "outdated_machines": len(outdated),
             "new_orders": sum(1 for o in recent_orders if o.status == "nieuw"),
+            "paired_machines": len(paired_machines),
+            "unpaired_machines": len(unpaired_machines),
+            "long_offline_machines": len(long_offline),
+            "open_tickets": len(open_tickets),
         },
     }
 
@@ -1211,6 +1290,52 @@ def admin_delete_order(order_id: int, _: int = Depends(verify_admin_user), db: S
     db.exec(delete(GlassOrderItem).where(GlassOrderItem.order_id == order_id))
     db.delete(order)
     db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/admin/machines/search")
+def admin_search_machines(q: str = "", _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Zoek machines op naam, short_code, machine_id of serienummer."""
+    q = q.strip().upper()
+    if not q:
+        machines = db.exec(select(Machine).limit(50)).all()
+    else:
+        like = f"%{q}%"
+        machines = db.exec(
+            select(Machine).where(
+                Machine.short_code.ilike(like) |
+                Machine.name.ilike(like) |
+                Machine.machine_id.ilike(like) |
+                Machine.serial_number.ilike(like)
+            ).limit(50)
+        ).all()
+    result = []
+    for m in machines:
+        customer = db.get(Customer, m.customer_id) if m.customer_id else None
+        result.append({
+            **_machine_dict(m),
+            "online": m.machine_id in connected_machines,
+            "customer_name": customer.name if customer else None,
+            "customer_email": customer.email if customer else None,
+            "linked_machine_id": m.linked_machine_id,
+            "linked_machine_version": m.linked_machine_version,
+            "linked_online": bool(m.linked_machine_id and m.linked_machine_id in connected_machines),
+        })
+    return result
+
+
+@app.post("/api/admin/machines/{machine_id}/trigger-cocktailmachine-update")
+async def admin_trigger_cocktailmachine_update(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Stuurt update-trigger door naar de gekoppelde Cocktailmachine via de Pompmodule."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(404, "Machine niet gevonden")
+    if not machine.linked_machine_id:
+        raise HTTPException(409, "Geen Cocktailmachine gekoppeld aan deze Pompmodule")
+    conn = connected_machines.get(machine.linked_machine_id)
+    if not conn:
+        raise HTTPException(503, "Cocktailmachine is niet online")
+    await conn.request({"type": "trigger_update"}, timeout=15)
     return {"ok": True}
 
 

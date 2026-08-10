@@ -284,27 +284,42 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('mm_user') || 'null') } catch { return null }
   })
 
-  // Als is_employee nog onbekend is: blokkeer render tot we het weten
+  // Als is_employee / is_admin nog onbekend: blokkeer render tot we het weten
   const [employeeChecked, setEmployeeChecked] = useState(
     !token || !user || user.is_employee !== undefined
   )
   useEffect(() => {
     if (token && user && user.is_employee === undefined) {
-      fetch('/api/hr/me', { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => { if (r.ok) return r.json(); throw new Error() })
-        .then(() => {
-          const updated = { ...user, is_employee: true }
-          localStorage.setItem('mm_user', JSON.stringify(updated))
-          localStorage.setItem('mixmate_user', JSON.stringify(updated))
-          setUser(updated)
+      // Probeer eerst admin-check, daarna employee-check
+      const authHeader = { Authorization: `Bearer ${token}` }
+      fetch('/api/admin/me', { headers: authHeader })
+        .then(r => r.ok ? r.json() : null)
+        .then(adminData => {
+          if (adminData?.is_admin) {
+            const updated = { ...user, is_employee: false, is_admin: true }
+            localStorage.setItem('mm_user', JSON.stringify(updated))
+            localStorage.setItem('mixmate_user', JSON.stringify(updated))
+            setUser(updated)
+            setEmployeeChecked(true)
+          } else {
+            return fetch('/api/hr/me', { headers: authHeader })
+              .then(r => { if (r.ok) return r.json(); throw new Error() })
+              .then(() => {
+                const updated = { ...user, is_employee: true, is_admin: false }
+                localStorage.setItem('mm_user', JSON.stringify(updated))
+                localStorage.setItem('mixmate_user', JSON.stringify(updated))
+                setUser(updated)
+              })
+              .catch(() => {
+                const updated = { ...user, is_employee: false, is_admin: false }
+                localStorage.setItem('mm_user', JSON.stringify(updated))
+                localStorage.setItem('mixmate_user', JSON.stringify(updated))
+                setUser(updated)
+              })
+              .finally(() => setEmployeeChecked(true))
+          }
         })
-        .catch(() => {
-          const updated = { ...user, is_employee: false }
-          localStorage.setItem('mm_user', JSON.stringify(updated))
-          localStorage.setItem('mixmate_user', JSON.stringify(updated))
-          setUser(updated)
-        })
-        .finally(() => setEmployeeChecked(true))
+        .catch(() => setEmployeeChecked(true))
     }
   }, [token])
 
@@ -377,8 +392,8 @@ export default function App() {
     <Layout user={user} onLogout={onLogout}>
       {user?.must_change_password && <ChangePasswordModal onDone={onPasswordChanged} />}
       <Routes>
-        <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
+        <Route path="/login" element={<Navigate to={user?.is_admin ? '/admin?s=dashboard' : '/'} replace />} />
+        <Route path="/" element={user?.is_admin ? <Navigate to="/admin?s=dashboard" replace /> : <Dashboard user={user} onLogout={onLogout} />} />
         <Route path="/machine/:machineId" element={<MachineDetail user={user} onLogout={onLogout} />} />
         <Route path="/rapporten" element={<Rapporten />} />
         <Route path="/meldingen" element={<Meldingen />} />

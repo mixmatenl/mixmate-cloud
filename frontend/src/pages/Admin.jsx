@@ -1181,11 +1181,15 @@ function NieuwsbriefTab({ initialTab }) {
 
 // ── Dashboard tab ─────────────────────────────────────────────────────────────
 const WIDGET_DEFS = [
-  { id: 'stats',     label: 'Statistieken' },
-  { id: 'offline',   label: 'Offline machines' },
-  { id: 'errors',    label: 'Machines met storing' },
-  { id: 'outdated',  label: 'Verouderde software' },
-  { id: 'orders',    label: 'Webshop bestellingen' },
+  { id: 'stats',            label: 'Statistieken' },
+  { id: 'tickets',          label: 'Open servicetickets' },
+  { id: 'offline',          label: 'Offline machines' },
+  { id: 'long_offline',     label: 'Lang offline (>7 dagen)' },
+  { id: 'errors',           label: 'Machines met storing' },
+  { id: 'outdated',         label: 'Verouderde software' },
+  { id: 'coupling',         label: 'Koppelstatus' },
+  { id: 'customer_activity',label: 'Klantactiviteit' },
+  { id: 'orders',           label: 'Webshop bestellingen' },
 ]
 const LS_WIDGETS = 'mm_dashboard_widgets'
 
@@ -1265,7 +1269,7 @@ function DashboardTab() {
   )
   if (!data) return <p style={{ color: '#6e6e73' }}>Kon dashboard niet laden.</p>
 
-  const { counts, errors: errorList, outdated: outdatedList } = data
+  const { counts, errors: errorList, outdated: outdatedList, coupling, long_offline: longOfflineList, tickets: ticketList, customer_activity: customerActivity } = data
 
   function fmtAgo(seconds) {
     if (seconds == null) return 'nooit gezien'
@@ -1324,16 +1328,37 @@ function DashboardTab() {
     </div>
   )
 
+  const TICKET_STATUS = { open: { label: 'Open', color: '#ff9500', bg: '#fff8f0', border: '#ffd6a0' }, ingepland: { label: 'Gepland', color: '#007aff', bg: '#f0f6ff', border: '#a8d0ff' }, in_behandeling: { label: 'In behandeling', color: '#5856d6', bg: '#f3f2ff', border: '#c4c2f5' } }
+
   const widgetContent = {
     stats: (
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <StatCard label="Machines totaal" value={counts.total_machines} sub={`${counts.online_machines} online`} />
+        <StatCard label="Gekoppeld" value={counts.paired_machines} color="#34c759" sub={`${counts.unpaired_machines} ongekoppeld`} />
         <StatCard label="Offline" value={counts.offline_machines} color={counts.offline_machines > 0 ? '#ff9500' : '#34c759'} />
         <StatCard label="Storingen" value={counts.error_machines} color={counts.error_machines > 0 ? '#ff3b30' : '#34c759'} />
         <StatCard label="Verouderd" value={counts.outdated_machines} color={counts.outdated_machines > 0 ? '#ff9500' : '#34c759'} />
+        <StatCard label="Open tickets" value={counts.open_tickets} color={counts.open_tickets > 0 ? '#ff9500' : '#34c759'} />
         <StatCard label="Nieuwe orders" value={counts.new_orders} color={counts.new_orders > 0 ? '#007aff' : '#6e6e73'} />
       </div>
     ),
+    tickets: ticketList.length === 0
+      ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Geen open tickets.</p>
+      : <div style={s.card}>
+          {ticketList.map(t => {
+            const st = TICKET_STATUS[t.status] || TICKET_STATUS.open
+            return (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', minWidth: 28 }}>#{t.id}</span>
+                <span style={{ fontSize: 14, color: '#1d1d1f', flex: 1, minWidth: 100 }}>{t.machine_name || '—'}</span>
+                {t.category && <span style={{ fontSize: 12, color: '#6e6e73' }}>{t.category}</span>}
+                {t.urgency && <span style={s.badge(t.urgency === 'hoog' ? '#ff3b30' : '#ff9500', t.urgency === 'hoog' ? '#fff5f5' : '#fff8f0', t.urgency === 'hoog' ? '#ffb8b8' : '#ffd6a0')}>{t.urgency}</span>}
+                <span style={s.badge(st.color, st.bg, st.border)}>{st.label}</span>
+                <span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtDate(t.created_at)}</span>
+              </div>
+            )
+          })}
+        </div>,
     offline: localOffline.length === 0
       ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Alle machines zijn online.</p>
       : <div style={s.card}>
@@ -1361,6 +1386,62 @@ function DashboardTab() {
             <MachineRow key={m.machine_id} m={m}
               extra={<span style={{ fontSize: 12, color: '#ff9500' }}>v{m.version} → v{m.current_version}</span>}
             />
+          ))}
+        </div>,
+    long_offline: longOfflineList.length === 0
+      ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Geen machines langer dan 7 dagen offline.</p>
+      : <div style={s.card}>
+          {longOfflineList.map(m => (
+            <MachineRow key={m.machine_id} m={m}
+              extra={<span style={{ fontSize: 12, color: '#ff3b30', fontWeight: 600 }}>{fmtAgo(m.last_seen_seconds_ago)}</span>}
+              onDelete={deleteMachine}
+            />
+          ))}
+        </div>,
+    coupling: (
+      <div>
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: '#34c759', margin: '0 0 8px' }}>Gekoppeld ({coupling?.paired?.length ?? 0})</p>
+          {coupling?.paired?.length === 0
+            ? <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>Geen gekoppelde machines.</p>
+            : <div style={s.card}>
+                {coupling.paired.map(m => (
+                  <div key={m.machine_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid #f2f2f7' }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, background: '#f2f2f7', borderRadius: 6, padding: '2px 8px' }}>{m.short_code}</span>
+                    <span style={{ fontSize: 14, flex: 1 }}>{m.name}</span>
+                    <span style={s.badge(m.online ? '#34c759' : '#ff9500', m.online ? '#f0faf3' : '#fff8f0', m.online ? '#a3e6b4' : '#ffd6a0')}>{m.online ? 'online' : 'offline'}</span>
+                  </div>
+                ))}
+              </div>
+          }
+        </div>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 600, color: '#ff9500', margin: '0 0 8px' }}>Ongekoppeld ({coupling?.unpaired?.length ?? 0})</p>
+          {coupling?.unpaired?.length === 0
+            ? <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>Alle machines zijn gekoppeld.</p>
+            : <div style={s.card}>
+                {coupling.unpaired.map(m => (
+                  <div key={m.machine_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, background: '#f2f2f7', borderRadius: 6, padding: '2px 8px' }}>{m.short_code}</span>
+                    <span style={{ fontSize: 14, flex: 1 }}>{m.name}</span>
+                    <span style={{ fontSize: 12, color: '#6e6e73' }}>Koppelcode: <strong>{m.pair_code}</strong></span>
+                    <span style={s.badge(m.online ? '#34c759' : '#ff9500', m.online ? '#f0faf3' : '#fff8f0', m.online ? '#a3e6b4' : '#ffd6a0')}>{m.online ? 'online' : 'offline'}</span>
+                  </div>
+                ))}
+              </div>
+          }
+        </div>
+      </div>
+    ),
+    customer_activity: customerActivity.length === 0
+      ? <p style={{ color: '#6e6e73', fontSize: 14, margin: 0 }}>Nog geen inlogactiviteit geregistreerd.</p>
+      : <div style={s.card}>
+          {customerActivity.map(c => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', flex: 1 }}>{c.name}</span>
+              <span style={{ fontSize: 12, color: '#6e6e73' }}>{c.email}</span>
+              <span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtAgo(c.last_login_seconds_ago)}</span>
+            </div>
           ))}
         </div>,
     orders: localOrders.length === 0
@@ -1433,14 +1514,163 @@ function DashboardTab() {
         <div key={w.id} style={{ marginBottom: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>{widgetLabels[w.id]}</h3>
-            {w.id === 'offline'  && counts.offline_machines  > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.offline_machines}</span>}
-            {w.id === 'errors'   && counts.error_machines    > 0 && <span style={s.badge('#ff3b30', '#fff5f5', '#ffb8b8')}>{counts.error_machines}</span>}
-            {w.id === 'outdated' && counts.outdated_machines > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.outdated_machines}</span>}
-            {w.id === 'orders'   && counts.new_orders        > 0 && <span style={s.badge('#007aff', '#f0f6ff', '#a8d0ff')}>{counts.new_orders} nieuw</span>}
+            {w.id === 'tickets'      && counts.open_tickets        > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.open_tickets}</span>}
+            {w.id === 'offline'      && counts.offline_machines    > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.offline_machines}</span>}
+            {w.id === 'long_offline' && counts.long_offline_machines > 0 && <span style={s.badge('#ff3b30', '#fff5f5', '#ffb8b8')}>{counts.long_offline_machines}</span>}
+            {w.id === 'errors'       && counts.error_machines       > 0 && <span style={s.badge('#ff3b30', '#fff5f5', '#ffb8b8')}>{counts.error_machines}</span>}
+            {w.id === 'outdated'     && counts.outdated_machines    > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.outdated_machines}</span>}
+            {w.id === 'coupling'     && counts.unpaired_machines    > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.unpaired_machines} ongekoppeld</span>}
+            {w.id === 'orders'       && counts.new_orders           > 0 && <span style={s.badge('#007aff', '#f0f6ff', '#a8d0ff')}>{counts.new_orders} nieuw</span>}
           </div>
           {widgetContent[w.id]}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Machines zoeken tab ───────────────────────────────────────────────────────
+function MachineZoekenTab() {
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [updating, setUpdating] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState(null)
+
+  const search = async (val) => {
+    const term = val ?? q
+    setLoading(true)
+    setSelected(null)
+    setUpdateMsg(null)
+    try {
+      const data = await api.adminRaw('GET', `/api/admin/machines/search?q=${encodeURIComponent(term)}`)
+      setResults(data)
+    } catch { setResults([]) }
+    setLoading(false)
+  }
+
+  const triggerPompUpdate = async (machine_id) => {
+    setUpdating(true)
+    setUpdateMsg(null)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${machine_id}/trigger-update`)
+      setUpdateMsg({ ok: true, text: 'Update-trigger verstuurd naar Pompmodule.' })
+    } catch (e) {
+      setUpdateMsg({ ok: false, text: e?.detail || 'Mislukt.' })
+    }
+    setUpdating(false)
+  }
+
+  const triggerCocktailUpdate = async (machine_id) => {
+    setUpdating(true)
+    setUpdateMsg(null)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${machine_id}/trigger-cocktailmachine-update`)
+      setUpdateMsg({ ok: true, text: 'Update-trigger verstuurd naar Cocktailmachine.' })
+    } catch (e) {
+      setUpdateMsg({ ok: false, text: e?.detail || 'Geen Cocktailmachine gekoppeld of offline.' })
+    }
+    setUpdating(false)
+  }
+
+  useEffect(() => { search('') }, [])
+
+  const Dot = ({ online }) => (
+    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: online ? '#34c759' : '#ff3b30', marginRight: 6 }} />
+  )
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && search()}
+          placeholder="Zoek op short code, naam, serienummer…"
+          style={{ ...s.inp, flex: 1 }}
+        />
+        <button onClick={() => search()} style={s.btn} disabled={loading}>
+          {loading ? '…' : 'Zoeken'}
+        </button>
+      </div>
+
+      {results !== null && results.length === 0 && (
+        <p style={{ color: '#6e6e73', fontSize: 14 }}>Geen machines gevonden.</p>
+      )}
+
+      {results !== null && results.length > 0 && (
+        <div style={s.card}>
+          {results.map(m => (
+            <div key={m.machine_id}
+              onClick={() => setSelected(sel => sel?.machine_id === m.machine_id ? null : m)}
+              style={{ ...s.row, flexWrap: 'wrap', cursor: 'pointer', background: selected?.machine_id === m.machine_id ? '#f5f5f7' : '#fff' }}>
+              <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, background: '#f2f2f7', borderRadius: 6, padding: '2px 9px' }}>
+                {m.short_code}
+              </span>
+              <Dot online={m.online} />
+              <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{m.name}</span>
+              {m.version && <span style={{ fontSize: 12, color: '#6e6e73' }}>v{m.version}</span>}
+              {m.customer_name
+                ? <span style={s.badge('#34c759', '#f0faf3', '#a3e6b4')}>{m.customer_name}</span>
+                : <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>Ongekoppeld</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div style={{ marginTop: 20, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 16, padding: 20 }}>
+          <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 700 }}>{selected.name}</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '6px 12px', fontSize: 14, marginBottom: 18 }}>
+            <span style={{ color: '#6e6e73' }}>Short code</span><span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{selected.short_code}</span>
+            <span style={{ color: '#6e6e73' }}>Machine ID</span><span style={{ fontFamily: 'monospace', fontSize: 12 }}>{selected.machine_id}</span>
+            <span style={{ color: '#6e6e73' }}>Serienummer</span><span>{selected.serial_number || '—'}</span>
+            <span style={{ color: '#6e6e73' }}>Versie</span><span>{selected.version ? `v${selected.version}` : '—'}</span>
+            <span style={{ color: '#6e6e73' }}>Status</span>
+            <span><Dot online={selected.online} />{selected.online ? 'Online' : 'Offline'}</span>
+            <span style={{ color: '#6e6e73' }}>Klant</span><span>{selected.customer_name || '—'}{selected.customer_email ? ` (${selected.customer_email})` : ''}</span>
+            <span style={{ color: '#6e6e73' }}>Koppelstatus</span><span>{selected.paired ? 'Gekoppeld' : 'Ongekoppeld'}</span>
+          </div>
+
+          {/* Cocktailmachine sectie */}
+          <div style={{ background: '#f9f9fb', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', margin: '0 0 8px' }}>Cocktailmachine (Pi 5)</p>
+            {selected.linked_machine_id
+              ? <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '4px 12px', fontSize: 13 }}>
+                  <span style={{ color: '#6e6e73' }}>Machine ID</span><span style={{ fontFamily: 'monospace', fontSize: 12 }}>{selected.linked_machine_id}</span>
+                  <span style={{ color: '#6e6e73' }}>Versie</span><span>{selected.linked_machine_version ? `v${selected.linked_machine_version}` : '—'}</span>
+                  <span style={{ color: '#6e6e73' }}>Status</span>
+                  <span><Dot online={selected.linked_online} />{selected.linked_online ? 'Online' : 'Offline'}</span>
+                </div>
+              : <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>Geen Cocktailmachine gekoppeld. De Pompmodule moet <code>cocktail_machine_id</code> meesturen in zijn heartbeat.</p>
+            }
+          </div>
+
+          {updateMsg && (
+            <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 12, fontSize: 13, background: updateMsg.ok ? '#f0faf3' : '#fff5f5', color: updateMsg.ok ? '#1a7a3a' : '#cc2200', border: `1px solid ${updateMsg.ok ? '#a3e6b4' : '#ffb8b8'}` }}>
+              {updateMsg.text}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => triggerPompUpdate(selected.machine_id)}
+              disabled={!selected.online || updating}
+              style={{ ...s.btn, opacity: selected.online ? 1 : 0.4 }}
+            >
+              {updating ? '…' : 'Update Pompmodule'}
+            </button>
+            <button
+              onClick={() => triggerCocktailUpdate(selected.machine_id)}
+              disabled={!selected.linked_online || updating}
+              style={{ ...s.btn, background: '#5856d6', opacity: selected.linked_online ? 1 : 0.4 }}
+            >
+              {updating ? '…' : 'Update Cocktailmachine'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1490,6 +1720,7 @@ export default function Admin() {
 
   const titles = {
     dashboard:    'Dashboard',
+    machines:     'Machines zoeken',
     meldingen:    'Service meldingen',
     offertes:     'Offerte aanvragen',
     klanten:      'Klanten opzoeken',
@@ -1498,6 +1729,7 @@ export default function Admin() {
   }
   const subs = {
     dashboard:    'Overzicht van alle machines, storingen en bestellingen.',
+    machines:     'Zoek machines op short code, naam of serienummer.',
     meldingen:    'Binnenkomende serviceverzoeken van klanten.',
     offertes:     'Offerte-aanvragen via de website.',
     klanten:      'Zoek klanten op en bekijk hun machines.',
@@ -1519,6 +1751,7 @@ export default function Admin() {
       <p style={s.sub}>{subs[section] || ''}</p>
 
       {section === 'dashboard'    && <DashboardTab />}
+      {section === 'machines'     && <MachineZoekenTab />}
       {section === 'meldingen'    && <TicketTab key={`mel-${urlFilter}`} ticketType="service" initialFilter={ticketFilter} />}
       {section === 'offertes'     && <TicketTab key={`off-${urlFilter}`} ticketType="offerte" initialFilter={ticketFilter} />}
       {section === 'klanten'      && <KlantenTab />}

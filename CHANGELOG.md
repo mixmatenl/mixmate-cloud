@@ -1,3 +1,18 @@
+## [2.0.2] - 2026-08-10
+### Toegevoegd
+- Dashboard widgets: Open servicetickets, Lang offline (>7d), Koppelstatus, Klantactiviteit
+- Statistieken-widget uitgebreid met gekoppeld/ongekoppeld teller en open tickets
+- Machine.linked_machine_id + linked_machine_version: Pompmodule stuurt cocktail_machine_id mee in heartbeat
+- Machine.last_login op Customer: bijgehouden bij elke login
+- GET /api/admin/machines/search: zoeken op short_code, naam, machine_id, serienummer
+- POST /api/admin/machines/{id}/trigger-cocktailmachine-update: update Cocktailmachine op afstand
+- "Machines zoeken" tab met detailview (gekoppelde Cocktailmachine + update-knoppen)
+- Zoekveld: zoek op short code (laatste 4 chars serienummer)
+- is_admin teruggestuurd bij login en adminMe
+### Gewijzigd
+- Admin wordt bij app-start automatisch herkend en doorgestuurd naar dashboard (ook bij bestaande sessie)
+- Navigatielink "Zoeken" in de Machines sectie van de sidebar
+
 ## [2.0.1] - 2026-08-10
 ### Toegevoegd
 - Widget-structuur op dashboard: volgorde aanpasbaar via drag-and-drop, widgets verbergen/tonen; instellingen opgeslagen in localStorage
