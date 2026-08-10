@@ -1614,6 +1614,77 @@ function WarrantyCard({ machineId }) {
   )
 }
 
+function CocktailMachineCard({ machine: m, onUpdate }) {
+  const [editing, setEditing] = useState(false)
+  const [serial, setSerial] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  async function save() {
+    setSaving(true); setMsg(null)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${m.machine_id}/link-cocktailmachine`,
+        { cocktail_machine_id: serial.trim() })
+      onUpdate({ linked_machine_id: serial.trim() })
+      setEditing(false)
+      setMsg({ ok: true, text: 'Cocktailmachine serienummer opgeslagen.' })
+    } catch (e) { setMsg({ ok: false, text: e?.detail || String(e) }) }
+    setSaving(false)
+  }
+
+  async function unlink() {
+    if (!confirm('Koppeling verwijderen?')) return
+    setSaving(true)
+    try {
+      await api.adminRaw('DELETE', `/api/admin/machines/${m.machine_id}/link-cocktailmachine`)
+      onUpdate({ linked_machine_id: '', linked_machine_version: '' })
+      setMsg({ ok: true, text: 'Koppeling verwijderd.' })
+    } catch (e) { setMsg({ ok: false, text: String(e) }) }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', flex: 1 }}>Cocktailmachine (Pi 5)</span>
+        {m.linked_machine_id
+          ? <button onClick={unlink} disabled={saving}
+              style={{ background: 'none', border: '1px solid #ffb8b8', color: '#ff3b30', borderRadius: 7, padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Ontkoppelen
+            </button>
+          : <button onClick={() => { setEditing(e => !e); setSerial('') }}
+              style={{ background: 'none', border: '1px solid #a8d0ff', color: '#007aff', borderRadius: 7, padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {editing ? 'Annuleren' : 'Handmatig invoeren'}
+            </button>
+        }
+      </div>
+
+      {m.linked_machine_id
+        ? <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '4px 12px', fontSize: 13 }}>
+            <span style={{ color: '#6e6e73' }}>Serienummer</span>
+            <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{m.linked_machine_id}</span>
+            <span style={{ color: '#6e6e73' }}>Versie</span>
+            <span>{m.linked_machine_version ? `v${m.linked_machine_version}` : '—'}</span>
+          </div>
+        : editing
+          ? <div style={{ display: 'flex', gap: 8 }}>
+              <input value={serial} onChange={e => setSerial(e.target.value)}
+                placeholder="Serienummer Cocktailmachine"
+                style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid #d1d1d6', fontSize: 13 }} />
+              <button onClick={save} disabled={!serial.trim() || saving}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: serial.trim() ? '#007aff' : '#e5e5ea', color: serial.trim() ? '#fff' : '#6e6e73', fontSize: 13, fontWeight: 600, cursor: serial.trim() ? 'pointer' : 'default' }}>
+                {saving ? '…' : 'Opslaan'}
+              </button>
+            </div>
+          : <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>
+              Geen Cocktailmachine verbonden. Wordt automatisch gekoppeld zodra de Pompmodule op v6.2.10+ draait.
+            </p>
+      }
+      {msg && <div style={{ marginTop: 8, padding: '7px 12px', borderRadius: 8, fontSize: 12, background: msg.ok ? '#f0faf3' : '#fff5f5', color: msg.ok ? '#1a7a3a' : '#cc2200', border: `1px solid ${msg.ok ? '#a3e6b4' : '#ffb8b8'}` }}>{msg.text}</div>}
+    </div>
+  )
+}
+
 function MachineZoekenTab() {
   const [q, setQ] = useState('')
   const [results, setResults] = useState(null)
@@ -1736,20 +1807,7 @@ function MachineZoekenTab() {
           <WarrantyCard machineId={selected.machine_id} key={selected.machine_id} />
 
           {/* Cocktailmachine sectie */}
-          <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', margin: '0 0 10px' }}>Cocktailmachine (Pi 5)</p>
-            {selected.linked_machine_id
-              ? <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '4px 12px', fontSize: 13 }}>
-                  <span style={{ color: '#6e6e73' }}>Serienummer</span>
-                  <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{selected.linked_machine_id}</span>
-                  <span style={{ color: '#6e6e73' }}>Versie</span>
-                  <span>{selected.linked_machine_version ? `v${selected.linked_machine_version}` : '—'}</span>
-                </div>
-              : <p style={{ fontSize: 13, color: '#6e6e73', margin: 0 }}>
-                  Geen Cocktailmachine verbonden. De Pompmodule registreert de Cocktailmachine automatisch zodra ze verbonden zijn.
-                </p>
-            }
-          </div>
+          <CocktailMachineCard machine={selected} onUpdate={m => setSelected(s => ({ ...s, ...m }))} />
 
           {updateMsg && (
             <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 12, fontSize: 13,

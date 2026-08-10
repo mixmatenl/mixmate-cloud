@@ -1,3 +1,7 @@
+## [2.0.7] - 2026-08-10
+### Gewijzigd
+- Cocktailmachine sectie: handmatig serienummer invoeren als Pompmodule nog niet op v6.2.10+ draait
+
 ## [2.0.6] - 2026-08-10
 ### Toegevoegd
 - Machine model: installation_date, warranty_start, warranty_years, warranty_type
