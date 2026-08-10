@@ -1219,16 +1219,16 @@ function DashboardTab() {
   })
   const dragRef = useRef(null)
 
-  const load = () => {
-    setLoading(true)
+  const load = (initial = false) => {
+    if (initial) setLoading(true)
     api.adminRaw('GET', '/api/admin/dashboard')
       .then(d => { setData(d); setLoading(false) })
-      .catch(() => setLoading(false))
+      .catch(() => { if (initial) setLoading(false) })
   }
 
   useEffect(() => {
-    load()
-    const interval = setInterval(load, 5000)
+    load(true)
+    const interval = setInterval(() => load(false), 5000)
     return () => clearInterval(interval)
   }, [])
 
