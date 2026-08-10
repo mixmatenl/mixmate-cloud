@@ -1179,6 +1179,150 @@ function NieuwsbriefTab({ initialTab }) {
   )
 }
 
+// ── Dashboard tab ─────────────────────────────────────────────────────────────
+function DashboardTab() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = () => {
+    setLoading(true)
+    api.adminRaw('GET', '/api/admin/dashboard')
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  if (loading) return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
+      <div style={{ width: 28, height: 28, border: '2px solid #e5e5ea', borderTopColor: '#007aff', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+    </div>
+  )
+  if (!data) return <p style={{ color: '#6e6e73' }}>Kon dashboard niet laden.</p>
+
+  const { counts, offline, errors, outdated, orders } = data
+
+  function fmtAgo(seconds) {
+    if (seconds == null) return 'nooit gezien'
+    if (seconds < 60) return `${seconds}s geleden`
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m geleden`
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}u geleden`
+    return `${Math.floor(seconds / 86400)}d geleden`
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  }
+
+  const StatCard = ({ label, value, color, sub }) => (
+    <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: 16, padding: '20px 24px', flex: '1 1 160px', minWidth: 140 }}>
+      <div style={{ fontSize: 32, fontWeight: 800, color: color || '#1d1d1f' }}>{value}</div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', marginTop: 2 }}>{label}</div>
+      {sub && <div style={{ fontSize: 12, color: '#6e6e73', marginTop: 2 }}>{sub}</div>}
+    </div>
+  )
+
+  const SectionHeader = ({ title, count }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '32px 0 12px' }}>
+      <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1d1d1f' }}>{title}</h3>
+      {count > 0 && <span style={s.badge('#ff3b30', '#fff5f5', '#ffb8b8')}>{count}</span>}
+    </div>
+  )
+
+  const MachineRow = ({ m, extra }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
+      <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, background: '#f2f2f7', borderRadius: 6, padding: '2px 8px', color: '#1d1d1f' }}>
+        {m.short_code}
+      </span>
+      <span style={{ fontSize: 14, color: '#1d1d1f', flex: 1, minWidth: 120 }}>{m.name}</span>
+      {m.version && <span style={{ fontSize: 12, color: '#6e6e73' }}>v{m.version}</span>}
+      {extra}
+    </div>
+  )
+
+  return (
+    <div>
+      {/* Stat cards */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+        <StatCard label="Machines totaal" value={counts.total_machines} sub={`${counts.online_machines} online`} />
+        <StatCard label="Offline" value={counts.offline_machines} color={counts.offline_machines > 0 ? '#ff9500' : '#34c759'} />
+        <StatCard label="Storingen" value={counts.error_machines} color={counts.error_machines > 0 ? '#ff3b30' : '#34c759'} />
+        <StatCard label="Verouderd" value={counts.outdated_machines} color={counts.outdated_machines > 0 ? '#ff9500' : '#34c759'} />
+        <StatCard label="Nieuwe orders" value={counts.new_orders} color={counts.new_orders > 0 ? '#007aff' : '#6e6e73'} />
+      </div>
+      <button onClick={load} style={{ ...s.btnSm, marginBottom: 8 }}>Vernieuwen</button>
+
+      {/* Offline machines */}
+      <SectionHeader title="Offline machines" count={offline.length} />
+      {offline.length === 0
+        ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Alle machines zijn online.</p>
+        : <div style={s.card}>
+            {offline.map(m => (
+              <MachineRow key={m.machine_id} m={m} extra={
+                <span style={{ fontSize: 12, color: '#ff9500' }}>{fmtAgo(m.last_seen_seconds_ago)}</span>
+              } />
+            ))}
+          </div>
+      }
+
+      {/* Storingen */}
+      <SectionHeader title="Machines met storing" count={errors.length} />
+      {errors.length === 0
+        ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Geen storingen gemeld.</p>
+        : <div style={s.card}>
+            {errors.map(m => (
+              <div key={m.machine_id}>
+                <MachineRow m={m} extra={
+                  <span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtAgo(m.error_age_seconds)}</span>
+                } />
+                <div style={{ padding: '0 16px 10px 16px', fontSize: 13, color: '#ff3b30', fontFamily: 'monospace' }}>{m.last_error}</div>
+              </div>
+            ))}
+          </div>
+      }
+
+      {/* Verouderde software */}
+      <SectionHeader title="Verouderde software" count={outdated.length} />
+      {outdated.length === 0
+        ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Alle machines draaien de nieuwste versie ({data.current_version || '?'}).</p>
+        : <div style={s.card}>
+            {outdated.map(m => (
+              <MachineRow key={m.machine_id} m={m} extra={
+                <span style={{ fontSize: 12, color: '#ff9500' }}>
+                  v{m.version} → v{m.current_version}
+                </span>
+              } />
+            ))}
+          </div>
+      }
+
+      {/* Webshop bestellingen */}
+      <SectionHeader title="Recente webshop bestellingen" count={counts.new_orders} />
+      {orders.length === 0
+        ? <p style={{ color: '#6e6e73', fontSize: 14, margin: 0 }}>Geen bestellingen gevonden.</p>
+        : <div style={s.card}>
+            {orders.map(o => (
+              <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', minWidth: 28 }}>#{o.id}</span>
+                <span style={{ fontSize: 14, color: '#1d1d1f', flex: 1, minWidth: 120 }}>
+                  {o.customer_name}{o.customer_company ? ` · ${o.customer_company}` : ''}
+                </span>
+                <span style={{ fontSize: 12, color: '#6e6e73' }}>{o.item_count} artikel{o.item_count !== 1 ? 'en' : ''} · €{o.total_excl.toFixed(2)}</span>
+                <span style={s.badge(
+                  o.status === 'nieuw' ? '#007aff' : o.status === 'geannuleerd' ? '#ff3b30' : '#34c759',
+                  o.status === 'nieuw' ? '#f0f6ff' : o.status === 'geannuleerd' ? '#fff5f5' : '#f0faf3',
+                  o.status === 'nieuw' ? '#a8d0ff' : o.status === 'geannuleerd' ? '#ffb8b8' : '#a3e6b4',
+                )}>{o.status}</span>
+                <span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtDate(o.created_at)}</span>
+              </div>
+            ))}
+          </div>
+      }
+    </div>
+  )
+}
+
 // ── Hoofd component ───────────────────────────────────────────────────────────
 const FILTER_MAP = {
   meldingen: { open: 'open', actief: 'actief', opgelost: 'opgelost' },
@@ -1217,12 +1361,13 @@ export default function Admin() {
   // Backwards compat: old ?tab= links
   const oldTab = sp.get('tab')
   const legacyMap = { Meldingen: 'meldingen', Offertes: 'offertes', Klanten: 'klanten', Nieuwsbrief: 'nieuwsbrief' }
-  const section = sp.get('s') || (oldTab ? legacyMap[oldTab] : 'meldingen')
+  const section = sp.get('s') || (oldTab ? legacyMap[oldTab] : 'dashboard')
   const urlFilter = sp.get('f')
 
   const ticketFilter = FILTER_MAP[section]?.[urlFilter] || undefined
 
   const titles = {
+    dashboard:    'Dashboard',
     meldingen:    'Service meldingen',
     offertes:     'Offerte aanvragen',
     klanten:      'Klanten opzoeken',
@@ -1230,6 +1375,7 @@ export default function Admin() {
     bestellingen: 'Bestellingen',
   }
   const subs = {
+    dashboard:    'Overzicht van alle machines, storingen en bestellingen.',
     meldingen:    'Binnenkomende serviceverzoeken van klanten.',
     offertes:     'Offerte-aanvragen via de website.',
     klanten:      'Zoek klanten op en bekijk hun machines.',
@@ -1250,6 +1396,7 @@ export default function Admin() {
       </div>
       <p style={s.sub}>{subs[section] || ''}</p>
 
+      {section === 'dashboard'    && <DashboardTab />}
       {section === 'meldingen'    && <TicketTab key={`mel-${urlFilter}`} ticketType="service" initialFilter={ticketFilter} />}
       {section === 'offertes'     && <TicketTab key={`off-${urlFilter}`} ticketType="offerte" initialFilter={ticketFilter} />}
       {section === 'klanten'      && <KlantenTab />}

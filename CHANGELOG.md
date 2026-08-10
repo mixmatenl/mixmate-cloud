@@ -1,3 +1,14 @@
+## [2.0.0] - 2026-08-10
+### Toegevoegd
+- Machine model: `short_code` (laatste 4 alfanumerieke chars van serial/machine_id), `last_error`, `last_error_at`
+- DB-migraties voor nieuwe velden
+- WS-handler `error_report`: machine kan foutmelding sturen naar cloud
+- GET /api/admin/dashboard: offline machines, storingen, verouderde software, webshop bestellingen
+- Dashboard tab in admin portaal (standaard startpagina)
+- Navigatielink "Dashboard" in sidebar
+### Gewijzigd
+- machine_self_unpair (/api/machines/{id}/unpair) wist nu ook alle MachineMember records — medewerkers zien de machine niet meer na uitloggen
+
 ## [1.9.6] - 2026-08-08
 ### Toegevoegd
 - _verification_state per machine: pending/approved/denied

@@ -250,6 +250,10 @@ export default function Layout({ user, onLogout, children }) {
 
         return (
           <>
+            <NavSection label="Overzicht">
+              <NavRow active={inAdmin && (!s || s === 'dashboard')} to="/admin?s=dashboard" icon={Icons.dashboard} label="Dashboard" />
+            </NavSection>
+
             <NavSection label="Machines">
               <NavRow active={path === '/' || path.startsWith('/machine')} to="/" icon={Icons.machine} label="Machines" />
             </NavSection>

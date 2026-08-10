@@ -65,7 +65,10 @@ class Machine(SQLModel, table=True):
     version: str = ""
     serial_number: str = ""
     serial_number_confirmed: bool = False  # True zodra machine zelf het serienummer heeft gestuurd
+    short_code: str = ""                   # Laatste 4 alfanumerieke chars van serial_number / machine_id
     last_seen: Optional[datetime] = None
+    last_error: str = ""                   # Laatste foutmelding van de machine
+    last_error_at: Optional[datetime] = None
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     customer: Optional[Customer] = Relationship(back_populates="machines")
 
@@ -349,6 +352,9 @@ def create_tables():
         "ALTER TABLE employeetask ADD COLUMN form_fields TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE employeetask ADD COLUMN form_response TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE pilotapplication ADD COLUMN pilot_offer_id INTEGER REFERENCES pilotoffer(id)",
+        "ALTER TABLE machine ADD COLUMN short_code VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE machine ADD COLUMN last_error VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE machine ADD COLUMN last_error_at TIMESTAMP",
     ]
     for sql in migrations:
         try:
@@ -560,10 +566,13 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
 
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
+        import re as _re
+        _sc = "".join(_re.findall(r"[A-Za-z0-9]", machine_id))[-4:].upper()
         machine = Machine(
             machine_id=machine_id,
             pair_code=str(secrets.randbelow(900000) + 100000),
             pair_code_expires=datetime.utcnow() + timedelta(hours=24),
+            short_code=_sc,
         )
         db.add(machine)
         db.commit()
@@ -595,8 +604,10 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                 if data.get("version"): machine.version = data["version"]
                 if data.get("model"):   machine.model   = data["model"]
                 if data.get("serial_number") and not machine.serial_number_confirmed:
+                    import re as _re
                     machine.serial_number           = data["serial_number"]
                     machine.serial_number_confirmed = True
+                    machine.short_code = "".join(_re.findall(r"[A-Za-z0-9]", data["serial_number"]))[-4:].upper()
                 if data.get("local_ip"):     conn.local_ip     = data["local_ip"]
                 if data.get("local_port"):   conn.local_port   = int(data["local_port"])
                 if "ssl" in data:            conn.ssl          = bool(data["ssl"])
@@ -614,6 +625,12 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                     "url":           url,
                     "expires_hours": 8,
                 })
+
+            elif msg_type == "error_report":
+                machine.last_error    = data.get("error", "")[:500]
+                machine.last_error_at = datetime.utcnow()
+                db.add(machine)
+                db.commit()
 
             elif msg_type and msg_type.startswith("pour_"):
                 if conn.pour_queue:
@@ -1004,6 +1021,97 @@ def admin_me(customer_id: int = Depends(verify_admin_user), db: Session = Depend
     """Check of de ingelogde gebruiker admin is."""
     customer = db.get(Customer, customer_id)
     return {"is_admin": True, "name": customer.name, "email": customer.email}
+
+
+def _version_tuple(v: str):
+    import re
+    parts = re.findall(r"\d+", v or "0")
+    return tuple(int(x) for x in parts[:3]) if parts else (0,)
+
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard(_: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    all_machines = db.exec(select(Machine)).all()
+    now = datetime.utcnow()
+
+    # Bepaal "huidige" versie = hoogste versie die we ooit gezien hebben
+    versions = [m.version for m in all_machines if m.version]
+    current_version = max(versions, key=_version_tuple) if versions else ""
+
+    offline, errors, outdated = [], [], []
+
+    for m in all_machines:
+        online = m.machine_id in connected_machines
+        short = m.short_code or m.machine_id[-4:].upper()
+        base = {
+            "machine_id": m.machine_id,
+            "short_code": short,
+            "name": m.name,
+            "version": m.version,
+            "serial_number": m.serial_number,
+            "paired": m.paired,
+            "online": online,
+            "last_seen": m.last_seen.isoformat() if m.last_seen else None,
+        }
+
+        # Offline = ooit gezien maar nu niet online, of nooit gezien
+        if not online:
+            last_seen_ago = None
+            if m.last_seen:
+                delta = now - m.last_seen
+                last_seen_ago = int(delta.total_seconds())
+            offline.append({**base, "last_seen_seconds_ago": last_seen_ago})
+
+        # Storing
+        if m.last_error:
+            error_age = int((now - m.last_error_at).total_seconds()) if m.last_error_at else None
+            errors.append({
+                **base,
+                "last_error": m.last_error,
+                "last_error_at": m.last_error_at.isoformat() if m.last_error_at else None,
+                "error_age_seconds": error_age,
+            })
+
+        # Verouderd
+        if m.version and current_version and _version_tuple(m.version) < _version_tuple(current_version):
+            outdated.append({
+                **base,
+                "current_version": current_version,
+            })
+
+    # Recente bestellingen (webshop glazen)
+    recent_orders = db.exec(
+        select(GlassOrder).order_by(GlassOrder.created_at.desc()).limit(20)
+    ).all()
+    orders = []
+    for o in recent_orders:
+        items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == o.id)).all()
+        orders.append({
+            "id": o.id,
+            "customer_name": o.customer_name,
+            "customer_company": o.customer_company,
+            "status": o.status,
+            "payment_status": o.payment_status,
+            "created_at": o.created_at.isoformat(),
+            "item_count": sum(i.quantity for i in items),
+            "total_excl": round(sum(i.price_excl * i.quantity for i in items), 2),
+        })
+
+    return {
+        "current_version": current_version,
+        "offline": offline,
+        "errors": errors,
+        "outdated": outdated,
+        "orders": orders,
+        "counts": {
+            "total_machines": len(all_machines),
+            "online_machines": sum(1 for m in all_machines if m.machine_id in connected_machines),
+            "offline_machines": len(offline),
+            "error_machines": len(errors),
+            "outdated_machines": len(outdated),
+            "new_orders": sum(1 for o in recent_orders if o.status == "nieuw"),
+        },
+    }
 
 @app.get("/api/admin/customers")
 def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
@@ -2061,7 +2169,12 @@ def machine_self_unpair(machine_id: str, db: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Niet gevonden")
     machine.paired      = False
     machine.customer_id = None
+    machine.name        = "Mijn Machine"
     db.add(machine)
+    # Verwijder ook alle leden-koppelingen zodat medewerkers de machine niet meer zien
+    members = db.exec(select(MachineMember).where(MachineMember.machine_id == machine_id)).all()
+    for m in members:
+        db.delete(m)
     db.commit()
     return {"ok": True}
 
