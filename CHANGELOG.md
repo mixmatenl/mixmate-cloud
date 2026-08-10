@@ -1,3 +1,7 @@
+## [2.0.8] - 2026-08-10
+### Gewijzigd
+- Dashboard refresh elke 5 seconden (was 30s) — online/offline status direct zichtbaar
+
 ## [2.0.7] - 2026-08-10
 ### Gewijzigd
 - Cocktailmachine sectie: handmatig serienummer invoeren als Pompmodule nog niet op v6.2.10+ draait
