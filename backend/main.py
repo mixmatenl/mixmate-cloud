@@ -1339,6 +1339,46 @@ async def admin_trigger_cocktailmachine_update(machine_id: str, _: int = Depends
     return {"ok": True}
 
 
+@app.post("/api/admin/machines/{machine_id}/link-cocktailmachine")
+async def admin_link_cocktailmachine(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Koppel een Cocktailmachine (Pi 5) aan een Pompmodule. Pusht ook naar Pompmodule via WS."""
+    cocktail_id = str(body.get("cocktail_machine_id", "")).strip()
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(404, "Pompmodule niet gevonden")
+    machine.linked_machine_id = cocktail_id
+    machine.linked_machine_version = ""
+    db.add(machine)
+    db.commit()
+    # Push naar Pompmodule zodat die het lokaal opslaat voor heartbeats
+    conn = connected_machines.get(machine_id)
+    if conn:
+        try:
+            await conn.send({"type": "set_cocktail_machine", "cocktail_machine_id": cocktail_id})
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+@app.delete("/api/admin/machines/{machine_id}/link-cocktailmachine")
+async def admin_unlink_cocktailmachine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Verwijder de koppeling tussen Pompmodule en Cocktailmachine."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(404, "Machine niet gevonden")
+    machine.linked_machine_id = ""
+    machine.linked_machine_version = ""
+    db.add(machine)
+    db.commit()
+    conn = connected_machines.get(machine_id)
+    if conn:
+        try:
+            await conn.send({"type": "set_cocktail_machine", "cocktail_machine_id": ""})
+        except Exception:
+            pass
+    return {"ok": True}
+
+
 def _admin_conn(machine_id: str) -> "MachineConnection":
     conn = connected_machines.get(machine_id)
     if not conn:

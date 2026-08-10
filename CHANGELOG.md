@@ -1,3 +1,13 @@
+## [2.0.3] - 2026-08-10
+### Toegevoegd
+- Pompmodule: GET/POST/DELETE /api/system/cocktail-machine — sla gekoppelde Pi 5 op in lokale DB
+- Pompmodule heartbeat stuurt cocktail_machine_id + cocktail_machine_version mee naar cloud
+- cloud_client: handler voor set_cocktail_machine WS-bericht (admin pusht koppeling naar machine)
+- Cloud: POST/DELETE /api/admin/machines/{id}/link-cocktailmachine — koppel/ontkoppel via portaal
+- Machine zoeken: "Koppelen"-knop met dropdown van alle bekende machines
+- Machine zoeken: "Ontkoppelen"-knop, update-knoppen voor Pompmodule én Cocktailmachine
+- Koppeling wordt direct via WS naar Pompmodule gepusht zodat heartbeats bijgewerkt worden
+
 ## [2.0.2] - 2026-08-10
 ### Toegevoegd
 - Dashboard widgets: Open servicetickets, Lang offline (>7d), Koppelstatus, Klantactiviteit
