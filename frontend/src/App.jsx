@@ -315,9 +315,11 @@ export default function App() {
     localStorage.setItem('mixmate_user', JSON.stringify(user))
     setToken(token)
     setUser(user)
-    // Redirect employee to their portal on login
+    // Redirect naar juiste portaal na inloggen
     if (user?.is_employee) {
       window.history.replaceState({}, '', '/personeel')
+    } else if (user?.is_admin) {
+      window.history.replaceState({}, '', '/admin?s=dashboard')
     }
   }
 

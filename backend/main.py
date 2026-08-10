@@ -1185,6 +1185,35 @@ def admin_delete_customer(cid: int, _: int = Depends(verify_admin_user), db: Ses
     db.commit()
     return {"ok": True}
 
+@app.delete("/api/admin/machines/{machine_id}")
+def admin_delete_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Verwijder een (offline) machine volledig uit het portaal."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    if machine_id in connected_machines:
+        raise HTTPException(status_code=409, detail="Machine is online — verwijder alleen offline machines")
+    db.exec(delete(MachineMember).where(MachineMember.machine_id == machine_id))
+    db.exec(delete(FlushLog).where(FlushLog.machine_id == machine_id))
+    db.exec(delete(RecipeLock).where(RecipeLock.machine_id == machine_id))
+    db.exec(delete(FlushSchedule).where(FlushSchedule.machine_id == machine_id))
+    db.delete(machine)
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/admin/orders/{order_id}")
+def admin_delete_order(order_id: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Verwijder een webshop bestelling."""
+    order = db.get(GlassOrder, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Bestelling niet gevonden")
+    db.exec(delete(GlassOrderItem).where(GlassOrderItem.order_id == order_id))
+    db.delete(order)
+    db.commit()
+    return {"ok": True}
+
+
 def _admin_conn(machine_id: str) -> "MachineConnection":
     conn = connected_machines.get(machine_id)
     if not conn:

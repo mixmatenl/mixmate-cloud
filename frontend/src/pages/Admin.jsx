@@ -1180,9 +1180,40 @@ function NieuwsbriefTab({ initialTab }) {
 }
 
 // ── Dashboard tab ─────────────────────────────────────────────────────────────
+const WIDGET_DEFS = [
+  { id: 'stats',     label: 'Statistieken' },
+  { id: 'offline',   label: 'Offline machines' },
+  { id: 'errors',    label: 'Machines met storing' },
+  { id: 'outdated',  label: 'Verouderde software' },
+  { id: 'orders',    label: 'Webshop bestellingen' },
+]
+const LS_WIDGETS = 'mm_dashboard_widgets'
+
+function loadWidgetConfig() {
+  try {
+    const raw = localStorage.getItem(LS_WIDGETS)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+
+function saveWidgetConfig(cfg) {
+  localStorage.setItem(LS_WIDGETS, JSON.stringify(cfg))
+}
+
 function DashboardTab() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [localOffline, setLocalOffline] = useState([])
+  const [localOrders, setLocalOrders] = useState([])
+  // widgetConfig: [{id, visible}] — bepaalt volgorde en zichtbaarheid
+  const [widgetConfig, setWidgetConfig] = useState(() => {
+    const saved = loadWidgetConfig()
+    if (saved) return saved
+    return WIDGET_DEFS.map(w => ({ id: w.id, visible: true }))
+  })
+  const dragRef = useRef(null)
 
   const load = () => {
     setLoading(true)
@@ -1193,6 +1224,40 @@ function DashboardTab() {
 
   useEffect(() => { load() }, [])
 
+  // Sync lokale lijsten zodra data binnenkomt
+  useEffect(() => {
+    if (data) {
+      setLocalOffline(data.offline)
+      setLocalOrders(data.orders)
+    }
+  }, [data])
+
+  function toggleWidget(id) {
+    const next = widgetConfig.map(w => w.id === id ? { ...w, visible: !w.visible } : w)
+    setWidgetConfig(next)
+    saveWidgetConfig(next)
+  }
+
+  function onDragStart(e, id) {
+    dragRef.current = id
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onDrop(e, targetId) {
+    e.preventDefault()
+    const fromId = dragRef.current
+    if (!fromId || fromId === targetId) return
+    const next = [...widgetConfig]
+    const fromIdx = next.findIndex(w => w.id === fromId)
+    const toIdx = next.findIndex(w => w.id === targetId)
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    setWidgetConfig(next)
+    saveWidgetConfig(next)
+  }
+
+  function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }
+
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
       <div style={{ width: 28, height: 28, border: '2px solid #e5e5ea', borderTopColor: '#007aff', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
@@ -1200,7 +1265,7 @@ function DashboardTab() {
   )
   if (!data) return <p style={{ color: '#6e6e73' }}>Kon dashboard niet laden.</p>
 
-  const { counts, offline, errors, outdated, orders } = data
+  const { counts, errors: errorList, outdated: outdatedList } = data
 
   function fmtAgo(seconds) {
     if (seconds == null) return 'nooit gezien'
@@ -1209,116 +1274,173 @@ function DashboardTab() {
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}u geleden`
     return `${Math.floor(seconds / 86400)}d geleden`
   }
-
   function fmtDate(iso) {
     if (!iso) return '—'
     return new Date(iso).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   }
 
+  async function deleteMachine(machine_id) {
+    if (!confirm('Machine definitief verwijderen uit het portaal?')) return
+    try {
+      await api.adminRaw('DELETE', `/api/admin/machines/${machine_id}`)
+      setLocalOffline(prev => prev.filter(m => m.machine_id !== machine_id))
+    } catch (e) {
+      alert(e?.detail || 'Kon machine niet verwijderen.')
+    }
+  }
+
+  async function deleteOrder(id) {
+    if (!confirm(`Bestelling #${id} definitief verwijderen?`)) return
+    try {
+      await api.adminRaw('DELETE', `/api/admin/orders/${id}`)
+      setLocalOrders(prev => prev.filter(o => o.id !== id))
+    } catch {
+      alert('Kon bestelling niet verwijderen.')
+    }
+  }
+
   const StatCard = ({ label, value, color, sub }) => (
-    <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: 16, padding: '20px 24px', flex: '1 1 160px', minWidth: 140 }}>
-      <div style={{ fontSize: 32, fontWeight: 800, color: color || '#1d1d1f' }}>{value}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', marginTop: 2 }}>{label}</div>
-      {sub && <div style={{ fontSize: 12, color: '#6e6e73', marginTop: 2 }}>{sub}</div>}
+    <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: 16, padding: '20px 24px', flex: '1 1 150px', minWidth: 130 }}>
+      <div style={{ fontSize: 30, fontWeight: 800, color: color || '#1d1d1f' }}>{value}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', marginTop: 2 }}>{label}</div>
+      {sub && <div style={{ fontSize: 11, color: '#6e6e73', marginTop: 2 }}>{sub}</div>}
     </div>
   )
 
-  const SectionHeader = ({ title, count }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '32px 0 12px' }}>
-      <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1d1d1f' }}>{title}</h3>
-      {count > 0 && <span style={s.badge('#ff3b30', '#fff5f5', '#ffb8b8')}>{count}</span>}
-    </div>
-  )
-
-  const MachineRow = ({ m, extra }) => (
+  const MachineRow = ({ m, extra, onDelete }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, background: '#f2f2f7', borderRadius: 6, padding: '2px 8px', color: '#1d1d1f' }}>
         {m.short_code}
       </span>
-      <span style={{ fontSize: 14, color: '#1d1d1f', flex: 1, minWidth: 120 }}>{m.name}</span>
+      <span style={{ fontSize: 14, color: '#1d1d1f', flex: 1, minWidth: 100 }}>{m.name}</span>
       {m.version && <span style={{ fontSize: 12, color: '#6e6e73' }}>v{m.version}</span>}
       {extra}
+      {onDelete && (
+        <button onClick={() => onDelete(m.machine_id)}
+          style={{ background: 'none', border: '1px solid #ffb8b8', color: '#ff3b30', borderRadius: 7, padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+          Verwijderen
+        </button>
+      )}
     </div>
   )
 
-  return (
-    <div>
-      {/* Stat cards */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+  const widgetContent = {
+    stats: (
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <StatCard label="Machines totaal" value={counts.total_machines} sub={`${counts.online_machines} online`} />
         <StatCard label="Offline" value={counts.offline_machines} color={counts.offline_machines > 0 ? '#ff9500' : '#34c759'} />
         <StatCard label="Storingen" value={counts.error_machines} color={counts.error_machines > 0 ? '#ff3b30' : '#34c759'} />
         <StatCard label="Verouderd" value={counts.outdated_machines} color={counts.outdated_machines > 0 ? '#ff9500' : '#34c759'} />
         <StatCard label="Nieuwe orders" value={counts.new_orders} color={counts.new_orders > 0 ? '#007aff' : '#6e6e73'} />
       </div>
-      <button onClick={load} style={{ ...s.btnSm, marginBottom: 8 }}>Vernieuwen</button>
+    ),
+    offline: localOffline.length === 0
+      ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Alle machines zijn online.</p>
+      : <div style={s.card}>
+          {localOffline.map(m => (
+            <MachineRow key={m.machine_id} m={m}
+              extra={<span style={{ fontSize: 12, color: '#ff9500' }}>{fmtAgo(m.last_seen_seconds_ago)}</span>}
+              onDelete={deleteMachine}
+            />
+          ))}
+        </div>,
+    errors: errorList.length === 0
+      ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Geen storingen gemeld.</p>
+      : <div style={s.card}>
+          {errorList.map(m => (
+            <div key={m.machine_id}>
+              <MachineRow m={m} extra={<span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtAgo(m.error_age_seconds)}</span>} />
+              <div style={{ padding: '0 16px 10px 16px', fontSize: 12, color: '#ff3b30', fontFamily: 'monospace', wordBreak: 'break-all' }}>{m.last_error}</div>
+            </div>
+          ))}
+        </div>,
+    outdated: outdatedList.length === 0
+      ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Alle machines draaien de nieuwste versie{data.current_version ? ` (v${data.current_version})` : ''}.</p>
+      : <div style={s.card}>
+          {outdatedList.map(m => (
+            <MachineRow key={m.machine_id} m={m}
+              extra={<span style={{ fontSize: 12, color: '#ff9500' }}>v{m.version} → v{m.current_version}</span>}
+            />
+          ))}
+        </div>,
+    orders: localOrders.length === 0
+      ? <p style={{ color: '#6e6e73', fontSize: 14, margin: 0 }}>Geen bestellingen gevonden.</p>
+      : <div style={s.card}>
+          {localOrders.map(o => (
+            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', minWidth: 28 }}>#{o.id}</span>
+              <span style={{ fontSize: 14, color: '#1d1d1f', flex: 1, minWidth: 100 }}>
+                {o.customer_name}{o.customer_company ? ` · ${o.customer_company}` : ''}
+              </span>
+              <span style={{ fontSize: 12, color: '#6e6e73' }}>{o.item_count} art. · €{o.total_excl.toFixed(2)}</span>
+              <span style={s.badge(
+                o.status === 'nieuw' ? '#007aff' : o.status === 'geannuleerd' ? '#ff3b30' : '#34c759',
+                o.status === 'nieuw' ? '#f0f6ff' : o.status === 'geannuleerd' ? '#fff5f5' : '#f0faf3',
+                o.status === 'nieuw' ? '#a8d0ff' : o.status === 'geannuleerd' ? '#ffb8b8' : '#a3e6b4',
+              )}>{o.status}</span>
+              <span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtDate(o.created_at)}</span>
+              <button onClick={() => deleteOrder(o.id)}
+                style={{ background: 'none', border: '1px solid #ffb8b8', color: '#ff3b30', borderRadius: 7, padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Verwijderen
+              </button>
+            </div>
+          ))}
+        </div>,
+  }
 
-      {/* Offline machines */}
-      <SectionHeader title="Offline machines" count={offline.length} />
-      {offline.length === 0
-        ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Alle machines zijn online.</p>
-        : <div style={s.card}>
-            {offline.map(m => (
-              <MachineRow key={m.machine_id} m={m} extra={
-                <span style={{ fontSize: 12, color: '#ff9500' }}>{fmtAgo(m.last_seen_seconds_ago)}</span>
-              } />
-            ))}
-          </div>
-      }
+  const widgetLabels = Object.fromEntries(WIDGET_DEFS.map(w => [w.id, w.label]))
 
-      {/* Storingen */}
-      <SectionHeader title="Machines met storing" count={errors.length} />
-      {errors.length === 0
-        ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Geen storingen gemeld.</p>
-        : <div style={s.card}>
-            {errors.map(m => (
-              <div key={m.machine_id}>
-                <MachineRow m={m} extra={
-                  <span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtAgo(m.error_age_seconds)}</span>
-                } />
-                <div style={{ padding: '0 16px 10px 16px', fontSize: 13, color: '#ff3b30', fontFamily: 'monospace' }}>{m.last_error}</div>
+  return (
+    <div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <button onClick={load} style={s.btnSm}>Vernieuwen</button>
+        <button onClick={() => setEditing(e => !e)}
+          style={{ ...s.btnSm, background: editing ? '#1d1d1f' : '#f2f2f7', color: editing ? '#fff' : '#1d1d1f' }}>
+          {editing ? 'Klaar' : 'Aanpassen'}
+        </button>
+      </div>
+
+      {/* Widget aanpas-modus */}
+      {editing && (
+        <div style={{ background: '#f9f9fb', border: '1px solid #e5e5ea', borderRadius: 14, padding: '14px 16px', marginBottom: 20 }}>
+          <p style={{ fontSize: 13, color: '#6e6e73', margin: '0 0 12px' }}>
+            Sleep widgets om de volgorde te wijzigen. Klik op het oogje om een widget te verbergen.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {widgetConfig.map(w => (
+              <div key={w.id}
+                draggable
+                onDragStart={e => onDragStart(e, w.id)}
+                onDrop={e => onDrop(e, w.id)}
+                onDragOver={onDragOver}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 10, padding: '10px 14px', cursor: 'grab', userSelect: 'none' }}>
+                <span style={{ fontSize: 16, cursor: 'grab' }}>⠿</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: w.visible ? '#1d1d1f' : '#b0b0b8', flex: 1 }}>{widgetLabels[w.id]}</span>
+                <button onClick={() => toggleWidget(w.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: 0, color: w.visible ? '#1d1d1f' : '#c7c7cc' }}
+                  title={w.visible ? 'Verbergen' : 'Weergeven'}>
+                  {w.visible ? '👁' : '🙈'}
+                </button>
               </div>
             ))}
           </div>
-      }
+        </div>
+      )}
 
-      {/* Verouderde software */}
-      <SectionHeader title="Verouderde software" count={outdated.length} />
-      {outdated.length === 0
-        ? <p style={{ color: '#34c759', fontSize: 14, margin: 0 }}>Alle machines draaien de nieuwste versie ({data.current_version || '?'}).</p>
-        : <div style={s.card}>
-            {outdated.map(m => (
-              <MachineRow key={m.machine_id} m={m} extra={
-                <span style={{ fontSize: 12, color: '#ff9500' }}>
-                  v{m.version} → v{m.current_version}
-                </span>
-              } />
-            ))}
+      {/* Widgets in volgorde */}
+      {widgetConfig.filter(w => w.visible).map(w => (
+        <div key={w.id} style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>{widgetLabels[w.id]}</h3>
+            {w.id === 'offline'  && counts.offline_machines  > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.offline_machines}</span>}
+            {w.id === 'errors'   && counts.error_machines    > 0 && <span style={s.badge('#ff3b30', '#fff5f5', '#ffb8b8')}>{counts.error_machines}</span>}
+            {w.id === 'outdated' && counts.outdated_machines > 0 && <span style={s.badge('#ff9500', '#fff8f0', '#ffd6a0')}>{counts.outdated_machines}</span>}
+            {w.id === 'orders'   && counts.new_orders        > 0 && <span style={s.badge('#007aff', '#f0f6ff', '#a8d0ff')}>{counts.new_orders} nieuw</span>}
           </div>
-      }
-
-      {/* Webshop bestellingen */}
-      <SectionHeader title="Recente webshop bestellingen" count={counts.new_orders} />
-      {orders.length === 0
-        ? <p style={{ color: '#6e6e73', fontSize: 14, margin: 0 }}>Geen bestellingen gevonden.</p>
-        : <div style={s.card}>
-            {orders.map(o => (
-              <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #f2f2f7', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', minWidth: 28 }}>#{o.id}</span>
-                <span style={{ fontSize: 14, color: '#1d1d1f', flex: 1, minWidth: 120 }}>
-                  {o.customer_name}{o.customer_company ? ` · ${o.customer_company}` : ''}
-                </span>
-                <span style={{ fontSize: 12, color: '#6e6e73' }}>{o.item_count} artikel{o.item_count !== 1 ? 'en' : ''} · €{o.total_excl.toFixed(2)}</span>
-                <span style={s.badge(
-                  o.status === 'nieuw' ? '#007aff' : o.status === 'geannuleerd' ? '#ff3b30' : '#34c759',
-                  o.status === 'nieuw' ? '#f0f6ff' : o.status === 'geannuleerd' ? '#fff5f5' : '#f0faf3',
-                  o.status === 'nieuw' ? '#a8d0ff' : o.status === 'geannuleerd' ? '#ffb8b8' : '#a3e6b4',
-                )}>{o.status}</span>
-                <span style={{ fontSize: 12, color: '#6e6e73' }}>{fmtDate(o.created_at)}</span>
-              </div>
-            ))}
-          </div>
-      }
+          {widgetContent[w.id]}
+        </div>
+      ))}
     </div>
   )
 }

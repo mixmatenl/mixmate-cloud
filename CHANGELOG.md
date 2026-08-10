@@ -1,3 +1,12 @@
+## [2.0.1] - 2026-08-10
+### Toegevoegd
+- Widget-structuur op dashboard: volgorde aanpasbaar via drag-and-drop, widgets verbergen/tonen; instellingen opgeslagen in localStorage
+- Verwijderknop op offline machines (met bevestigingsdialoog; online machines kunnen niet worden verwijderd)
+- Verwijderknop op webshop bestellingen in dashboard
+- Admin wordt na inloggen direct doorgestuurd naar dashboard
+### Gewijzigd
+- Dashboard is standaard eerste pagina bij admin-navigatie
+
 ## [2.0.0] - 2026-08-10
 ### Toegevoegd
 - Machine model: `short_code` (laatste 4 alfanumerieke chars van serial/machine_id), `last_error`, `last_error_at`
