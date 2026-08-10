@@ -1315,8 +1315,12 @@ def admin_search_machines(q: str = "", _: int = Depends(verify_admin_user), db: 
         result.append({
             **_machine_dict(m),
             "online": m.machine_id in connected_machines,
+            "last_seen": m.last_seen.isoformat() if m.last_seen else None,
+            "customer_id": customer.id if customer else None,
             "customer_name": customer.name if customer else None,
             "customer_email": customer.email if customer else None,
+            "customer_company": customer.company if customer else None,
+            "customer_phone": customer.phone if customer else None,
             "linked_machine_id": m.linked_machine_id,
             "linked_machine_version": m.linked_machine_version,
             "linked_online": bool(m.linked_machine_id and m.linked_machine_id in connected_machines),

@@ -1,3 +1,9 @@
+## [2.0.4] - 2026-08-10
+### Gewijzigd
+- Machine zoeken: klantnaam + bedrijf + telefoon zichtbaar in detailkaart
+- Machine zoeken: alle machine-acties (Herstarten, PIN beheer, Recepten, Ontkoppelen) via AdminMachineCard
+- Search endpoint geeft customer_company, customer_phone, customer_id mee
+
 ## [2.0.3] - 2026-08-10
 ### Toegevoegd
 - Pompmodule: GET/POST/DELETE /api/system/cocktail-machine — sla gekoppelde Pi 5 op in lokale DB

@@ -1631,24 +1631,48 @@ function MachineZoekenTab() {
       )}
 
       {selected && (
-        <div style={{ marginTop: 20, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 16, padding: 20 }}>
-          <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 700 }}>
-            <Dot online={selected.online} />{selected.name}
-          </h3>
+        <div style={{ marginTop: 20 }}>
+          {/* Machine info kaart */}
+          <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: 16, padding: 20, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 800, background: '#f2f2f7', borderRadius: 8, padding: '3px 11px' }}>{selected.short_code}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{selected.name}</span>
+              <Dot online={selected.online} />
+              <span style={{ fontSize: 13, color: selected.online ? '#34c759' : '#c7c7cc', fontWeight: 600 }}>{selected.online ? 'Online' : 'Offline'}</span>
+            </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '6px 12px', fontSize: 14, marginBottom: 18 }}>
-            <span style={{ color: '#6e6e73' }}>Short code</span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{selected.short_code}</span>
-            <span style={{ color: '#6e6e73' }}>Machine ID</span>
-            <span style={{ fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>{selected.machine_id}</span>
-            <span style={{ color: '#6e6e73' }}>Serienummer</span>
-            <span>{selected.serial_number || '—'}</span>
-            <span style={{ color: '#6e6e73' }}>Versie</span>
-            <span>{selected.version ? `v${selected.version}` : '—'}</span>
-            <span style={{ color: '#6e6e73' }}>Klant</span>
-            <span>{selected.customer_name || '—'}{selected.customer_email ? ` (${selected.customer_email})` : ''}</span>
-            <span style={{ color: '#6e6e73' }}>Account-koppeling</span>
-            <span>{selected.paired ? 'Gekoppeld aan klant' : 'Ongekoppeld'}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '7px 12px', fontSize: 13 }}>
+              <span style={{ color: '#6e6e73' }}>Serienummer</span>
+              <span style={{ fontFamily: 'monospace' }}>{selected.serial_number || '—'}</span>
+              <span style={{ color: '#6e6e73' }}>Machine ID</span>
+              <span style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all', color: '#6e6e73' }}>{selected.machine_id}</span>
+              <span style={{ color: '#6e6e73' }}>Versie</span>
+              <span>{selected.version ? `v${selected.version}` : '—'}</span>
+              <span style={{ color: '#6e6e73' }}>Model</span>
+              <span>{selected.model || '—'}</span>
+            </div>
+
+            {/* Klantinfo */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f2f2f7' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 8 }}>Klant</div>
+              {selected.customer_name
+                ? <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '6px 12px', fontSize: 13 }}>
+                    <span style={{ color: '#6e6e73' }}>Naam</span>
+                    <span style={{ fontWeight: 600 }}>{selected.customer_name}</span>
+                    {selected.customer_company && <>
+                      <span style={{ color: '#6e6e73' }}>Bedrijf</span>
+                      <span>{selected.customer_company}</span>
+                    </>}
+                    <span style={{ color: '#6e6e73' }}>E-mail</span>
+                    <span>{selected.customer_email || '—'}</span>
+                    {selected.customer_phone && <>
+                      <span style={{ color: '#6e6e73' }}>Telefoon</span>
+                      <span>{selected.customer_phone}</span>
+                    </>}
+                  </div>
+                : <p style={{ fontSize: 13, color: '#ff9500', margin: 0 }}>Niet gekoppeld aan een klant.</p>
+              }
+            </div>
           </div>
 
           {/* Cocktailmachine sectie */}
@@ -1709,22 +1733,20 @@ function MachineZoekenTab() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button onClick={() => act(async () => {
-                await api.adminRaw('POST', `/api/admin/machines/${selected.machine_id}/trigger-update`)
-                return 'Update-trigger verstuurd naar Pompmodule.'
-              })} disabled={!selected.online || updating}
-              style={{ ...s.btn, opacity: selected.online ? 1 : 0.4 }}>
-              {updating ? '…' : 'Update Pompmodule'}
-            </button>
-            <button onClick={() => act(async () => {
-                await api.adminRaw('POST', `/api/admin/machines/${selected.machine_id}/trigger-cocktailmachine-update`)
-                return 'Update-trigger verstuurd naar Cocktailmachine.'
-              })} disabled={!selected.linked_online || updating}
-              style={{ ...s.btn, background: '#5856d6', opacity: selected.linked_online ? 1 : 0.4 }}>
-              {updating ? '…' : 'Update Cocktailmachine'}
-            </button>
-          </div>
+          {selected.linked_machine_id && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+              <button onClick={() => act(async () => {
+                  await api.adminRaw('POST', `/api/admin/machines/${selected.machine_id}/trigger-cocktailmachine-update`)
+                  return 'Update-trigger verstuurd naar Cocktailmachine.'
+                })} disabled={!selected.linked_online || updating}
+                style={{ ...s.btnSm, background: '#ede8ff', color: '#5856d6', border: '1px solid #c4c2f5', opacity: selected.linked_online ? 1 : 0.4 }}>
+                {updating ? '…' : '⬆ Cocktailmachine updaten'}
+              </button>
+            </div>
+          )}
+
+          {/* Machine controls — hergebruik AdminMachineCard */}
+          <AdminMachineCard machine={{ ...selected, online: selected.online }} />
         </div>
       )}
     </div>
