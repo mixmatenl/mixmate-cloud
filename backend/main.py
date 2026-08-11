@@ -666,8 +666,20 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                 db.commit()
                 ack: dict = {"type": "heartbeat_ack"}
                 if machine.blocked:
+                    # Herbereken openstaand bedrag voor de ack
+                    _ack_total = 0.0
+                    if machine.customer_id:
+                        _mc = db.exec(select(MixcareInvoice).where(MixcareInvoice.customer_id == machine.customer_id).where(MixcareInvoice.status == "openstaand")).all()
+                        _ack_total += sum(inv.amount for inv in _mc)
+                        _cust = db.get(Customer, machine.customer_id)
+                        if _cust:
+                            _go = db.exec(select(GlassOrder).where(GlassOrder.customer_email == _cust.email).where(GlassOrder.payment_status == "openstaand").where(GlassOrder.status != "geannuleerd")).all()
+                            for _o in _go:
+                                _items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == _o.id)).all()
+                                _ack_total += round(sum(i.price_excl * i.quantity for i in _items) * (1 + _o.btw_rate_snapshot / 100), 2)
                     ack["block"] = True
                     ack["reason"] = machine.blocked_reason
+                    ack["amount"] = round(_ack_total, 2)
                 await websocket.send_json(ack)
 
             elif msg_type == "request_maintenance_token":
@@ -1468,16 +1480,53 @@ async def admin_block_machine(machine_id: str, body: dict = {}, _: int = Depends
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404)
+
+    # Bereken totaal openstaand bedrag voor deze klant
+    total = 0.0
+    if machine.customer_id:
+        customer = db.get(Customer, machine.customer_id)
+
+        # Openstaande MIXCARE facturen
+        mc_invoices = db.exec(
+            select(MixcareInvoice)
+            .where(MixcareInvoice.customer_id == machine.customer_id)
+            .where(MixcareInvoice.status == "openstaand")
+        ).all()
+        total += sum(inv.amount for inv in mc_invoices)
+
+        # Openstaande glasbestellingen
+        if customer:
+            glass_orders = db.exec(
+                select(GlassOrder)
+                .where(GlassOrder.customer_email == customer.email)
+                .where(GlassOrder.payment_status == "openstaand")
+                .where(GlassOrder.status != "geannuleerd")
+            ).all()
+            for order in glass_orders:
+                items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order.id)).all()
+                excl = sum(i.price_excl * i.quantity for i in items)
+                total += round(excl * (1 + order.btw_rate_snapshot / 100), 2)
+
+    total = round(total, 2)
+    amount_str = f"€ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
     machine.blocked = True
-    machine.blocked_reason = body.get("reason", "Openstaande factuur")
+    machine.blocked_reason = body.get("reason") or (
+        f"Openstaande betalingen: {amount_str}" if total > 0 else "Openstaande betalingen"
+    )
     db.add(machine); db.commit()
+
     conn = connected_machines.get(machine_id)
     if conn:
         try:
-            await conn.ws.send_json({"type": "block_machine", "reason": machine.blocked_reason})
+            await conn.ws.send_json({
+                "type": "block_machine",
+                "reason": machine.blocked_reason,
+                "amount": total,
+            })
         except Exception:
             pass
-    return {"ok": True, "blocked": True}
+    return {"ok": True, "blocked": True, "amount": total}
 
 @app.post("/api/admin/machines/{machine_id}/unblock")
 async def admin_unblock_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
