@@ -1,3 +1,9 @@
+## [2.1.4] - 2026-08-11
+### Opgelost
+- Kritieke fix: garantie & support pagina volledig offline door machine.pump_slots bug
+  (pump_slots zit op FlushLog, niet op Machine — pump_count nu als eigen veld op Machine)
+- Machine stuurt pump_count mee in heartbeat zodat portaal prijzen kan tonen
+
 ## [2.1.3] - 2026-08-11
 ### Gewijzigd
 - MIXCARE prijzen voor MATE.1 PRO toegevoegd in klantportaal (16–32 leidingen)

@@ -72,6 +72,7 @@ class Machine(SQLModel, table=True):
     last_error_at: Optional[datetime] = None
     linked_machine_id: str = ""            # machine_id van gekoppelde Cocktailmachine (Pi 5)
     linked_machine_version: str = ""       # Softwareversie van de Cocktailmachine
+    pump_count: int = 0                          # Aantal aangesloten pompen (via heartbeat)
     installation_date: Optional[date] = None   # datum van fysieke installatie (door monteur)
     warranty_start: Optional[date] = None      # ingangsdatum garantie (kan eerder zijn)
     warranty_years: int = 2                    # totale garantieduur in jaren (2 t/m 5)
@@ -369,7 +370,7 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN warranty_start DATE",
         "ALTER TABLE machine ADD COLUMN warranty_years INTEGER NOT NULL DEFAULT 2",
         "ALTER TABLE machine ADD COLUMN warranty_type VARCHAR NOT NULL DEFAULT 'factory'",
-        "ALTER TABLE machine ADD COLUMN pump_slots VARCHAR NOT NULL DEFAULT '[]'",
+        "ALTER TABLE machine ADD COLUMN pump_count INTEGER NOT NULL DEFAULT 0",
     ]
     for sql in migrations:
         try:
@@ -631,6 +632,8 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                     machine.linked_machine_id = data["cocktail_machine_id"]
                 if data.get("cocktail_machine_version"):
                     machine.linked_machine_version = data["cocktail_machine_version"]
+                if data.get("pump_count"):
+                    machine.pump_count = int(data["pump_count"])
                 db.add(machine)
                 db.commit()
                 await websocket.send_json({"type": "heartbeat_ack"})
@@ -1881,7 +1884,7 @@ def _warranty_info(machine: "Machine") -> dict:
         (today - install).days <= 30 and
         w_type == "factory"
     )
-    pump_count = len(json.loads(machine.pump_slots or "[]"))
+    pump_count = machine.pump_count or 0
     return {
         "installation_date": install.isoformat() if install else None,
         "warranty_start": start.isoformat() if start else None,
