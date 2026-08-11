@@ -1,6 +1,23 @@
 import React, { useState, useEffect } from 'react'
 import { fetchApi } from '../api.js'
 
+const MIXCARE_PRIJZEN = {
+  4:  { 3: 59,  4: 89,  5: 119 },
+  6:  { 3: 74,  4: 109, 5: 144 },
+  8:  { 3: 89,  4: 129, 5: 169 },
+  10: { 3: 104, 4: 149, 5: 194 },
+  12: { 3: 119, 4: 169, 5: 219 },
+  14: { 3: 134, 4: 189, 5: 244 },
+  16: { 3: 149, 4: 209, 5: 269 },
+}
+
+function getMixcarePrice(pumpCount, jaren) {
+  if (!pumpCount) return null
+  const stappen = [4, 6, 8, 10, 12, 14, 16]
+  const sleutel = stappen.find(s => s >= pumpCount) || 16
+  return MIXCARE_PRIJZEN[sleutel]?.[jaren] ?? null
+}
+
 function Card({ children, style }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: 16, padding: '22px 24px', marginBottom: 20, ...style }}>
@@ -134,18 +151,24 @@ export default function Garantie() {
                   Verleng uw garantie naar 3, 4 of 5 jaar met MIXCARE.
                   U heeft nog <strong style={{ color: '#5856d6' }}>{m.mixcare_days_remaining} dagen</strong> de tijd om dit aan te vragen.
                 </p>
-                <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-                  {[3, 4, 5].map(y => (
-                    <button key={y} onClick={() => setMixcareYears(prev => ({ ...prev, [m.machine_id]: y }))}
-                      style={{
-                        padding: '10px 22px', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                        border: `2px solid ${(mixcareYears[m.machine_id] || 3) === y ? '#5856d6' : '#d4caff'}`,
-                        background: (mixcareYears[m.machine_id] || 3) === y ? '#5856d6' : '#fff',
-                        color: (mixcareYears[m.machine_id] || 3) === y ? '#fff' : '#1d1d1f',
-                      }}>
-                      {y} jaar
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                  {[3, 4, 5].map(y => {
+                    const sel = (mixcareYears[m.machine_id] || 3) === y
+                    const prijs = m.model === 'MATE.1' ? getMixcarePrice(m.pump_count, y) : null
+                    return (
+                      <button key={y} onClick={() => setMixcareYears(prev => ({ ...prev, [m.machine_id]: y }))}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '12px 16px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                          border: `2px solid ${sel ? '#5856d6' : '#d4caff'}`,
+                          background: sel ? '#5856d6' : '#fff',
+                          color: sel ? '#fff' : '#1d1d1f',
+                        }}>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{y} jaar MIXCARE</span>
+                        {prijs && <span style={{ fontWeight: 700, fontSize: 15 }}>€ {prijs},-</span>}
+                      </button>
+                    )
+                  })}
                 </div>
                 <button onClick={() => requestMixcare(m.machine_id)} disabled={requesting[m.machine_id]}
                   style={{

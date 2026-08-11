@@ -1880,6 +1880,7 @@ def _warranty_info(machine: "Machine") -> dict:
         (today - install).days <= 30 and
         w_type == "factory"
     )
+    pump_count = len(json.loads(machine.pump_slots or "[]"))
     return {
         "installation_date": install.isoformat() if install else None,
         "warranty_start": start.isoformat() if start else None,
@@ -1890,6 +1891,8 @@ def _warranty_info(machine: "Machine") -> dict:
         "active": active,
         "mixcare_eligible": mixcare_eligible,
         "mixcare_days_remaining": max(0, 30 - (today - install).days) if install else None,
+        "model": machine.model or "",
+        "pump_count": pump_count,
     }
 
 
