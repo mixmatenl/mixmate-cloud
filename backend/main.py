@@ -74,6 +74,7 @@ class Machine(SQLModel, table=True):
     linked_machine_version: str = ""       # Softwareversie van de Cocktailmachine
     pump_count: int = 0                          # Aantal aangesloten pompen (via heartbeat)
     blocked: bool = False                        # Machine geblokkeerd (bijv. bij uitstaande factuur)
+    blocked_by: str = ""                         # "admin" | "customer" | ""
     blocked_reason: str = ""
     installation_date: Optional[date] = None   # datum van fysieke installatie (door monteur)
     warranty_start: Optional[date] = None      # ingangsdatum garantie (kan eerder zijn)
@@ -215,6 +216,21 @@ class MixcareInvoice(SQLModel, table=True):
     amount: float = 0.0
     due_date: Optional[date] = None
     status: str = "openstaand"   # openstaand | betaald
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ManualInvoice(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    invoice_number: str = Field(index=True, default="")
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
+    customer_name: str = ""
+    customer_email: str = ""
+    machine_id: str = ""
+    subject: str = ""
+    lines: str = "[]"            # JSON: [{description, quantity, unit_price_excl}]
+    btw_rate: float = 21.0
+    status: str = "openstaand"   # openstaand | betaald
+    due_date: Optional[date] = None
+    notes: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 # ── Personeelsportaal ─────────────────────────────────────────────────────────
@@ -386,6 +402,7 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN warranty_type VARCHAR NOT NULL DEFAULT 'factory'",
         "ALTER TABLE machine ADD COLUMN pump_count INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE machine ADD COLUMN blocked BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE machine ADD COLUMN blocked_by VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE machine ADD COLUMN blocked_reason VARCHAR NOT NULL DEFAULT ''",
         """CREATE TABLE IF NOT EXISTS mixcareinvoice (
             id SERIAL PRIMARY KEY,
@@ -397,6 +414,21 @@ def create_tables():
             amount REAL NOT NULL DEFAULT 0.0,
             due_date DATE,
             status VARCHAR NOT NULL DEFAULT 'openstaand',
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS manualinvoice (
+            id SERIAL PRIMARY KEY,
+            invoice_number VARCHAR NOT NULL DEFAULT '',
+            customer_id INTEGER REFERENCES customer(id),
+            customer_name VARCHAR NOT NULL DEFAULT '',
+            customer_email VARCHAR NOT NULL DEFAULT '',
+            machine_id VARCHAR NOT NULL DEFAULT '',
+            subject VARCHAR NOT NULL DEFAULT '',
+            lines TEXT NOT NULL DEFAULT '[]',
+            btw_rate REAL NOT NULL DEFAULT 21.0,
+            status VARCHAR NOT NULL DEFAULT 'openstaand',
+            due_date DATE,
+            notes TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )""",
     ]
@@ -678,6 +710,7 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                                 _items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == _o.id)).all()
                                 _ack_total += round(sum(i.price_excl * i.quantity for i in _items) * (1 + _o.btw_rate_snapshot / 100), 2)
                     ack["block"] = True
+                    ack["blocked_by"] = machine.blocked_by
                     ack["reason"] = machine.blocked_reason
                     ack["amount"] = round(_ack_total, 2)
                 await websocket.send_json(ack)
@@ -1511,6 +1544,7 @@ async def admin_block_machine(machine_id: str, body: dict = {}, _: int = Depends
     amount_str = f"€ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     machine.blocked = True
+    machine.blocked_by = "admin"
     machine.blocked_reason = body.get("reason") or (
         f"Openstaande betalingen: {amount_str}" if total > 0 else "Openstaande betalingen"
     )
@@ -1521,6 +1555,7 @@ async def admin_block_machine(machine_id: str, body: dict = {}, _: int = Depends
         try:
             await conn.ws.send_json({
                 "type": "block_machine",
+                "blocked_by": "admin",
                 "reason": machine.blocked_reason,
                 "amount": total,
             })
@@ -1534,6 +1569,7 @@ async def admin_unblock_machine(machine_id: str, _: int = Depends(verify_admin_u
     if not machine:
         raise HTTPException(status_code=404)
     machine.blocked = False
+    machine.blocked_by = ""
     machine.blocked_reason = ""
     db.add(machine); db.commit()
     conn = connected_machines.get(machine_id)
@@ -1942,25 +1978,45 @@ def admin_set_warranty(machine_id: str, body: dict, background_tasks: Background
 
 @app.get("/api/account/invoices")
 def get_account_invoices(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    invoices = db.exec(
-        select(MixcareInvoice)
-        .where(MixcareInvoice.customer_id == customer_id)
-        .order_by(MixcareInvoice.created_at.desc())
-    ).all()
-    return [
-        {
+    customer = db.get(Customer, customer_id)
+    result = []
+
+    # MixcareInvoices
+    for inv in db.exec(select(MixcareInvoice).where(MixcareInvoice.customer_id == customer_id).order_by(MixcareInvoice.created_at.desc())).all():
+        result.append({
             "id": inv.id,
+            "source": "mixcare",
             "invoice_number": inv.invoice_number,
             "machine_id": inv.machine_id,
             "machine_name": inv.machine_name,
-            "warranty_years": inv.warranty_years,
+            "subject": f"MIXCARE {inv.warranty_years} jaar",
             "amount": inv.amount,
             "due_date": inv.due_date.isoformat() if inv.due_date else None,
             "status": inv.status,
             "created_at": inv.created_at.isoformat(),
-        }
-        for inv in invoices
-    ]
+        })
+
+    # ManualInvoices gericht aan dit e-mailadres
+    if customer:
+        for inv in db.exec(select(ManualInvoice).where(ManualInvoice.customer_email == customer.email).order_by(ManualInvoice.created_at.desc())).all():
+            lines = json.loads(inv.lines or "[]")
+            total_excl = sum(float(l.get("quantity", 1)) * float(l.get("unit_price_excl", 0)) for l in lines)
+            amount_incl = round(total_excl * (1 + inv.btw_rate / 100), 2)
+            result.append({
+                "id": inv.id,
+                "source": "manual",
+                "invoice_number": inv.invoice_number,
+                "machine_id": inv.machine_id,
+                "machine_name": "",
+                "subject": inv.subject,
+                "amount": amount_incl,
+                "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                "status": inv.status,
+                "created_at": inv.created_at.isoformat(),
+            })
+
+    result.sort(key=lambda x: x["created_at"], reverse=True)
+    return result
 
 
 @app.get("/api/admin/invoices")
@@ -1997,6 +2053,240 @@ def admin_update_invoice(invoice_id: int, body: dict, _: int = Depends(verify_ad
         inv.status = body["status"]
     db.add(inv); db.commit()
     return {"ok": True}
+
+
+# ── Gecombineerd factuuroverzicht (admin) ─────────────────────────────────────
+
+@app.get("/api/admin/invoices/all")
+def admin_get_all_invoices(q: str = "", _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Gecombineerde lijst van MixcareInvoice, GlassOrder (met factuur) en ManualInvoice."""
+    settings = _get_shop_settings(db)
+    result = []
+    ql = q.lower() if q else ""
+
+    # 1. MixcareInvoices
+    for inv in db.exec(select(MixcareInvoice).order_by(MixcareInvoice.created_at.desc())).all():
+        customer = db.get(Customer, inv.customer_id) if inv.customer_id else None
+        cname = customer.name if customer else ""
+        cemail = customer.email if customer else ""
+        if ql and not any(ql in x.lower() for x in [inv.invoice_number, cname, cemail, inv.machine_id]):
+            continue
+        result.append({
+            "id": inv.id,
+            "source": "mixcare",
+            "invoice_number": inv.invoice_number,
+            "customer_name": cname,
+            "customer_email": cemail,
+            "machine_id": inv.machine_id,
+            "machine_name": inv.machine_name,
+            "subject": f"MIXCARE {inv.warranty_years} jaar",
+            "amount_incl": inv.amount,
+            "status": inv.status,
+            "due_date": inv.due_date.isoformat() if inv.due_date else None,
+            "created_at": inv.created_at.isoformat(),
+        })
+
+    # 2. GlassOrders met invoice_number
+    for order in db.exec(select(GlassOrder).where(GlassOrder.invoice_number != "").order_by(GlassOrder.created_at.desc())).all():
+        if ql and not any(ql in x.lower() for x in [order.invoice_number, order.customer_name, order.customer_email]):
+            continue
+        items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == order.id)).all()
+        total_excl = sum(i.price_excl * i.quantity for i in items)
+        btw = order.btw_rate_snapshot if hasattr(order, "btw_rate_snapshot") else settings.btw_rate
+        amount_incl = total_excl * (1 + btw / 100)
+        result.append({
+            "id": order.id,
+            "source": "glass",
+            "invoice_number": order.invoice_number,
+            "customer_name": order.customer_name,
+            "customer_email": order.customer_email,
+            "machine_id": "",
+            "machine_name": "",
+            "subject": "Glazen bestelling",
+            "amount_incl": round(amount_incl, 2),
+            "status": order.payment_status,
+            "due_date": None,
+            "created_at": order.created_at.isoformat(),
+        })
+
+    # 3. ManualInvoices
+    for inv in db.exec(select(ManualInvoice).order_by(ManualInvoice.created_at.desc())).all():
+        if ql and not any(ql in x.lower() for x in [inv.invoice_number, inv.customer_name, inv.customer_email, inv.machine_id]):
+            continue
+        lines = json.loads(inv.lines or "[]")
+        total_excl = sum(float(l.get("quantity", 1)) * float(l.get("unit_price_excl", 0)) for l in lines)
+        amount_incl = round(total_excl * (1 + inv.btw_rate / 100), 2)
+        result.append({
+            "id": inv.id,
+            "source": "manual",
+            "invoice_number": inv.invoice_number,
+            "customer_name": inv.customer_name,
+            "customer_email": inv.customer_email,
+            "machine_id": inv.machine_id,
+            "machine_name": "",
+            "subject": inv.subject,
+            "amount_incl": amount_incl,
+            "status": inv.status,
+            "due_date": inv.due_date.isoformat() if inv.due_date else None,
+            "created_at": inv.created_at.isoformat(),
+        })
+
+    # Sorteer op datum descending
+    result.sort(key=lambda x: x["created_at"], reverse=True)
+    return result
+
+
+@app.post("/api/admin/invoices/manual")
+async def admin_create_manual_invoice(
+    body: dict,
+    background_tasks: BackgroundTasks,
+    _: int = Depends(verify_admin_user),
+    db: Session = Depends(get_session),
+):
+    settings = _get_shop_settings(db)
+    year = datetime.utcnow().year
+    count = db.exec(
+        select(ManualInvoice).where(ManualInvoice.invoice_number.like(f"MAN-{year}-%"))
+    ).all()
+    num = len(count) + 1
+    invoice_number = f"MAN-{year}-{num:04d}"
+
+    due_date = None
+    payment_days = int(body.get("payment_days", settings.payment_days))
+    due_date = (datetime.utcnow() + timedelta(days=payment_days)).date()
+
+    inv = ManualInvoice(
+        invoice_number=invoice_number,
+        customer_id=body.get("customer_id") or None,
+        customer_name=body.get("customer_name", ""),
+        customer_email=body.get("customer_email", ""),
+        machine_id=body.get("machine_id", ""),
+        subject=body.get("subject", ""),
+        lines=json.dumps(body.get("lines", [])),
+        btw_rate=float(body.get("btw_rate", settings.btw_rate)),
+        due_date=due_date,
+        notes=body.get("notes", ""),
+    )
+    db.add(inv); db.commit(); db.refresh(inv)
+
+    if inv.customer_email:
+        html = _build_manual_invoice_html(inv, settings)
+        background_tasks.add_task(
+            _resend,
+            inv.customer_email,
+            f"Factuur {invoice_number} — {settings.company_name or 'MIXMATE'}",
+            html,
+            settings.email or "",
+        )
+
+    lines = json.loads(inv.lines)
+    total_excl = sum(float(l.get("quantity", 1)) * float(l.get("unit_price_excl", 0)) for l in lines)
+    amount_incl = round(total_excl * (1 + inv.btw_rate / 100), 2)
+    return {
+        "id": inv.id,
+        "invoice_number": invoice_number,
+        "amount_incl": amount_incl,
+        "due_date": inv.due_date.isoformat() if inv.due_date else None,
+    }
+
+
+@app.patch("/api/admin/invoices/manual/{invoice_id}")
+def admin_update_manual_invoice(invoice_id: int, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    inv = db.get(ManualInvoice, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Factuur niet gevonden")
+    if "status" in body:
+        inv.status = body["status"]
+    db.add(inv); db.commit()
+    return {"ok": True}
+
+
+def _build_manual_invoice_html(inv: ManualInvoice, settings: ShopSettings) -> str:
+    lines = json.loads(inv.lines or "[]")
+    total_excl = sum(float(l.get("quantity", 1)) * float(l.get("unit_price_excl", 0)) for l in lines)
+    btw_amount = total_excl * inv.btw_rate / 100
+    total_incl = total_excl + btw_amount
+
+    rows = ""
+    for l in lines:
+        qty = float(l.get("quantity", 1))
+        price = float(l.get("unit_price_excl", 0))
+        subtotal = qty * price
+        rows += f"""
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0">{l.get('description','')}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;text-align:center">{qty:g}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;text-align:right">€ {price:,.2f}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;text-align:right">€ {subtotal:,.2f}</td>
+        </tr>"""
+
+    address_parts = [settings.address_line1]
+    if settings.address_line2: address_parts.append(settings.address_line2)
+    address_parts += [f"{settings.postal_code} {settings.city}", settings.country]
+    company_address = "<br>".join(p for p in address_parts if p.strip())
+
+    invoice_date = inv.created_at.strftime('%d-%m-%Y')
+    due_str = inv.due_date.strftime('%d-%m-%Y') if inv.due_date else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="nl">
+<head><meta charset="UTF-8"><title>Factuur {inv.invoice_number}</title>
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1d1d1f;margin:0;padding:0;background:#f5f5f7}}
+  .page{{max-width:720px;margin:0 auto;background:#fff;padding:48px 56px}}
+  h1{{font-size:28px;font-weight:800;margin:0 0 4px;color:#1d1d1f}}
+  table{{width:100%;border-collapse:collapse}}
+  th{{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6e6e73;padding:8px 0;border-bottom:2px solid #1d1d1f;text-align:left}}
+  th:last-child,th:nth-child(3),th:nth-child(2){{text-align:right}}
+  th:nth-child(2){{text-align:center}}
+  .total-row td{{padding:8px 0;font-weight:600}}
+  .grand-total td{{padding:12px 0;font-size:17px;font-weight:800;border-top:2px solid #1d1d1f}}
+  @media print{{body{{background:#fff}}.page{{padding:0}}}}
+</style></head>
+<body><div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:48px">
+    <div>
+      <h1>{settings.company_name or "MIXMATE"}</h1>
+      <div style="font-size:13px;color:#6e6e73;margin-top:6px;line-height:1.6">{company_address}</div>
+      {f'<div style="font-size:13px;color:#6e6e73">KVK: {settings.kvk}</div>' if settings.kvk else ''}
+      {f'<div style="font-size:13px;color:#6e6e73">BTW: {settings.btw_number}</div>' if settings.btw_number else ''}
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6e6e73;margin-bottom:4px">Factuur</div>
+      <div style="font-size:22px;font-weight:800;color:#1d1d1f">{inv.invoice_number}</div>
+      <div style="font-size:13px;color:#6e6e73;margin-top:6px">Datum: {invoice_date}</div>
+      {f'<div style="font-size:13px;color:#6e6e73">Vervaldatum: {due_str}</div>' if due_str else ''}
+    </div>
+  </div>
+
+  <div style="background:#f5f5f7;border-radius:12px;padding:20px 24px;margin-bottom:40px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6e6e73;margin-bottom:10px">Factuuradres</div>
+    <div style="font-weight:600;color:#1d1d1f">{inv.customer_name}</div>
+    <div style="color:#6e6e73;font-size:14px;margin-top:4px">{inv.customer_email}</div>
+  </div>
+
+  {f'<div style="margin-bottom:24px;font-size:15px;font-weight:600;color:#1d1d1f">Betreft: {inv.subject}</div>' if inv.subject else ''}
+
+  <table>
+    <thead><tr>
+      <th>Omschrijving</th><th style="text-align:center">Aantal</th>
+      <th style="text-align:right">Prijs excl. BTW</th><th style="text-align:right">Subtotaal</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+    <tfoot>
+      <tr class="total-row"><td colspan="3" style="text-align:right;padding-top:16px">Subtotaal excl. BTW</td><td style="text-align:right;padding-top:16px">€ {total_excl:,.2f}</td></tr>
+      <tr class="total-row"><td colspan="3" style="text-align:right">BTW {inv.btw_rate:.0f}%</td><td style="text-align:right">€ {btw_amount:,.2f}</td></tr>
+      <tr class="grand-total"><td colspan="3" style="text-align:right">Totaal incl. BTW</td><td style="text-align:right">€ {total_incl:,.2f}</td></tr>
+    </tfoot>
+  </table>
+
+  {f'<div style="margin-top:32px;padding:16px 20px;background:#f5f5f7;border-radius:10px;font-size:14px;color:#1d1d1f"><strong>Betalingsinformatie</strong><br>Graag het bedrag van <strong>€ {total_incl:,.2f}</strong> overmaken naar <strong>{settings.iban}</strong> onder vermelding van factuurnummer <strong>{inv.invoice_number}</strong>.</div>' if settings.iban else ''}
+  {f'<div style="margin-top:20px;font-size:13px;color:#6e6e73;line-height:1.6">{inv.notes}</div>' if inv.notes else ''}
+
+  <div style="margin-top:48px;padding-top:24px;border-top:1px solid #f0f0f0;font-size:12px;color:#aeaeb2;text-align:center">
+    {settings.company_name or "MIXMATE"}{f" · {settings.email}" if settings.email else ""}{f" · {settings.phone}" if settings.phone else ""}{f" · {settings.website}" if settings.website else ""}
+  </div>
+</div></body></html>"""
 
 
 @app.get("/api/machines/{machine_id}/warranty-public")
@@ -2531,11 +2821,27 @@ async def get_block_status(machine_id: str, customer_id: int = Depends(verify_to
 
 @app.post("/api/machines/{machine_id}/block")
 async def block_machine(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404)
+    machine.blocked = True
+    machine.blocked_by = "customer"
+    machine.blocked_reason = ""
+    db.add(machine); db.commit()
     conn = _get_conn(machine_id, customer_id, db)
-    return await conn.request({"type": "block_machine"}, timeout=5)
+    return await conn.request({"type": "block_machine", "blocked_by": "customer"}, timeout=5)
 
 @app.post("/api/machines/{machine_id}/unblock")
 async def unblock_machine(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404)
+    if machine.blocked and machine.blocked_by == "admin":
+        raise HTTPException(status_code=403, detail="Machine is geblokkeerd door MIXMATE en kan niet worden ontgrendeld via het portaal.")
+    machine.blocked = False
+    machine.blocked_by = ""
+    machine.blocked_reason = ""
+    db.add(machine); db.commit()
     conn = _get_conn(machine_id, customer_id, db)
     return await conn.request({"type": "unblock_machine"}, timeout=5)
 
@@ -3065,6 +3371,7 @@ def _machine_dict(m: Machine) -> dict:
         "paired":                   m.paired,
         "last_seen":                m.last_seen.isoformat() if m.last_seen else None,
         "blocked":                  m.blocked,
+        "blocked_by":               m.blocked_by,
         "blocked_reason":           m.blocked_reason,
     }
 

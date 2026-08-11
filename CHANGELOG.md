@@ -1,3 +1,15 @@
+## [2.2.0] - 2026-08-11
+### Toegevoegd
+- Machine blokkeren: admin blokkeert → klant kan niet ontgrendelen, scherm toont openstaand bedrag
+- Machine blokkeren: klant blokkeert via portaal → ander scherm met instructie + QR-code naar portaal
+- HDMI dashboard: pompgrid schaalt automatisch naar 2/3/4 kolommen op basis van aantal pompen
+- Admin portaal: geblokkeerde machines slaan verificatiestap over (volledige toegang)
+- Klant kan eigen machine niet ontgrendelen als admin de blokkade heeft ingesteld
+
+### Opgelost
+- Block/unblock endpoints omgezet naar `async def` om WebSocket-berichten correct te kunnen sturen
+- Klant-unblock geeft nu 403 als `blocked_by == "admin"`
+
 ## [2.1.9] - 2026-08-11
 ### Toegevoegd
 - MIXCARE facturen worden opgeslagen in de database (model `MixcareInvoice`, factuurnummer MCR-YYYY-NNNN)
