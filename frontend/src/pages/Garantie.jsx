@@ -2,20 +2,33 @@ import React, { useState, useEffect } from 'react'
 import { fetchApi } from '../api.js'
 
 const MIXCARE_PRIJZEN = {
-  4:  { 3: 59,  4: 89,  5: 119 },
-  6:  { 3: 74,  4: 109, 5: 144 },
-  8:  { 3: 89,  4: 129, 5: 169 },
-  10: { 3: 104, 4: 149, 5: 194 },
-  12: { 3: 119, 4: 169, 5: 219 },
-  14: { 3: 134, 4: 189, 5: 244 },
-  16: { 3: 149, 4: 209, 5: 269 },
+  'MATE.1': {
+    4:  { 3: 59,  4: 89,  5: 119 },
+    6:  { 3: 74,  4: 109, 5: 144 },
+    8:  { 3: 89,  4: 129, 5: 169 },
+    10: { 3: 104, 4: 149, 5: 194 },
+    12: { 3: 119, 4: 169, 5: 219 },
+    14: { 3: 134, 4: 189, 5: 244 },
+    16: { 3: 149, 4: 209, 5: 269 },
+  },
+  'MATE.1 + CO2': {
+    4:  { 3: 74.99,  4: 109.99, 5: 149.99 },
+    6:  { 3: 94.99,  4: 134.99, 5: 179.99 },
+    8:  { 3: 109.99, 4: 159.99, 5: 209.99 },
+    10: { 3: 129.99, 4: 184.99, 5: 239.99 },
+    12: { 3: 149.99, 4: 209.99, 5: 274.99 },
+    14: { 3: 169.99, 4: 234.99, 5: 304.99 },
+    16: { 3: 184.99, 4: 259.99, 5: 334.99 },
+  },
 }
 
-function getMixcarePrice(pumpCount, jaren) {
-  if (!pumpCount) return null
+function getMixcarePrice(model, pumpCount, jaren) {
+  if (!pumpCount || !model) return null
+  const modelPrijzen = MIXCARE_PRIJZEN[model]
+  if (!modelPrijzen) return null
   const stappen = [4, 6, 8, 10, 12, 14, 16]
   const sleutel = stappen.find(s => s >= pumpCount) || 16
-  return MIXCARE_PRIJZEN[sleutel]?.[jaren] ?? null
+  return modelPrijzen[sleutel]?.[jaren] ?? null
 }
 
 function Card({ children, style }) {
@@ -154,7 +167,7 @@ export default function Garantie() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
                   {[3, 4, 5].map(y => {
                     const sel = (mixcareYears[m.machine_id] || 3) === y
-                    const prijs = m.model === 'MATE.1' ? getMixcarePrice(m.pump_count, y) : null
+                    const prijs = getMixcarePrice(m.model, m.pump_count, y)
                     return (
                       <button key={y} onClick={() => setMixcareYears(prev => ({ ...prev, [m.machine_id]: y }))}
                         style={{

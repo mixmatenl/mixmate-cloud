@@ -1,3 +1,8 @@
+## [2.1.2] - 2026-08-11
+### Opgelost
+- Fix: garantie-info laadde niet meer door ontbrekende pump_slots migratie in database
+- MIXCARE prijzen in klantportaal nu ook voor MATE.1 + CO2
+
 ## [2.0.8] - 2026-08-10
 ### Gewijzigd
 - Dashboard refresh elke 5 seconden (was 30s) — online/offline status direct zichtbaar

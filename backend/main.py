@@ -369,6 +369,7 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN warranty_start DATE",
         "ALTER TABLE machine ADD COLUMN warranty_years INTEGER NOT NULL DEFAULT 2",
         "ALTER TABLE machine ADD COLUMN warranty_type VARCHAR NOT NULL DEFAULT 'factory'",
+        "ALTER TABLE machine ADD COLUMN pump_slots VARCHAR NOT NULL DEFAULT '[]'",
     ]
     for sql in migrations:
         try:
