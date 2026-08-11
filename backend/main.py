@@ -1828,8 +1828,10 @@ def admin_set_warranty(machine_id: str, body: dict, background_tasks: Background
     db.add(machine); db.commit(); db.refresh(machine)
 
     # Factuur versturen bij MIXCARE-activatie (als background task — niet blocking)
+    print(f"[WARRANTY] send_invoice={body.get('send_invoice')} type={machine.warranty_type} customer_id={machine.customer_id}", flush=True)
     if body.get("send_invoice") and machine.warranty_type == "mixcare":
         customer = db.get(Customer, machine.customer_id) if machine.customer_id else None
+        print(f"[WARRANTY] customer={customer and customer.email}", flush=True)
         if customer and customer.email:
             price = body.get("invoice_price")
             price_float = float(price) if price else 0.0
@@ -1857,6 +1859,7 @@ def admin_set_warranty(machine_id: str, body: dict, background_tasks: Background
             )
             db.add(invoice_record)
             db.commit()
+            print(f"[WARRANTY] Factuur aangemaakt: {invoice_number} voor {customer.email}", flush=True)
 
             invoice_body = (
                 f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>MIXCARE factuur</h2>"
