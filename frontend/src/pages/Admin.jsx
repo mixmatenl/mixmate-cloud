@@ -636,23 +636,67 @@ function TicketTab({ ticketType, initialFilter }) {
 }
 
 // ── MIXCARE activatie (na contact met klant) ──────────────────────────────────
+const MIXCARE_PRIJZEN = {
+  'MATE.1': {
+    4:  { 3: 59,  4: 89,  5: 119 }, 6:  { 3: 74,  4: 109, 5: 144 },
+    8:  { 3: 89,  4: 129, 5: 169 }, 10: { 3: 104, 4: 149, 5: 194 },
+    12: { 3: 119, 4: 169, 5: 219 }, 14: { 3: 134, 4: 189, 5: 244 },
+    16: { 3: 149, 4: 209, 5: 269 },
+  },
+  'MATE.1 + CO2': {
+    4:  { 3: 74.99,  4: 109.99, 5: 149.99 }, 6:  { 3: 94.99,  4: 134.99, 5: 179.99 },
+    8:  { 3: 109.99, 4: 159.99, 5: 209.99 }, 10: { 3: 129.99, 4: 184.99, 5: 239.99 },
+    12: { 3: 149.99, 4: 209.99, 5: 274.99 }, 14: { 3: 169.99, 4: 234.99, 5: 304.99 },
+    16: { 3: 184.99, 4: 259.99, 5: 334.99 },
+  },
+  'MATE.1 PRO': {
+    16: { 3: 319.99, 4: 449.99, 5: 599.99 }, 20: { 3: 389.99, 4: 539.99, 5: 699.99 },
+    24: { 3: 459.99, 4: 629.99, 5: 799.99 }, 28: { 3: 529.99, 4: 719.99, 5: 899.99 },
+    32: { 3: 599.99, 4: 799.99, 5: 999.99 },
+  },
+}
+function getMixcarePrice(model, pumpCount, jaren) {
+  if (!pumpCount || !model) return null
+  const tabel = MIXCARE_PRIJZEN[model]
+  if (!tabel) return null
+  const stappen = model === 'MATE.1 PRO' ? [16, 20, 24, 28, 32] : [4, 6, 8, 10, 12, 14, 16]
+  const sleutel = stappen.find(s => s >= pumpCount) || stappen[stappen.length - 1]
+  return tabel[sleutel]?.[jaren] ?? null
+}
+
 function MixcareActivatieBlok({ ticket, onUpdate }) {
-  const [years, setYears] = useState(3)
+  // Haal jaren uit beschrijving: "MIXCARE 3 jaar aangevraagd"
+  const jarenMatch = ticket.description?.match(/MIXCARE (\d+) jaar/)
+  const defaultYears = jarenMatch ? Number(jarenMatch[1]) : 3
+  const [years, setYears] = useState(defaultYears)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState(null)
+  const [warrantyInfo, setWarrantyInfo] = useState(null)
 
-  // Haal machine_id uit de beschrijving
-  const machineMatch = ticket.description?.match(/\(([^)]+)\)\s*$/)
+  // Haal machine_id uit "Machine: naam (pi-xxxx)" — niet het klantemail aan het einde
+  const machineMatch = ticket.description?.match(/Machine:[^\n]*\(([^)]+)\)/)
   const machineId = machineMatch ? machineMatch[1].trim() : null
+
+  useEffect(() => {
+    if (!machineId) return
+    api.adminRaw('GET', `/api/admin/machines/${machineId}/warranty`)
+      .then(setWarrantyInfo).catch(() => {})
+  }, [machineId])
+
+  const prijs = warrantyInfo ? getMixcarePrice(warrantyInfo.model, warrantyInfo.pump_count, years) : null
 
   async function activeer() {
     if (!machineId) { setMsg({ ok: false, text: 'Machine ID niet gevonden in beschrijving.' }); return }
     setSaving(true); setMsg(null)
     try {
       await api.adminUpdateTicket(ticket.id, { status: 'opgelost' })
-      await api.adminRaw('PATCH', `/api/admin/machines/${machineId}/warranty`, { warranty_years: years })
+      await api.adminRaw('PATCH', `/api/admin/machines/${machineId}/warranty`, {
+        warranty_years: years,
+        send_invoice: true,
+        invoice_price: prijs,
+      })
       onUpdate({ ...ticket, status: 'opgelost' })
-      setMsg({ ok: true, text: `MIXCARE ${years} jaar geactiveerd.` })
+      setMsg({ ok: true, text: `MIXCARE ${years} jaar geactiveerd${prijs ? ` — factuur van €${prijs} verstuurd` : ''}.` })
     } catch (e) { setMsg({ ok: false, text: e.message }) }
     setSaving(false)
   }
@@ -661,19 +705,20 @@ function MixcareActivatieBlok({ ticket, onUpdate }) {
     <div style={{ background: '#f0efff', border: '1px solid #dddaff', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: '#5856d6', textTransform: 'uppercase', letterSpacing: 1 }}>MIXCARE activeren</div>
       <p style={{ margin: 0, fontSize: 13, color: '#3a3a3c', lineHeight: 1.5 }}>
-        Neem eerst contact op met de klant om de aanvraag te bevestigen. Activeer daarna MIXCARE hieronder.
+        Neem eerst contact op met de klant om de aanvraag te bevestigen. Bij activatie wordt automatisch een factuur verstuurd (betaaltermijn 14 dagen).
       </p>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <select value={years} onChange={e => setYears(Number(e.target.value))} style={{ ...s.inp, width: 'auto', padding: '6px 10px' }}>
           <option value={3}>3 jaar</option>
           <option value={4}>4 jaar</option>
           <option value={5}>5 jaar</option>
         </select>
+        {prijs && <span style={{ fontSize: 14, fontWeight: 700, color: '#5856d6' }}>€ {prijs},-</span>}
         <button onClick={activeer} disabled={saving} style={{ ...s.btn, background: '#5856d6', opacity: saving ? .5 : 1 }}>
           {saving ? 'Activeren…' : 'Activeer MIXCARE'}
         </button>
-        {msg && <span style={{ fontSize: 13, color: msg.ok ? '#34c759' : '#ff3b30' }}>{msg.text}</span>}
       </div>
+      {msg && <div style={{ fontSize: 13, color: msg.ok ? '#34c759' : '#ff3b30', marginTop: 4 }}>{msg.text}</div>}
     </div>
   )
 }

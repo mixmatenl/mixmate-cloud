@@ -1762,6 +1762,40 @@ def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admi
         machine.warranty_years = years
         machine.warranty_type = "factory" if years == 2 else "mixcare"
     db.add(machine); db.commit(); db.refresh(machine)
+
+    # Factuur versturen bij MIXCARE-activatie
+    if body.get("send_invoice") and machine.warranty_type == "mixcare":
+        customer = db.get(Customer, machine.customer_id) if machine.customer_id else None
+        if customer and customer.email:
+            price = body.get("invoice_price")
+            due_date = (date.today() + timedelta(days=14)).strftime("%d-%m-%Y")
+            price_str = f"€ {price},-" if price else "op aanvraag"
+            invoice_body = (
+                f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>MIXCARE factuur</h2>"
+                f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Bedankt voor uw MIXCARE aanvraag!</p>"
+                "<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;margin-bottom:20px;'>"
+                + _email_info_row("Klant", customer.name or customer.email)
+                + _email_info_row("Machine", machine.name or machine.machine_id)
+                + _email_info_row("MIXCARE dekking", f"{machine.warranty_years} jaar")
+                + _email_info_row("Bedrag", price_str)
+                + _email_info_row("Betaaltermijn", "14 dagen")
+                + _email_info_row("Uiterlijk betalen voor", due_date, last=True)
+                + "</table>"
+                + f"<div style='background:#f5f3ff;border-radius:14px;padding:18px;margin-bottom:20px;'>"
+                + f"<p style='margin:0;font-size:14px;color:#1d1d1f;line-height:1.6;'>"
+                + f"Gelieve het bedrag van <strong>{price_str}</strong> over te maken naar:<br>"
+                + f"<strong>MIXMATE B.V.</strong><br>IBAN: NL00 BANK 0000 0000 00<br>"
+                + f"Vermeld: MIXCARE {machine.warranty_years}jr – {machine.name or machine.machine_id}</p></div>"
+                + _email_button("https://portaal.mixmate.nl", "Bekijk uw account →")
+            )
+            import asyncio as _asyncio
+            _asyncio.create_task(_resend(
+                customer.email,
+                f"MIXCARE factuur – {machine.name or machine.machine_id}",
+                _email_html(invoice_body),
+                reply_to="info@mixmate.nl",
+            ))
+
     return _warranty_info(machine)
 
 

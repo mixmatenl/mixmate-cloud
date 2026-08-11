@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { api } from '../api.js'
+import { api, fetchApi } from '../api.js'
 
 function SettingGroup({ label, children }) {
   return (
@@ -50,7 +50,7 @@ export default function Support({ user }) {
 
   useEffect(() => {
     api.getMachines().then(setMachines).catch(() => {})
-    api('/api/account/warranty').then(setWarranties).catch(() => {})
+    fetchApi('/api/account/warranty').then(setWarranties).catch(() => {})
   }, [])
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }

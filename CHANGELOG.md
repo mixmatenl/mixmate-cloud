@@ -1,3 +1,12 @@
+## [2.1.6] - 2026-08-11
+### Opgelost
+- Support pagina: api() als functie aangeroepen ipv fetchApi() — pagina laadde niet
+- MIXCARE activatie: regex pakte klantemail ipv machine_id — "machine niet gevonden" fout
+### Toegevoegd
+- MIXCARE melding toont prijs op basis van model + pompen
+- Jaren worden automatisch pre-geselecteerd vanuit de aanvraag
+- Factuur-email (betaaltermijn 14 dagen) wordt verstuurd bij activatie
+
 ## [2.1.5] - 2026-08-11
 ### Toegevoegd
 - Knop "App opstarten" in klantportal (Machine → Instellingen) en admin-paneel
