@@ -1,3 +1,7 @@
+## [2.1.3] - 2026-08-11
+### Gewijzigd
+- MIXCARE prijzen voor MATE.1 PRO toegevoegd in klantportaal (16–32 leidingen)
+
 ## [2.1.2] - 2026-08-11
 ### Opgelost
 - Fix: garantie-info laadde niet meer door ontbrekende pump_slots migratie in database
