@@ -55,50 +55,6 @@ function InfoRow({ label, value, bold }) {
   )
 }
 
-function FacturenSectie() {
-  const [invoices, setInvoices] = useState(null)
-
-  useEffect(() => {
-    fetchApi('/api/account/invoices')
-      .then(setInvoices)
-      .catch(() => setInvoices([]))
-  }, [])
-
-  if (invoices === null) return null
-  if (invoices.length === 0) return null
-
-  const fmt = (iso) => iso ? new Date(iso).toLocaleDateString('nl-NL') : '—'
-  const fmtEur = (n) => n ? `€ ${Number(n).toLocaleString('nl-NL')},-` : '—'
-
-  return (
-    <div style={{ marginTop: 40 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f', margin: '0 0 16px' }}>Facturen</h2>
-      <Card style={{ padding: 0 }}>
-        {invoices.map((inv, i) => (
-          <div key={inv.id} style={{ padding: '14px 20px', borderBottom: i < invoices.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#1d1d1f', fontFamily: 'monospace' }}>{inv.invoice_number}</span>
-                <span style={{
-                  fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-                  background: inv.status === 'betaald' ? '#e8faf0' : '#fff8e6',
-                  color: inv.status === 'betaald' ? '#30d158' : '#f59e0b',
-                }}>{inv.status === 'betaald' ? 'Betaald' : 'Openstaand'}</span>
-              </div>
-              <div style={{ fontSize: 13, color: '#6e6e73' }}>
-                {inv.machine_name} · MIXCARE {inv.warranty_years} jaar
-              </div>
-              <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>
-                {fmtEur(inv.amount)} · Vervaldatum: {fmt(inv.due_date)}
-              </div>
-            </div>
-          </div>
-        ))}
-      </Card>
-    </div>
-  )
-}
-
 export default function Garantie() {
   const [machines, setMachines] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -275,7 +231,6 @@ export default function Garantie() {
         </p>
       </Card>
 
-      <FacturenSectie />
     </div>
   )
 }

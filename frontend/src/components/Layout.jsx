@@ -232,6 +232,7 @@ export default function Layout({ user, onLogout, children }) {
             <NavRow active={path === '/support'} to="/support" icon={Icons.alert} label="Problemen melden" />
             <NavRow active={path === '/meldingen'} to="/meldingen" icon={Icons.doc} label="Mijn meldingen" />
             <NavRow active={path === '/garantie'} to="/garantie" icon={Icons.shield} label="Garantie & MIXCARE" />
+            <NavRow active={path === '/facturen'} to="/facturen" icon={Icons.invoice} label="Facturen" />
           </NavSection>
 
           <NavSection label="Winkel">
@@ -283,7 +284,12 @@ export default function Layout({ user, onLogout, children }) {
                 <NavSubRow active={f === 'verzonden'} to="/admin?s=bestellingen&f=verzonden" label="Verzonden" />
                 <NavSubRow active={f === 'facturen'} to="/admin?s=bestellingen&f=facturen" label="Facturen" />
               </>}
-              <NavRow active={inAdmin && s === 'facturen'} to="/admin?s=facturen" icon={Icons.invoice} label="MIXCARE Facturen" />
+              <NavRow active={inAdmin && s === 'facturen'} to="/admin?s=facturen" icon={Icons.invoice} label="Facturen" />
+              {inAdmin && s === 'facturen' && <>
+                <NavSubRow active={!f || f === 'overzicht'} to="/admin?s=facturen&f=overzicht" label="Overzicht" />
+                <NavSubRow active={f === 'versturen'} to="/admin?s=facturen&f=versturen" label="Factuur versturen" />
+                <NavSubRow active={f === 'instellingen'} to="/admin?s=facturen&f=instellingen" label="Instellingen" />
+              </>}
               <NavRow active={inPersoneel && t === 'pilot'} to="/personeel/beheer?t=pilot" icon={Icons.doc} label="Pilot" />
               <NavRow active={path.startsWith('/onderhoud') && path === '/onderhoud'} to="/onderhoud" icon={Icons.wrench} label="Onderhoudbeheer" />
             </NavSection>

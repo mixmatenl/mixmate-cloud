@@ -1144,7 +1144,11 @@ function NieuwsbriefHistorie() {
 }
 
 // ── Facturen tab ──────────────────────────────────────────────────────────────
-function FacturenTab() {
+// ── Facturen: Overzicht ───────────────────────────────────────────────────────
+const SOURCE_LABEL = { mixcare: 'MIXCARE', glass: 'Glazen', manual: 'Handmatig' }
+const SOURCE_COLOR = { mixcare: '#5856d6', glass: '#007aff', manual: '#34c759' }
+
+function FacturenOverzicht() {
   const [invoices, setInvoices] = useState([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1153,7 +1157,7 @@ function FacturenTab() {
   async function load(q = '') {
     setLoading(true)
     try {
-      const data = await api.adminRaw('GET', `/api/admin/invoices${q ? `?q=${encodeURIComponent(q)}` : ''}`)
+      const data = await api.adminRaw('GET', `/api/admin/invoices/all${q ? `?q=${encodeURIComponent(q)}` : ''}`)
       setInvoices(data)
     } catch {}
     setLoading(false)
@@ -1162,11 +1166,14 @@ function FacturenTab() {
   useEffect(() => { load() }, [])
 
   async function toggleStatus(inv) {
-    setUpdatingId(inv.id)
+    setUpdatingId(inv.id + inv.source)
     const newStatus = inv.status === 'betaald' ? 'openstaand' : 'betaald'
+    const url = inv.source === 'manual'
+      ? `/api/admin/invoices/manual/${inv.id}`
+      : `/api/admin/invoices/${inv.id}`
     try {
-      await api.adminRaw('PATCH', `/api/admin/invoices/${inv.id}`, { status: newStatus })
-      setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, status: newStatus } : i))
+      await api.adminRaw('PATCH', url, { status: newStatus })
+      setInvoices(prev => prev.map(i => (i.id === inv.id && i.source === inv.source) ? { ...i, status: newStatus } : i))
     } catch {}
     setUpdatingId(null)
   }
@@ -1197,7 +1204,7 @@ function FacturenTab() {
   }
 
   const fmt = (iso) => iso ? new Date(iso).toLocaleDateString('nl-NL') : '—'
-  const fmtEur = (n) => n ? `€ ${Number(n).toLocaleString('nl-NL')},-` : '—'
+  const fmtEur = (n) => n != null ? `€ ${Number(n).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
 
   return (
     <div>
@@ -1205,7 +1212,7 @@ function FacturenTab() {
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Zoek op factuurnummer…"
+          placeholder="Zoek op factuurnummer, naam, e-mail of machine…"
           style={{ flex: 1, border: '1.5px solid #e5e5ea', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
         />
         <button type="submit" style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -1221,21 +1228,29 @@ function FacturenTab() {
       ) : (
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
           {invoices.map((inv, i) => (
-            <div key={inv.id} style={{ padding: '14px 18px', borderBottom: i < invoices.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div key={`${inv.source}-${inv.id}`} style={{ padding: '14px 18px', borderBottom: i < invoices.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: '#1d1d1f', fontFamily: 'monospace' }}>{inv.invoice_number}</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+                    background: SOURCE_COLOR[inv.source] + '18', color: SOURCE_COLOR[inv.source],
+                  }}>{SOURCE_LABEL[inv.source]}</span>
                   <span style={{
                     fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
                     background: inv.status === 'betaald' ? '#e8faf0' : '#fff8e6',
                     color: inv.status === 'betaald' ? '#30d158' : '#f59e0b',
                   }}>{inv.status === 'betaald' ? 'Betaald' : 'Openstaand'}</span>
                 </div>
+                <div style={{ fontSize: 13, color: '#3a3a3c', marginBottom: 2 }}>
+                  <strong>{inv.customer_name || '—'}</strong>
+                  {inv.customer_email && <span style={{ color: '#6e6e73' }}> · {inv.customer_email}</span>}
+                </div>
                 <div style={{ fontSize: 13, color: '#6e6e73' }}>
-                  {inv.customer_name || inv.customer_email} · {inv.machine_name} · MIXCARE {inv.warranty_years}jr
+                  {inv.subject}{inv.machine_name ? ` · ${inv.machine_name}` : ''}
                 </div>
                 <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>
-                  {fmtEur(inv.amount)} · Vervaldatum: {fmt(inv.due_date)} · Aangemaakt: {fmt(inv.created_at)}
+                  {fmtEur(inv.amount_incl)} incl. BTW · Vervaldatum: {fmt(inv.due_date)} · {fmt(inv.created_at)}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
@@ -1253,30 +1268,12 @@ function FacturenTab() {
                   {inv.status === 'betaald' ? 'Markeer openstaand' : 'Markeer betaald'}
                 </button>
                 {inv.machine_id && inv.status !== 'betaald' && (
-                  <button
-                    onClick={() => blockMachine(inv)}
-                    disabled={!!updatingId}
-                    style={{
-                      fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30',
-                      color: '#ff3b30', background: '#fff', borderRadius: 8,
-                      padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit',
-                      whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1,
-                    }}
-                  >
-                    🔒 Machine blokkeren
+                  <button onClick={() => blockMachine(inv)} disabled={!!updatingId} style={{ fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30', color: '#ff3b30', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1 }}>
+                    🔒 Blokkeren
                   </button>
                 )}
                 {inv.machine_id && (
-                  <button
-                    onClick={() => unblockMachine(inv)}
-                    disabled={!!updatingId}
-                    style={{
-                      fontSize: 12, fontWeight: 600, border: '1px solid #c7c7cc',
-                      color: '#6e6e73', background: '#fff', borderRadius: 8,
-                      padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit',
-                      whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1,
-                    }}
-                  >
+                  <button onClick={() => unblockMachine(inv)} disabled={!!updatingId} style={{ fontSize: 12, fontWeight: 600, border: '1px solid #c7c7cc', color: '#6e6e73', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1 }}>
                     🔓 Deblokkeren
                   </button>
                 )}
@@ -1285,6 +1282,256 @@ function FacturenTab() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Facturen: Versturen ───────────────────────────────────────────────────────
+function FactuurVersturen() {
+  const [klantQuery, setKlantQuery] = useState('')
+  const [klantResults, setKlantResults] = useState([])
+  const [selectedKlant, setSelectedKlant] = useState(null)
+  const [subject, setSubject] = useState('')
+  const [lines, setLines] = useState([{ description: '', quantity: 1, unit_price_excl: '' }])
+  const [btwRate, setBtwRate] = useState(21)
+  const [paymentDays, setPaymentDays] = useState(30)
+  const [notes, setNotes] = useState('')
+  const [sending, setSending] = useState(false)
+  const [success, setSuccess] = useState(null)
+  const [error, setError] = useState(null)
+
+  async function searchKlant(q) {
+    setKlantQuery(q)
+    setSelectedKlant(null)
+    if (q.length < 2) { setKlantResults([]); return }
+    try {
+      const data = await api.adminRaw('GET', `/api/admin/customers?q=${encodeURIComponent(q)}`)
+      setKlantResults(data.slice(0, 6))
+    } catch {}
+  }
+
+  function addLine() {
+    setLines(l => [...l, { description: '', quantity: 1, unit_price_excl: '' }])
+  }
+
+  function removeLine(i) {
+    setLines(l => l.filter((_, idx) => idx !== i))
+  }
+
+  function updateLine(i, field, val) {
+    setLines(l => l.map((ln, idx) => idx === i ? { ...ln, [field]: val } : ln))
+  }
+
+  const totalExcl = lines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_price_excl) || 0), 0)
+  const totalIncl = totalExcl * (1 + btwRate / 100)
+
+  async function handleSend(e) {
+    e.preventDefault()
+    if (!selectedKlant) { setError('Selecteer een klant.'); return }
+    if (!subject.trim()) { setError('Vul een onderwerp in.'); return }
+    if (lines.some(l => !l.description.trim())) { setError('Vul alle regelomschrijvingen in.'); return }
+    setSending(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const res = await api.adminRaw('POST', '/api/admin/invoices/manual', {
+        customer_id: selectedKlant.id,
+        customer_name: selectedKlant.name,
+        customer_email: selectedKlant.email,
+        subject: subject.trim(),
+        lines: lines.map(l => ({ description: l.description, quantity: parseFloat(l.quantity) || 1, unit_price_excl: parseFloat(l.unit_price_excl) || 0 })),
+        btw_rate: btwRate,
+        payment_days: paymentDays,
+        notes: notes.trim(),
+      })
+      setSuccess(`Factuur ${res.invoice_number} aangemaakt en verstuurd naar ${selectedKlant.email}.`)
+      setSubject('')
+      setLines([{ description: '', quantity: 1, unit_price_excl: '' }])
+      setNotes('')
+      setSelectedKlant(null)
+      setKlantQuery('')
+    } catch (err) {
+      setError('Versturen mislukt. Probeer opnieuw.')
+    }
+    setSending(false)
+  }
+
+  const inp = { border: '1.5px solid #e5e5ea', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box', background: '#fff' }
+  const label = { display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }
+
+  return (
+    <form onSubmit={handleSend} style={{ maxWidth: 640 }}>
+      {success && <div style={{ background: '#e8faf0', border: '1px solid #30d158', borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 14, color: '#1a7f3c' }}>{success}</div>}
+      {error && <div style={{ background: '#fff0f0', border: '1px solid #ff3b30', borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 14, color: '#c0392b' }}>{error}</div>}
+
+      {/* Klant */}
+      <div style={{ marginBottom: 20 }}>
+        <label style={label}>Klant</label>
+        {selectedKlant ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f2f2f7', borderRadius: 10, padding: '10px 14px' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{selectedKlant.name}</div>
+              <div style={{ fontSize: 12, color: '#6e6e73' }}>{selectedKlant.email}</div>
+            </div>
+            <button type="button" onClick={() => { setSelectedKlant(null); setKlantQuery('') }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ff3b30', fontSize: 13 }}>Wijzigen</button>
+          </div>
+        ) : (
+          <div style={{ position: 'relative' }}>
+            <input value={klantQuery} onChange={e => searchKlant(e.target.value)} placeholder="Zoek op naam of e-mail…" style={inp} />
+            {klantResults.length > 0 && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,.1)', zIndex: 10, overflow: 'hidden', marginTop: 4 }}>
+                {klantResults.map(k => (
+                  <div key={k.id} onClick={() => { setSelectedKlant(k); setKlantResults([]) }} style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f2f2f7', fontSize: 14 }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#f2f2f7'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                  >
+                    <span style={{ fontWeight: 600 }}>{k.name}</span>
+                    <span style={{ color: '#6e6e73', marginLeft: 8 }}>{k.email}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Onderwerp */}
+      <div style={{ marginBottom: 20 }}>
+        <label style={label}>Onderwerp</label>
+        <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="bijv. Onderhoud MATE.1 – 2026" style={inp} required />
+      </div>
+
+      {/* Regelitems */}
+      <div style={{ marginBottom: 20 }}>
+        <label style={label}>Regels</label>
+        <div style={{ background: '#fff', border: '1.5px solid #e5e5ea', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 110px 32px', gap: 0, background: '#f8f8fa', padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#aeaeb2', textTransform: 'uppercase' }}>
+            <span>Omschrijving</span><span style={{ textAlign: 'center' }}>Aantal</span><span style={{ textAlign: 'right' }}>Prijs excl.</span><span />
+          </div>
+          {lines.map((ln, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 110px 32px', gap: 0, padding: '8px 12px', borderTop: '1px solid #f2f2f7', alignItems: 'center' }}>
+              <input value={ln.description} onChange={e => updateLine(i, 'description', e.target.value)} placeholder="Omschrijving" style={{ ...inp, borderRadius: 6, padding: '7px 10px', marginRight: 8 }} />
+              <input type="number" min="0.01" step="0.01" value={ln.quantity} onChange={e => updateLine(i, 'quantity', e.target.value)} style={{ ...inp, borderRadius: 6, padding: '7px 10px', textAlign: 'center', marginRight: 8 }} />
+              <input type="number" min="0" step="0.01" value={ln.unit_price_excl} onChange={e => updateLine(i, 'unit_price_excl', e.target.value)} placeholder="0,00" style={{ ...inp, borderRadius: 6, padding: '7px 10px', textAlign: 'right' }} />
+              <button type="button" onClick={() => removeLine(i)} disabled={lines.length === 1} style={{ border: 'none', background: 'none', cursor: lines.length === 1 ? 'default' : 'pointer', color: '#ff3b30', fontSize: 18, opacity: lines.length === 1 ? 0.2 : 1 }}>×</button>
+            </div>
+          ))}
+          <div style={{ padding: '8px 12px', borderTop: '1px solid #f2f2f7' }}>
+            <button type="button" onClick={addLine} style={{ fontSize: 13, fontWeight: 600, color: '#007aff', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>+ Regel toevoegen</button>
+          </div>
+          <div style={{ padding: '10px 12px', borderTop: '1px solid #e5e5ea', background: '#f8f8fa', display: 'flex', justifyContent: 'flex-end', gap: 24, fontSize: 13 }}>
+            <span style={{ color: '#6e6e73' }}>Subtotaal excl.: <strong>€ {totalExcl.toFixed(2)}</strong></span>
+            <span style={{ color: '#6e6e73' }}>BTW {btwRate}%: <strong>€ {(totalIncl - totalExcl).toFixed(2)}</strong></span>
+            <span style={{ fontWeight: 700 }}>Totaal: € {totalIncl.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* BTW + Betalingstermijn */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+        <div>
+          <label style={label}>BTW-tarief (%)</label>
+          <input type="number" min="0" max="100" step="1" value={btwRate} onChange={e => setBtwRate(parseFloat(e.target.value) || 0)} style={inp} />
+        </div>
+        <div>
+          <label style={label}>Betalingstermijn (dagen)</label>
+          <input type="number" min="1" value={paymentDays} onChange={e => setPaymentDays(parseInt(e.target.value) || 30)} style={inp} />
+        </div>
+      </div>
+
+      {/* Notities */}
+      <div style={{ marginBottom: 24 }}>
+        <label style={label}>Notities (optioneel)</label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Extra informatie op de factuur…" style={{ ...inp, resize: 'vertical' }} />
+      </div>
+
+      <button type="submit" disabled={sending} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 12, padding: '14px 28px', fontSize: 15, fontWeight: 600, cursor: sending ? 'default' : 'pointer', fontFamily: 'inherit', opacity: sending ? 0.6 : 1 }}>
+        {sending ? 'Versturen…' : 'Factuur versturen'}
+      </button>
+    </form>
+  )
+}
+
+// ── Facturen: Instellingen ────────────────────────────────────────────────────
+function FactuurInstellingen() {
+  const [settings, setSettings] = useState({ iban: '', kvk: '', btw_number: '', btw_rate: 21 })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    api.adminRaw('GET', '/api/shop/settings')
+      .then(d => { setSettings(s => ({ ...s, iban: d.iban || '', kvk: d.kvk || '', btw_number: d.btw_number || '', btw_rate: d.btw_rate || 21 })) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    setSaved(false)
+    try {
+      await api.adminRaw('POST', '/api/shop/settings', settings)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {}
+    setSaving(false)
+  }
+
+  const inp = { border: '1.5px solid #e5e5ea', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box', background: '#fff' }
+  const label = { display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6e6e73' }}>Laden…</div>
+
+  return (
+    <form onSubmit={handleSave} style={{ maxWidth: 480 }}>
+      {saved && <div style={{ background: '#e8faf0', border: '1px solid #30d158', borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 14, color: '#1a7f3c' }}>Instellingen opgeslagen.</div>}
+
+      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 24 }}>
+        <div>
+          <label style={label}>IBAN</label>
+          <input value={settings.iban} onChange={e => setSettings(s => ({ ...s, iban: e.target.value }))} placeholder="NL00 BANK 0000 0000 00" style={inp} />
+        </div>
+        <div>
+          <label style={label}>KVK-nummer</label>
+          <input value={settings.kvk} onChange={e => setSettings(s => ({ ...s, kvk: e.target.value }))} placeholder="12345678" style={inp} />
+        </div>
+        <div>
+          <label style={label}>BTW-nummer</label>
+          <input value={settings.btw_number} onChange={e => setSettings(s => ({ ...s, btw_number: e.target.value }))} placeholder="NL000000000B01" style={inp} />
+        </div>
+        <div>
+          <label style={label}>Standaard BTW-tarief (%)</label>
+          <input type="number" min="0" max="100" step="1" value={settings.btw_rate} onChange={e => setSettings(s => ({ ...s, btw_rate: parseFloat(e.target.value) || 0 }))} style={inp} />
+        </div>
+      </div>
+
+      <button type="submit" disabled={saving} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 12, padding: '14px 28px', fontSize: 15, fontWeight: 600, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
+        {saving ? 'Opslaan…' : 'Opslaan'}
+      </button>
+    </form>
+  )
+}
+
+// ── Facturen: hoofd tab ───────────────────────────────────────────────────────
+function FacturenTab({ filter }) {
+  const subTab = filter === 'versturen' ? 'versturen' : filter === 'instellingen' ? 'instellingen' : 'overzicht'
+
+  const tabStyle = (active) => ({
+    fontSize: 14, fontWeight: 600, padding: '8px 18px', borderRadius: 20, border: 'none', cursor: 'pointer',
+    background: active ? '#1d1d1f' : 'transparent', color: active ? '#fff' : '#6e6e73', fontFamily: 'inherit',
+  })
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f2f2f7', borderRadius: 24, padding: 4, width: 'fit-content' }}>
+        <a href="/admin?s=facturen&f=overzicht" style={{ textDecoration: 'none' }}><button type="button" style={tabStyle(subTab === 'overzicht')}>Overzicht</button></a>
+        <a href="/admin?s=facturen&f=versturen" style={{ textDecoration: 'none' }}><button type="button" style={tabStyle(subTab === 'versturen')}>Factuur versturen</button></a>
+        <a href="/admin?s=facturen&f=instellingen" style={{ textDecoration: 'none' }}><button type="button" style={tabStyle(subTab === 'instellingen')}>Instellingen</button></a>
+      </div>
+      {subTab === 'overzicht'    && <FacturenOverzicht />}
+      {subTab === 'versturen'    && <FactuurVersturen />}
+      {subTab === 'instellingen' && <FactuurInstellingen />}
     </div>
   )
 }
@@ -2139,7 +2386,7 @@ export default function Admin() {
     klanten:      'Klanten opzoeken',
     nieuwsbrief:  'Nieuwsbrief',
     bestellingen: 'Bestellingen',
-    facturen:     'MIXCARE Facturen',
+    facturen:     'Facturen',
   }
   const subs = {
     dashboard:    'Overzicht van alle machines, storingen en bestellingen.',
@@ -2149,7 +2396,7 @@ export default function Admin() {
     klanten:      'Zoek klanten op en bekijk hun machines.',
     nieuwsbrief:  'Verstuur een nieuwsbrief naar aangemelde klanten.',
     bestellingen: 'Webshop bestellingen per status.',
-    facturen:     'Overzicht van alle MIXCARE facturen, zoekbaar op factuurnummer.',
+    facturen:     'Alle facturen gecombineerd: MIXCARE, glazen en handmatige facturen.',
   }
   const filterLabels = {
     open: ' — Open', actief: ' — Actief', opgelost: ' — Opgelost', voorstel: ' — Voorstel', afgesloten: ' — Afgesloten',
@@ -2172,7 +2419,7 @@ export default function Admin() {
       {section === 'klanten'      && <KlantenTab />}
       {section === 'nieuwsbrief'  && <NieuwsbriefTab key={urlFilter || 'opstellen'} initialTab={urlFilter} />}
       {section === 'bestellingen' && <BestellingenTab filter={urlFilter} />}
-      {section === 'facturen'     && <FacturenTab />}
+      {section === 'facturen'     && <FacturenTab filter={urlFilter} />}
     </div>
   )
 }

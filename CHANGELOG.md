@@ -1,3 +1,16 @@
+## [2.3.0] - 2026-08-11
+### Toegevoegd
+- Admin: "Facturen" sectie in navigatie met drie sub-tabs: Overzicht, Factuur versturen, Instellingen
+- Overzicht: gecombineerde lijst van alle factuurtypen (MIXCARE, glazen, handmatig) met unified zoekfunctie
+- Factuur versturen: formulier met klantzoeker, regelitems, BTW-berekening, betalingstermijn en notities
+- Instellingen: IBAN, KVK-nummer, BTW-nummer en standaard BTW-tarief instellen
+- Klantportaal: aparte pagina `/facturen` met overzicht van alle eigen facturen
+- Klantnavigatie: "Facturen" link toegevoegd
+
+### Gewijzigd
+- FacturenSectie verwijderd uit Garantie-pagina (facturen zijn nu op eigen pagina)
+- "MIXCARE Facturen" hernoemd naar "Facturen" in admin navigatie
+
 ## [2.2.0] - 2026-08-11
 ### Toegevoegd
 - Machine blokkeren: admin blokkeert → klant kan niet ontgrendelen, scherm toont openstaand bedrag
