@@ -1757,7 +1757,25 @@ def machine_warranty_public(machine_id: str, db: Session = Depends(get_session))
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404, detail="Machine niet gevonden")
-    return _warranty_info(machine)
+    info = _warranty_info(machine)
+    # Controleer of er een openstaande MIXCARE-aanvraag is
+    pending = db.exec(
+        select(SupportTicket)
+        .where(SupportTicket.ticket_type == "mixcare")
+        .where(SupportTicket.status == "open")
+        .where(SupportTicket.description.contains(machine.machine_id))
+    ).first()
+    if pending:
+        import re
+        m = re.search(r"MIXCARE (\d+) jaar", pending.description or "")
+        info["mixcare_pending"] = True
+        info["mixcare_pending_years"] = int(m.group(1)) if m else 3
+        info["mixcare_pending_ticket_id"] = pending.id
+    else:
+        info["mixcare_pending"] = False
+        info["mixcare_pending_years"] = None
+        info["mixcare_pending_ticket_id"] = None
+    return info
 
 
 @app.post("/api/machines/{machine_id}/request-mixcare")
