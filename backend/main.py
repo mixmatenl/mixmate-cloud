@@ -2201,6 +2201,22 @@ def admin_update_manual_invoice(invoice_id: int, body: dict, _: int = Depends(ve
     return {"ok": True}
 
 
+@app.delete("/api/admin/invoices/manual/{invoice_id}")
+def admin_delete_manual_invoice(invoice_id: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    inv = db.get(ManualInvoice, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Factuur niet gevonden")
+    db.delete(inv); db.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/invoices/{invoice_id}")
+def admin_delete_mixcare_invoice(invoice_id: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    inv = db.get(MixcareInvoice, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Factuur niet gevonden")
+    db.delete(inv); db.commit()
+    return {"ok": True}
+
 def _build_manual_invoice_html(inv: ManualInvoice, settings: ShopSettings) -> str:
     lines = json.loads(inv.lines or "[]")
     total_excl = sum(float(l.get("quantity", 1)) * float(l.get("unit_price_excl", 0)) for l in lines)

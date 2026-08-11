@@ -1148,6 +1148,90 @@ function NieuwsbriefHistorie() {
 const SOURCE_LABEL = { mixcare: 'MIXCARE', glass: 'Glazen', manual: 'Handmatig' }
 const SOURCE_COLOR = { mixcare: '#5856d6', glass: '#007aff', manual: '#34c759' }
 
+function MachineKiezer({ inv, onBlock, onUnblock, disabled }) {
+  const [machines, setMachines] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [selectedId, setSelectedId] = useState('')
+
+  async function openPicker() {
+    if (!open) {
+      if (!machines) {
+        try {
+          const klanten = await api.adminRaw('GET', `/api/admin/customers?q=${encodeURIComponent(inv.customer_email || inv.customer_name || '')}`)
+          const klant = klanten.find(k => k.email === inv.customer_email) || klanten[0]
+          const ms = klant?.machines || []
+          setMachines(ms)
+          if (ms.length === 1) { setSelectedId(ms[0].machine_id); }
+        } catch { setMachines([]) }
+      }
+      setOpen(true)
+    } else {
+      setOpen(false)
+    }
+  }
+
+  async function doBlock() {
+    const mid = inv.machine_id || selectedId
+    if (!mid) return
+    await onBlock(mid)
+    setOpen(false)
+  }
+
+  async function doUnblock() {
+    const mid = inv.machine_id || selectedId
+    if (!mid) return
+    await onUnblock(mid)
+    setOpen(false)
+  }
+
+  if (inv.machine_id) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {inv.status !== 'betaald' && (
+          <button onClick={() => onBlock(inv.machine_id)} disabled={disabled} style={{ fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30', color: '#ff3b30', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: disabled ? 0.5 : 1 }}>
+            🔒 Blokkeren
+          </button>
+        )}
+        <button onClick={() => onUnblock(inv.machine_id)} disabled={disabled} style={{ fontSize: 12, fontWeight: 600, border: '1px solid #c7c7cc', color: '#6e6e73', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: disabled ? 0.5 : 1 }}>
+          🔓 Deblokkeren
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {inv.status !== 'betaald' && (
+        <button onClick={openPicker} disabled={disabled} style={{ fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30', color: '#ff3b30', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: disabled ? 0.5 : 1 }}>
+          🔒 Blokkeren
+        </button>
+      )}
+      {open && (
+        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: '#fff', border: '1px solid #e5e5ea', borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,.12)', zIndex: 20, minWidth: 220, padding: 12 }}>
+          {machines === null ? (
+            <div style={{ fontSize: 13, color: '#6e6e73', padding: '4px 0' }}>Laden…</div>
+          ) : machines.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#6e6e73', padding: '4px 0' }}>Geen machines gevonden.</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#aeaeb2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Kies machine</div>
+              <select value={selectedId} onChange={e => setSelectedId(e.target.value)} style={{ width: '100%', border: '1.5px solid #e5e5ea', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', marginBottom: 10, outline: 'none' }}>
+                <option value="">— Selecteer —</option>
+                {machines.map(m => <option key={m.machine_id} value={m.machine_id}>{m.name || m.machine_id}</option>)}
+              </select>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={doBlock} disabled={!selectedId} style={{ flex: 1, fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30', color: '#ff3b30', background: '#fff', borderRadius: 8, padding: '7px 0', cursor: selectedId ? 'pointer' : 'default', fontFamily: 'inherit', opacity: selectedId ? 1 : 0.4 }}>🔒 Blokkeren</button>
+                <button onClick={doUnblock} disabled={!selectedId} style={{ flex: 1, fontSize: 12, fontWeight: 600, border: '1px solid #c7c7cc', color: '#6e6e73', background: '#fff', borderRadius: 8, padding: '7px 0', cursor: selectedId ? 'pointer' : 'default', fontFamily: 'inherit', opacity: selectedId ? 1 : 0.4 }}>🔓 Deblokkeren</button>
+              </div>
+            </>
+          )}
+          <button onClick={() => setOpen(false)} style={{ width: '100%', marginTop: 8, fontSize: 12, border: 'none', background: 'none', color: '#aeaeb2', cursor: 'pointer', fontFamily: 'inherit' }}>Annuleren</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FacturenOverzicht() {
   const [invoices, setInvoices] = useState([])
   const [query, setQuery] = useState('')
@@ -1178,22 +1262,34 @@ function FacturenOverzicht() {
     setUpdatingId(null)
   }
 
-  async function blockMachine(inv) {
-    if (!inv.machine_id) return
-    setUpdatingId(`block-${inv.id}`)
+  async function deleteInvoice(inv) {
+    if (!window.confirm(`Factuur ${inv.invoice_number} verwijderen? Dit kan niet ongedaan worden.`)) return
+    const url = inv.source === 'manual'
+      ? `/api/admin/invoices/manual/${inv.id}`
+      : inv.source === 'mixcare'
+        ? `/api/admin/invoices/${inv.id}`
+        : null
+    if (!url) { alert('Glazen bestellingen kunnen niet worden verwijderd.'); return }
     try {
-      await api.adminRaw('POST', `/api/admin/machines/${inv.machine_id}/block`, {
+      await api.adminRaw('DELETE', url)
+      setInvoices(prev => prev.filter(i => !(i.id === inv.id && i.source === inv.source)))
+    } catch {}
+  }
+
+  async function blockMachine(machineId, inv) {
+    setUpdatingId(`block-${inv.id}${inv.source}`)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${machineId}/block`, {
         reason: `Openstaande factuur ${inv.invoice_number} – neem contact op via info@mixmate.nl`,
       })
     } catch {}
     setUpdatingId(null)
   }
 
-  async function unblockMachine(inv) {
-    if (!inv.machine_id) return
-    setUpdatingId(`unblock-${inv.id}`)
+  async function unblockMachine(machineId, inv) {
+    setUpdatingId(`unblock-${inv.id}${inv.source}`)
     try {
-      await api.adminRaw('POST', `/api/admin/machines/${inv.machine_id}/unblock`)
+      await api.adminRaw('POST', `/api/admin/machines/${machineId}/unblock`)
     } catch {}
     setUpdatingId(null)
   }
@@ -1267,14 +1363,21 @@ function FacturenOverzicht() {
                 >
                   {inv.status === 'betaald' ? 'Markeer openstaand' : 'Markeer betaald'}
                 </button>
-                {inv.machine_id && inv.status !== 'betaald' && (
-                  <button onClick={() => blockMachine(inv)} disabled={!!updatingId} style={{ fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30', color: '#ff3b30', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1 }}>
-                    🔒 Blokkeren
-                  </button>
+                {(inv.customer_email || inv.customer_name) && (
+                  <MachineKiezer
+                    inv={inv}
+                    onBlock={(mid) => blockMachine(mid, inv)}
+                    onUnblock={(mid) => unblockMachine(mid, inv)}
+                    disabled={!!updatingId}
+                  />
                 )}
-                {inv.machine_id && (
-                  <button onClick={() => unblockMachine(inv)} disabled={!!updatingId} style={{ fontSize: 12, fontWeight: 600, border: '1px solid #c7c7cc', color: '#6e6e73', background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1 }}>
-                    🔓 Deblokkeren
+                {inv.source !== 'glass' && (
+                  <button
+                    onClick={() => deleteInvoice(inv)}
+                    disabled={!!updatingId}
+                    style={{ fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30', color: '#ff3b30', background: '#fff8f8', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1 }}
+                  >
+                    Verwijderen
                   </button>
                 )}
               </div>
