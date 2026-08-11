@@ -1,3 +1,11 @@
+## [2.1.9] - 2026-08-11
+### Toegevoegd
+- MIXCARE facturen worden opgeslagen in de database (model `MixcareInvoice`, factuurnummer MCR-YYYY-NNNN)
+- Factuurmail toont nu het factuurnummer: "Vermeld factuurnummer: MCR-XXXX-NNNN"
+- Admin portaal: tab "MIXCARE Facturen" met zoekfunctie op factuurnummer en markeren als betaald/openstaand
+- Klantportaal: sectie "Facturen" op de Garantie-pagina toont alle ontvangen MIXCARE-facturen
+- API: `GET /api/account/invoices`, `GET /api/admin/invoices?q=...`, `PATCH /api/admin/invoices/{id}`
+
 ## [2.1.8] - 2026-08-11
 ### Opgelost
 - MIXCARE activatie 500-fout: email via BackgroundTasks ipv asyncio in sync threadpool context

@@ -1142,6 +1142,102 @@ function NieuwsbriefHistorie() {
   )
 }
 
+// ── Facturen tab ──────────────────────────────────────────────────────────────
+function FacturenTab() {
+  const [invoices, setInvoices] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [updatingId, setUpdatingId] = useState(null)
+
+  async function load(q = '') {
+    setLoading(true)
+    try {
+      const data = await api.adminRaw('GET', `/api/admin/invoices${q ? `?q=${encodeURIComponent(q)}` : ''}`)
+      setInvoices(data)
+    } catch {}
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function toggleStatus(inv) {
+    setUpdatingId(inv.id)
+    const newStatus = inv.status === 'betaald' ? 'openstaand' : 'betaald'
+    try {
+      await api.adminRaw('PATCH', `/api/admin/invoices/${inv.id}`, { status: newStatus })
+      setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, status: newStatus } : i))
+    } catch {}
+    setUpdatingId(null)
+  }
+
+  function handleSearch(e) {
+    e.preventDefault()
+    load(query)
+  }
+
+  const fmt = (iso) => iso ? new Date(iso).toLocaleDateString('nl-NL') : '—'
+  const fmtEur = (n) => n ? `€ ${Number(n).toLocaleString('nl-NL')},-` : '—'
+
+  return (
+    <div>
+      <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Zoek op factuurnummer…"
+          style={{ flex: 1, border: '1.5px solid #e5e5ea', borderRadius: 10, padding: '10px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
+        />
+        <button type="submit" style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+          Zoeken
+        </button>
+        {query && <button type="button" onClick={() => { setQuery(''); load('') }} style={{ border: '1px solid #e5e5ea', borderRadius: 10, padding: '10px 14px', fontSize: 14, cursor: 'pointer', background: '#fff', fontFamily: 'inherit' }}>✕</button>}
+      </form>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40, color: '#6e6e73' }}>Laden…</div>
+      ) : invoices.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 40, color: '#6e6e73' }}>Geen facturen gevonden.</div>
+      ) : (
+        <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+          {invoices.map((inv, i) => (
+            <div key={inv.id} style={{ padding: '14px 18px', borderBottom: i < invoices.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#1d1d1f', fontFamily: 'monospace' }}>{inv.invoice_number}</span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+                    background: inv.status === 'betaald' ? '#e8faf0' : '#fff8e6',
+                    color: inv.status === 'betaald' ? '#30d158' : '#f59e0b',
+                  }}>{inv.status === 'betaald' ? 'Betaald' : 'Openstaand'}</span>
+                </div>
+                <div style={{ fontSize: 13, color: '#6e6e73' }}>
+                  {inv.customer_name || inv.customer_email} · {inv.machine_name} · MIXCARE {inv.warranty_years}jr
+                </div>
+                <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>
+                  {fmtEur(inv.amount)} · Vervaldatum: {fmt(inv.due_date)} · Aangemaakt: {fmt(inv.created_at)}
+                </div>
+              </div>
+              <button
+                onClick={() => toggleStatus(inv)}
+                disabled={updatingId === inv.id}
+                style={{
+                  fontSize: 12, fontWeight: 600, border: '1px solid',
+                  borderColor: inv.status === 'betaald' ? '#c7c7cc' : '#30d158',
+                  color: inv.status === 'betaald' ? '#6e6e73' : '#30d158',
+                  background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+                  fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId === inv.id ? 0.5 : 1,
+                }}
+              >
+                {inv.status === 'betaald' ? 'Markeer openstaand' : 'Markeer betaald'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NieuwsbriefTab({ initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab === 'historie' ? 'historie' : 'opstellen')
   const [subject,     setSubject]     = useState('')
@@ -1992,6 +2088,7 @@ export default function Admin() {
     klanten:      'Klanten opzoeken',
     nieuwsbrief:  'Nieuwsbrief',
     bestellingen: 'Bestellingen',
+    facturen:     'MIXCARE Facturen',
   }
   const subs = {
     dashboard:    'Overzicht van alle machines, storingen en bestellingen.',
@@ -2001,6 +2098,7 @@ export default function Admin() {
     klanten:      'Zoek klanten op en bekijk hun machines.',
     nieuwsbrief:  'Verstuur een nieuwsbrief naar aangemelde klanten.',
     bestellingen: 'Webshop bestellingen per status.',
+    facturen:     'Overzicht van alle MIXCARE facturen, zoekbaar op factuurnummer.',
   }
   const filterLabels = {
     open: ' — Open', actief: ' — Actief', opgelost: ' — Opgelost', voorstel: ' — Voorstel', afgesloten: ' — Afgesloten',
@@ -2023,6 +2121,7 @@ export default function Admin() {
       {section === 'klanten'      && <KlantenTab />}
       {section === 'nieuwsbrief'  && <NieuwsbriefTab key={urlFilter || 'opstellen'} initialTab={urlFilter} />}
       {section === 'bestellingen' && <BestellingenTab filter={urlFilter} />}
+      {section === 'facturen'     && <FacturenTab />}
     </div>
   )
 }

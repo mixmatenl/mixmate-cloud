@@ -203,6 +203,18 @@ class GlassOrderItem(SQLModel, table=True):
     price_excl: float = 0.0
     quantity: int = 1
 
+class MixcareInvoice(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    invoice_number: str = Field(index=True)
+    customer_id: int = Field(foreign_key="customer.id", index=True)
+    machine_id: str = ""
+    machine_name: str = ""
+    warranty_years: int = 0
+    amount: float = 0.0
+    due_date: Optional[date] = None
+    status: str = "openstaand"   # openstaand | betaald
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 # ── Personeelsportaal ─────────────────────────────────────────────────────────
 
 HR_ADMIN_EMAIL = "r.muller@mixmate.nl"
@@ -371,6 +383,18 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN warranty_years INTEGER NOT NULL DEFAULT 2",
         "ALTER TABLE machine ADD COLUMN warranty_type VARCHAR NOT NULL DEFAULT 'factory'",
         "ALTER TABLE machine ADD COLUMN pump_count INTEGER NOT NULL DEFAULT 0",
+        """CREATE TABLE IF NOT EXISTS mixcareinvoice (
+            id SERIAL PRIMARY KEY,
+            invoice_number VARCHAR NOT NULL,
+            customer_id INTEGER REFERENCES customer(id),
+            machine_id VARCHAR NOT NULL DEFAULT '',
+            machine_name VARCHAR NOT NULL DEFAULT '',
+            warranty_years INTEGER NOT NULL DEFAULT 0,
+            amount REAL NOT NULL DEFAULT 0.0,
+            due_date DATE,
+            status VARCHAR NOT NULL DEFAULT 'openstaand',
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )""",
     ]
     for sql in migrations:
         try:
@@ -1768,35 +1792,119 @@ def admin_set_warranty(machine_id: str, body: dict, background_tasks: Background
         customer = db.get(Customer, machine.customer_id) if machine.customer_id else None
         if customer and customer.email:
             price = body.get("invoice_price")
-            due_date = (date.today() + timedelta(days=14)).strftime("%d-%m-%Y")
+            price_float = float(price) if price else 0.0
+            due = date.today() + timedelta(days=14)
+            due_str = due.strftime("%d-%m-%Y")
             price_str = f"€ {price},-" if price else "op aanvraag"
+
+            # Genereer factuurnummer: MCR-YYYY-NNNN
+            year = date.today().year
+            count = db.exec(select(MixcareInvoice).where(
+                MixcareInvoice.invoice_number.like(f"MCR-{year}-%")
+            )).all()
+            seq = len(count) + 1
+            invoice_number = f"MCR-{year}-{seq:04d}"
+
+            invoice_record = MixcareInvoice(
+                invoice_number=invoice_number,
+                customer_id=customer.id,
+                machine_id=machine.machine_id,
+                machine_name=machine.name or machine.machine_id,
+                warranty_years=machine.warranty_years,
+                amount=price_float,
+                due_date=due,
+                status="openstaand",
+            )
+            db.add(invoice_record)
+            db.commit()
+
             invoice_body = (
                 f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>MIXCARE factuur</h2>"
                 f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;'>Bedankt voor uw MIXCARE aanvraag!</p>"
                 "<table width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;margin-bottom:20px;'>"
+                + _email_info_row("Factuurnummer", invoice_number)
                 + _email_info_row("Klant", customer.name or customer.email)
                 + _email_info_row("Machine", machine.name or machine.machine_id)
                 + _email_info_row("MIXCARE dekking", f"{machine.warranty_years} jaar")
                 + _email_info_row("Bedrag", price_str)
                 + _email_info_row("Betaaltermijn", "14 dagen")
-                + _email_info_row("Uiterlijk betalen voor", due_date, last=True)
+                + _email_info_row("Uiterlijk betalen voor", due_str, last=True)
                 + "</table>"
                 + f"<div style='background:#f5f3ff;border-radius:14px;padding:18px;margin-bottom:20px;'>"
                 + f"<p style='margin:0;font-size:14px;color:#1d1d1f;line-height:1.6;'>"
                 + f"Gelieve het bedrag van <strong>{price_str}</strong> over te maken naar:<br>"
                 + f"<strong>MIXMATE B.V.</strong><br>IBAN: NL00 BANK 0000 0000 00<br>"
-                + f"Vermeld: MIXCARE {machine.warranty_years}jr – {machine.name or machine.machine_id}</p></div>"
+                + f"Vermeld factuurnummer: {invoice_number}</p></div>"
                 + _email_button("https://portaal.mixmate.nl", "Bekijk uw account →")
             )
             background_tasks.add_task(
                 _resend,
                 customer.email,
-                f"MIXCARE factuur – {machine.name or machine.machine_id}",
+                f"MIXCARE factuur {invoice_number} – {machine.name or machine.machine_id}",
                 _email_html(invoice_body),
                 reply_to="info@mixmate.nl",
             )
 
     return _warranty_info(machine)
+
+
+@app.get("/api/account/invoices")
+def get_account_invoices(customer_id: int = Depends(verify_customer), db: Session = Depends(get_session)):
+    invoices = db.exec(
+        select(MixcareInvoice)
+        .where(MixcareInvoice.customer_id == customer_id)
+        .order_by(MixcareInvoice.created_at.desc())
+    ).all()
+    return [
+        {
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "machine_id": inv.machine_id,
+            "machine_name": inv.machine_name,
+            "warranty_years": inv.warranty_years,
+            "amount": inv.amount,
+            "due_date": inv.due_date.isoformat() if inv.due_date else None,
+            "status": inv.status,
+            "created_at": inv.created_at.isoformat(),
+        }
+        for inv in invoices
+    ]
+
+
+@app.get("/api/admin/invoices")
+def admin_get_invoices(q: str = "", _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    stmt = select(MixcareInvoice).order_by(MixcareInvoice.created_at.desc())
+    if q:
+        stmt = stmt.where(MixcareInvoice.invoice_number.ilike(f"%{q}%"))
+    invoices = db.exec(stmt).all()
+    result = []
+    for inv in invoices:
+        customer = db.get(Customer, inv.customer_id) if inv.customer_id else None
+        result.append({
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "customer_name": customer.name if customer else "",
+            "customer_email": customer.email if customer else "",
+            "machine_id": inv.machine_id,
+            "machine_name": inv.machine_name,
+            "warranty_years": inv.warranty_years,
+            "amount": inv.amount,
+            "due_date": inv.due_date.isoformat() if inv.due_date else None,
+            "status": inv.status,
+            "created_at": inv.created_at.isoformat(),
+        })
+    return result
+
+
+@app.patch("/api/admin/invoices/{invoice_id}")
+def admin_update_invoice(invoice_id: int, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    inv = db.get(MixcareInvoice, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Factuur niet gevonden")
+    if "status" in body:
+        inv.status = body["status"]
+    db.add(inv); db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/machines/{machine_id}/warranty-public")
