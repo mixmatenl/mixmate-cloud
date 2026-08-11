@@ -40,10 +40,7 @@ export default function Garantie() {
         method: 'POST',
         body: JSON.stringify({ machine_id: machineId, years }),
       })
-      setMsgs(m => ({ ...m, [machineId]: { ok: true, text: `MIXCARE ${years} jaar succesvol aangevraagd!` } }))
-      // Herlaad garantiedata
-      const updated = await fetchApi('/api/account/warranty')
-      setMachines(updated)
+      setMsgs(m => ({ ...m, [machineId]: { ok: true, text: `Uw aanvraag voor MIXCARE ${years} jaar is ontvangen. Wij nemen zo spoedig mogelijk contact met u op om dit te bevestigen.` } }))
     } catch (e) {
       setMsgs(m => ({ ...m, [machineId]: { ok: false, text: e.message } }))
     }

@@ -35,6 +35,7 @@ const selectStyle = {
 
 export default function Support({ user }) {
   const [machines, setMachines] = useState([])
+  const [warranties, setWarranties] = useState([])
   const [form, setForm] = useState({
     machine_id: '',
     category: '',
@@ -49,11 +50,15 @@ export default function Support({ user }) {
 
   useEffect(() => {
     api.getMachines().then(setMachines).catch(() => {})
+    api('/api/account/warranty').then(setWarranties).catch(() => {})
   }, [])
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
   const selectedMachine = machines.find(m => m.machine_id === form.machine_id)
+  const selectedWarranty = warranties.find(w => w.machine_id === form.machine_id)
+  const warrantyVerlopen = selectedWarranty && !selectedWarranty.active
+  const toonUrgentKosten = warrantyVerlopen && form.urgency === 'Urgent — machine staat stil'
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -165,6 +170,22 @@ export default function Support({ user }) {
               ))}
             </div>
           </SettingRow>
+
+          {toonUrgentKosten && (
+            <SettingRow noBorder={false}>
+              <div style={{ background: '#fff8e6', border: '1px solid #ffda6a', borderRadius: 12, padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>⚠️</span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>Let op: garantie verlopen</div>
+                  <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.6 }}>
+                    De garantie van deze machine is verlopen. Bij een urgent probleem lossen wij dit <strong>altijd binnen 48 uur</strong> op,
+                    maar hier zijn <strong>extra kosten van € 189</strong> aan verbonden.
+                    Wij nemen na uw melding contact met u op om dit te bevestigen.
+                  </div>
+                </div>
+              </div>
+            </SettingRow>
+          )}
 
           <SettingRow label="Beschrijving" noBorder>
             <textarea

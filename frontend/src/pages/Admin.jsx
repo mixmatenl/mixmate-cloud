@@ -549,7 +549,11 @@ function TicketTab({ ticketType, initialFilter }) {
 
   useEffect(() => {
     api.adminGetTickets()
-      .then(all => setTickets(all.filter(t => (t.ticket_type || 'service') === ticketType)))
+      .then(all => setTickets(all.filter(t => {
+        const type = t.ticket_type || 'service'
+        if (ticketType === 'service') return type === 'service' || type === 'mixcare'
+        return type === ticketType
+      })))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [ticketType])
@@ -599,6 +603,7 @@ function TicketTab({ ticketType, initialFilter }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>{t.category}</span>
                   <StatusBadge ticket={t} />
+                  {t.ticket_type === 'mixcare' && <span style={s.badge('#5856d6','#f0efff','#dddaff')}>MIXCARE</span>}
                   {t.urgency?.includes('Urgent') && <span style={s.badge('#ff3b30','#fff1f0','#ffd6d3')}>Urgent</span>}
                 </div>
                 <div style={{ fontSize: 12, color: '#6e6e73' }}>
@@ -626,8 +631,56 @@ function TicketTab({ ticketType, initialFilter }) {
   )
 }
 
-// ── Ticket detail (service vs offerte) ────────────────────────────────────────
+// ── MIXCARE activatie (na contact met klant) ──────────────────────────────────
+function MixcareActivatieBlok({ ticket, onUpdate }) {
+  const [years, setYears] = useState(3)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  // Haal machine_id uit de beschrijving
+  const machineMatch = ticket.description?.match(/\(([^)]+)\)\s*$/)
+  const machineId = machineMatch ? machineMatch[1].trim() : null
+
+  async function activeer() {
+    if (!machineId) { setMsg({ ok: false, text: 'Machine ID niet gevonden in beschrijving.' }); return }
+    setSaving(true); setMsg(null)
+    try {
+      await api.adminUpdateTicket(ticket.id, { status: 'opgelost' })
+      await fetch(`/api/admin/machines/${machineId}/warranty`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('mm_token')}` },
+        body: JSON.stringify({ warranty_years: years, warranty_type: 'mixcare' }),
+      })
+      onUpdate({ ...ticket, status: 'opgelost' })
+      setMsg({ ok: true, text: `MIXCARE ${years} jaar geactiveerd.` })
+    } catch (e) { setMsg({ ok: false, text: e.message }) }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ background: '#f0efff', border: '1px solid #dddaff', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#5856d6', textTransform: 'uppercase', letterSpacing: 1 }}>MIXCARE activeren</div>
+      <p style={{ margin: 0, fontSize: 13, color: '#3a3a3c', lineHeight: 1.5 }}>
+        Neem eerst contact op met de klant om de aanvraag te bevestigen. Activeer daarna MIXCARE hieronder.
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <select value={years} onChange={e => setYears(Number(e.target.value))} style={{ ...s.inp, width: 'auto', padding: '6px 10px' }}>
+          <option value={3}>3 jaar</option>
+          <option value={4}>4 jaar</option>
+          <option value={5}>5 jaar</option>
+        </select>
+        <button onClick={activeer} disabled={saving} style={{ ...s.btn, background: '#5856d6', opacity: saving ? .5 : 1 }}>
+          {saving ? 'Activeren…' : 'Activeer MIXCARE'}
+        </button>
+        {msg && <span style={{ fontSize: 13, color: msg.ok ? '#34c759' : '#ff3b30' }}>{msg.text}</span>}
+      </div>
+    </div>
+  )
+}
+
+// ── Ticket detail (service vs offerte vs mixcare) ─────────────────────────────
 function TicketDetail({ ticket, onClose, onUpdate }) {
+  const isMixcare = ticket.ticket_type === 'mixcare'
   const isOfferte = (ticket.ticket_type || 'service') === 'offerte'
   const statusMap = isOfferte ? OFFERTE_STATUS : SERVICE_STATUS
 
@@ -715,7 +768,7 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>
-            {isOfferte ? 'Offerte' : 'Melding'} #{ticket.id} — {ticket.category}
+            {isMixcare ? 'MIXCARE aanvraag' : isOfferte ? 'Offerte' : 'Melding'} #{ticket.id} — {ticket.category}
           </div>
           <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>{ticket.customer_name} · {ticket.customer_email}</div>
         </div>
@@ -772,6 +825,11 @@ function TicketDetail({ ticket, onClose, onUpdate }) {
               ))}
             </div>
           </div>
+
+          {/* MIXCARE: activatieknop na contact met klant */}
+          {isMixcare && (
+            <MixcareActivatieBlok ticket={ticket} onUpdate={onUpdate} />
+          )}
 
           {/* Offerte: Prijsvoorstel versturen */}
           {isOfferte && (

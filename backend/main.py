@@ -1297,6 +1297,17 @@ def admin_delete_customer(cid: int, _: int = Depends(verify_admin_user), db: Ses
     db.commit()
     return {"ok": True}
 
+@app.patch("/api/admin/machines/{machine_id}/warranty")
+def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Admin activeert MIXCARE na contact met klant."""
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    machine.warranty_years = int(body.get("warranty_years", machine.warranty_years or 2))
+    machine.warranty_type  = body.get("warranty_type", machine.warranty_type or "factory")
+    db.add(machine); db.commit()
+    return _warranty_info(machine)
+
 @app.delete("/api/admin/machines/{machine_id}")
 def admin_delete_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     """Verwijder een (offline) machine volledig uit het portaal."""
@@ -1762,7 +1773,7 @@ def machine_warranty_public(machine_id: str, db: Session = Depends(get_session))
 
 @app.post("/api/machines/{machine_id}/request-mixcare")
 def machine_request_mixcare(machine_id: str, body: dict, db: Session = Depends(get_session)):
-    """Machine vraagt MIXCARE aan — doorgegeven vanuit de Pompmodule."""
+    """Machine vraagt MIXCARE aan — maakt een admin-melding aan, activeert NIET direct."""
     years = int(body.get("years", 3))
     if years not in (3, 4, 5):
         raise HTTPException(status_code=400, detail="MIXCARE is 3, 4 of 5 jaar")
@@ -1774,10 +1785,17 @@ def machine_request_mixcare(machine_id: str, body: dict, db: Session = Depends(g
     days_since = (date.today() - machine.installation_date).days
     if days_since > 30:
         raise HTTPException(status_code=400, detail=f"MIXCARE aanvragen is alleen mogelijk binnen 30 dagen na installatie ({days_since} dagen geleden)")
-    machine.warranty_years = years
-    machine.warranty_type = "mixcare"
-    db.add(machine); db.commit(); db.refresh(machine)
-    return _warranty_info(machine)
+    customer = db.get(Customer, machine.customer_id) if machine.customer_id else None
+    ticket = SupportTicket(
+        customer_id   = machine.customer_id or 0,
+        ticket_type   = "mixcare",
+        status        = "open",
+        category      = "MIXCARE aanvraag",
+        urgency       = "normaal",
+        description   = f"MIXCARE {years} jaar aangevraagd via de machine.\nMachine: {machine.name} ({machine.machine_id})\nKlant: {customer.name if customer else '—'} ({customer.email if customer else '—'})",
+    )
+    db.add(ticket); db.commit(); db.refresh(ticket)
+    return {"ok": True, "pending": True, "ticket_id": ticket.id}
 
 
 @app.post("/api/machines/{machine_id}/warranty/set-installation-date")
@@ -1803,7 +1821,7 @@ def machine_set_installation_date(machine_id: str, body: dict, db: Session = Dep
 
 @app.post("/api/account/warranty/request-mixcare")
 def request_mixcare(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
-    """Klant vraagt MIXCARE aan via portaal — alleen binnen 30 dagen na installatie."""
+    """Klant vraagt MIXCARE aan via portaal — maakt een admin-melding aan, activeert NIET direct."""
     machine_id = body.get("machine_id", "")
     years = int(body.get("years", 3))
     if years not in (3, 4, 5):
@@ -1816,10 +1834,17 @@ def request_mixcare(body: dict, customer_id: int = Depends(verify_token), db: Se
     days_since = (date.today() - machine.installation_date).days
     if days_since > 30:
         raise HTTPException(status_code=400, detail=f"MIXCARE aanvragen is alleen mogelijk binnen 30 dagen na installatie ({days_since} dagen geleden)")
-    machine.warranty_years = years
-    machine.warranty_type = "mixcare"
-    db.add(machine); db.commit()
-    return {"ok": True, "warranty_years": years}
+    customer = db.get(Customer, customer_id)
+    ticket = SupportTicket(
+        customer_id   = customer_id,
+        ticket_type   = "mixcare",
+        status        = "open",
+        category      = "MIXCARE aanvraag",
+        urgency       = "normaal",
+        description   = f"MIXCARE {years} jaar aangevraagd via het klantportaal.\nMachine: {machine.name} ({machine.machine_id})\nKlant: {customer.name if customer else '—'} ({customer.email if customer else '—'})",
+    )
+    db.add(ticket); db.commit(); db.refresh(ticket)
+    return {"ok": True, "pending": True, "ticket_id": ticket.id}
 
 
 @app.get("/api/account/warranty")
