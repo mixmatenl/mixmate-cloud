@@ -261,6 +261,7 @@ function AdminMachineCard({ machine: m }) {
   const get  = (path)       => api.adminRaw('GET',  path)
 
   const doRestart    = () => act('Herstart',          () => post(`/api/admin/machines/${m.machine_id}/restart`))
+  const doRestartApp = () => act('App herstart',      () => post(`/api/admin/machines/${m.machine_id}/restart-app`))
   const doUpdate     = () => act('Software update',   () => post(`/api/admin/machines/${m.machine_id}/trigger-update`))
   const doUnpair     = async () => {
     if (!confirm(`Machine "${m.name}" ontkoppelen van dit account?`)) return
@@ -335,8 +336,11 @@ function AdminMachineCard({ machine: m }) {
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Machine acties</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={doRestartApp} disabled={!m.online || busy['App herstart']} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
+                {busy['App herstart'] ? 'Opstarten…' : '↺ App opstarten'}
+              </button>
               <button onClick={doRestart} disabled={!m.online || busy['Herstart']} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
-                {busy['Herstart'] ? 'Herstarten…' : '↺ Herstarten'}
+                {busy['Herstart'] ? 'Herstarten…' : '↺ Machine herstarten'}
               </button>
               <button onClick={doUpdate} disabled={!m.online || busy['Software update']} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
                 {busy['Software update'] ? 'Updaten…' : '⬆ Software updaten'}

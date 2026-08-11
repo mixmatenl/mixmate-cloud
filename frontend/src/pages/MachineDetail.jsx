@@ -1880,8 +1880,10 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
   const [serialErr,    setSerialErr]   = useState(null)
   const [saving,       setSaving]      = useState(false)
   const [saved,        setSaved]       = useState(false)
-  const [updating,     setUpdating]    = useState(false)
-  const [updateStatus, setUpdateStatus]= useState(null)
+  const [updating,        setUpdating]       = useState(false)
+  const [updateStatus,    setUpdateStatus]   = useState(null)
+  const [restartingApp,   setRestartingApp]  = useState(false)
+  const [restartAppMsg,   setRestartAppMsg]  = useState(null)
   const [confirmDel,   setConfirmDel]  = useState(false)
   const [deleting,     setDeleting]    = useState(false)
   const [demoLoading,  setDemoLoading] = useState(false)
@@ -1954,6 +1956,17 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
       await api.unpairMachine(machineId)
       onUnpair()
     } catch { setDeleting(false) }
+  }
+
+  async function restartApp() {
+    setRestartingApp(true); setRestartAppMsg(null)
+    try {
+      await api.adminRaw('POST', `/api/machines/${machineId}/restart-app`)
+      setRestartAppMsg({ ok: true, msg: 'App wordt opnieuw opgestart (~5 seconden).' })
+    } catch (e) {
+      setRestartAppMsg({ ok: false, msg: e.message || 'Herstart mislukt.' })
+    }
+    setRestartingApp(false)
   }
 
   async function triggerUpdate() {
@@ -2038,6 +2051,28 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
       </Group>
 
       <Group label="Software">
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #f2f2f7' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 15, color: '#1d1d1f', fontWeight: 500 }}>App opnieuw opstarten</div>
+              <div style={{ fontSize: 13, color: '#aeaeb2', marginTop: 2 }}>Herstart alleen de software (~5 seconden)</div>
+            </div>
+            <button onClick={restartApp} disabled={restartingApp || !status?.online} style={{
+              background: status?.online ? '#1d1d1f' : '#e5e5ea',
+              color: status?.online ? '#fff' : '#aeaeb2',
+              border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600,
+              cursor: status?.online && !restartingApp ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+              flexShrink: 0, transition: 'all .15s',
+            }}>
+              {restartingApp ? 'Opstarten…' : 'Opstarten'}
+            </button>
+          </div>
+          {restartAppMsg && (
+            <div style={{ marginTop: 12, background: restartAppMsg.ok ? '#e8faf0' : '#fff1f0', border: `1px solid ${restartAppMsg.ok ? '#a7f3d0' : '#ffd6d3'}`, color: restartAppMsg.ok ? '#065f46' : '#ff3b30', borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>
+              {restartAppMsg.msg}
+            </div>
+          )}
+        </div>
         <div style={{ padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <div>

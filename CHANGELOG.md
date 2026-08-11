@@ -1,3 +1,8 @@
+## [2.1.5] - 2026-08-11
+### Toegevoegd
+- Knop "App opstarten" in klantportal (Machine → Instellingen) en admin-paneel
+- Backend endpoints /api/machines/{id}/restart-app en /api/admin/machines/{id}/restart-app
+
 ## [2.1.4] - 2026-08-11
 ### Opgelost
 - Kritieke fix: garantie & support pagina volledig offline door machine.pump_slots bug

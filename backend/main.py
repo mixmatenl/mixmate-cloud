@@ -1431,6 +1431,16 @@ async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_u
     await _admin_conn(machine_id).request({"type": "restart"}, timeout=10)
     return {"ok": True}
 
+@app.post("/api/admin/machines/{machine_id}/restart-app")
+async def admin_restart_app(machine_id: str, _: int = Depends(verify_admin_user)):
+    await _admin_conn(machine_id).request({"type": "restart_app"}, timeout=10)
+    return {"ok": True}
+
+@app.post("/api/machines/{machine_id}/restart-app")
+async def customer_restart_app(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    await _get_conn(machine_id, customer_id, db).request({"type": "restart_app"}, timeout=10)
+    return {"ok": True}
+
 @app.post("/api/admin/machines/{machine_id}/trigger-update")
 async def admin_trigger_update(machine_id: str, _: int = Depends(verify_admin_user)):
     await _admin_conn(machine_id).request({"type": "trigger_update"}, timeout=15)
