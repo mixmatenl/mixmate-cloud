@@ -1170,6 +1170,26 @@ function FacturenTab() {
     setUpdatingId(null)
   }
 
+  async function blockMachine(inv) {
+    if (!inv.machine_id) return
+    setUpdatingId(`block-${inv.id}`)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${inv.machine_id}/block`, {
+        reason: `Openstaande factuur ${inv.invoice_number} – neem contact op via info@mixmate.nl`,
+      })
+    } catch {}
+    setUpdatingId(null)
+  }
+
+  async function unblockMachine(inv) {
+    if (!inv.machine_id) return
+    setUpdatingId(`unblock-${inv.id}`)
+    try {
+      await api.adminRaw('POST', `/api/admin/machines/${inv.machine_id}/unblock`)
+    } catch {}
+    setUpdatingId(null)
+  }
+
   function handleSearch(e) {
     e.preventDefault()
     load(query)
@@ -1217,19 +1237,49 @@ function FacturenTab() {
                   {fmtEur(inv.amount)} · Vervaldatum: {fmt(inv.due_date)} · Aangemaakt: {fmt(inv.created_at)}
                 </div>
               </div>
-              <button
-                onClick={() => toggleStatus(inv)}
-                disabled={updatingId === inv.id}
-                style={{
-                  fontSize: 12, fontWeight: 600, border: '1px solid',
-                  borderColor: inv.status === 'betaald' ? '#c7c7cc' : '#30d158',
-                  color: inv.status === 'betaald' ? '#6e6e73' : '#30d158',
-                  background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
-                  fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId === inv.id ? 0.5 : 1,
-                }}
-              >
-                {inv.status === 'betaald' ? 'Markeer openstaand' : 'Markeer betaald'}
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                <button
+                  onClick={() => toggleStatus(inv)}
+                  disabled={!!updatingId}
+                  style={{
+                    fontSize: 12, fontWeight: 600, border: '1px solid',
+                    borderColor: inv.status === 'betaald' ? '#c7c7cc' : '#30d158',
+                    color: inv.status === 'betaald' ? '#6e6e73' : '#30d158',
+                    background: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+                    fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1,
+                  }}
+                >
+                  {inv.status === 'betaald' ? 'Markeer openstaand' : 'Markeer betaald'}
+                </button>
+                {inv.machine_id && inv.status !== 'betaald' && (
+                  <button
+                    onClick={() => blockMachine(inv)}
+                    disabled={!!updatingId}
+                    style={{
+                      fontSize: 12, fontWeight: 600, border: '1px solid #ff3b30',
+                      color: '#ff3b30', background: '#fff', borderRadius: 8,
+                      padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit',
+                      whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1,
+                    }}
+                  >
+                    🔒 Machine blokkeren
+                  </button>
+                )}
+                {inv.machine_id && (
+                  <button
+                    onClick={() => unblockMachine(inv)}
+                    disabled={!!updatingId}
+                    style={{
+                      fontSize: 12, fontWeight: 600, border: '1px solid #c7c7cc',
+                      color: '#6e6e73', background: '#fff', borderRadius: 8,
+                      padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit',
+                      whiteSpace: 'nowrap', opacity: updatingId ? 0.5 : 1,
+                    }}
+                  >
+                    🔓 Deblokkeren
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
