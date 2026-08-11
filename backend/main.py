@@ -1747,7 +1747,7 @@ def admin_get_warranty(machine_id: str, _: int = Depends(verify_admin_user), db:
 
 
 @app.patch("/api/admin/machines/{machine_id}/warranty")
-def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+async def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404, detail="Machine niet gevonden")
@@ -1788,13 +1788,12 @@ def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admi
                 + f"Vermeld: MIXCARE {machine.warranty_years}jr – {machine.name or machine.machine_id}</p></div>"
                 + _email_button("https://portaal.mixmate.nl", "Bekijk uw account →")
             )
-            import asyncio as _asyncio
-            _asyncio.create_task(_resend(
+            await _resend(
                 customer.email,
                 f"MIXCARE factuur – {machine.name or machine.machine_id}",
                 _email_html(invoice_body),
                 reply_to="info@mixmate.nl",
-            ))
+            )
 
     return _warranty_info(machine)
 

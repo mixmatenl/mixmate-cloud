@@ -1,3 +1,7 @@
+## [2.1.7] - 2026-08-11
+### Opgelost
+- MIXCARE activatie crashte met "onbekende fout": endpoint was sync, asyncio.create_task werkt niet in sync context
+
 ## [2.1.6] - 2026-08-11
 ### Opgelost
 - Support pagina: api() als functie aangeroepen ipv fetchApi() — pagina laadde niet
