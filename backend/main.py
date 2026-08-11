@@ -3064,6 +3064,8 @@ def _machine_dict(m: Machine) -> dict:
         "serial_number_confirmed":  m.serial_number_confirmed,
         "paired":                   m.paired,
         "last_seen":                m.last_seen.isoformat() if m.last_seen else None,
+        "blocked":                  m.blocked,
+        "blocked_reason":           m.blocked_reason,
     }
 
 # ── Webshop ───────────────────────────────────────────────────────────────────

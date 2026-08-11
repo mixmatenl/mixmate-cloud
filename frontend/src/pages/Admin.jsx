@@ -237,7 +237,8 @@ function VerificatieGate({ machine: m, onVerified }) {
 
 function AdminMachineCard({ machine: m }) {
   const [expanded,   setExpanded]   = useState(false)
-  const [verified, setVerified] = useState(false)
+  // Geblokkeerde machines hoeven niet geverifieerd te worden — admin heeft al toegang
+  const [verified, setVerified] = useState(!!m.blocked)
   const [busy, setBusy] = useState({})
   const [msg, setMsg] = useState(null)
   const [pinModal, setPinModal] = useState(null) // 'bartender' | 'admin' | 'remove-bartender'
