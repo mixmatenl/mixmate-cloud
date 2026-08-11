@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -1747,7 +1747,7 @@ def admin_get_warranty(machine_id: str, _: int = Depends(verify_admin_user), db:
 
 
 @app.patch("/api/admin/machines/{machine_id}/warranty")
-async def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+def admin_set_warranty(machine_id: str, body: dict, background_tasks: BackgroundTasks, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404, detail="Machine niet gevonden")
@@ -1763,7 +1763,7 @@ async def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verif
         machine.warranty_type = "factory" if years == 2 else "mixcare"
     db.add(machine); db.commit(); db.refresh(machine)
 
-    # Factuur versturen bij MIXCARE-activatie
+    # Factuur versturen bij MIXCARE-activatie (als background task — niet blocking)
     if body.get("send_invoice") and machine.warranty_type == "mixcare":
         customer = db.get(Customer, machine.customer_id) if machine.customer_id else None
         if customer and customer.email:
@@ -1788,7 +1788,8 @@ async def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verif
                 + f"Vermeld: MIXCARE {machine.warranty_years}jr – {machine.name or machine.machine_id}</p></div>"
                 + _email_button("https://portaal.mixmate.nl", "Bekijk uw account →")
             )
-            await _resend(
+            background_tasks.add_task(
+                _resend,
                 customer.email,
                 f"MIXCARE factuur – {machine.name or machine.machine_id}",
                 _email_html(invoice_body),

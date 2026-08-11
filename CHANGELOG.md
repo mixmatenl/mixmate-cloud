@@ -1,3 +1,7 @@
+## [2.1.8] - 2026-08-11
+### Opgelost
+- MIXCARE activatie 500-fout: email via BackgroundTasks ipv asyncio in sync threadpool context
+
 ## [2.1.7] - 2026-08-11
 ### Opgelost
 - MIXCARE activatie crashte met "onbekende fout": endpoint was sync, asyncio.create_task werkt niet in sync context
