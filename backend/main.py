@@ -73,6 +73,8 @@ class Machine(SQLModel, table=True):
     linked_machine_id: str = ""            # machine_id van gekoppelde Cocktailmachine (Pi 5)
     linked_machine_version: str = ""       # Softwareversie van de Cocktailmachine
     pump_count: int = 0                          # Aantal aangesloten pompen (via heartbeat)
+    blocked: bool = False                        # Machine geblokkeerd (bijv. bij uitstaande factuur)
+    blocked_reason: str = ""
     installation_date: Optional[date] = None   # datum van fysieke installatie (door monteur)
     warranty_start: Optional[date] = None      # ingangsdatum garantie (kan eerder zijn)
     warranty_years: int = 2                    # totale garantieduur in jaren (2 t/m 5)
@@ -383,6 +385,8 @@ def create_tables():
         "ALTER TABLE machine ADD COLUMN warranty_years INTEGER NOT NULL DEFAULT 2",
         "ALTER TABLE machine ADD COLUMN warranty_type VARCHAR NOT NULL DEFAULT 'factory'",
         "ALTER TABLE machine ADD COLUMN pump_count INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE machine ADD COLUMN blocked BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE machine ADD COLUMN blocked_reason VARCHAR NOT NULL DEFAULT ''",
         """CREATE TABLE IF NOT EXISTS mixcareinvoice (
             id SERIAL PRIMARY KEY,
             invoice_number VARCHAR NOT NULL,
@@ -660,7 +664,11 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
                     machine.pump_count = int(data["pump_count"])
                 db.add(machine)
                 db.commit()
-                await websocket.send_json({"type": "heartbeat_ack"})
+                ack: dict = {"type": "heartbeat_ack"}
+                if machine.blocked:
+                    ack["block"] = True
+                    ack["reason"] = machine.blocked_reason
+                await websocket.send_json(ack)
 
             elif msg_type == "request_maintenance_token":
                 token = create_maintenance_token(machine_id)
@@ -1455,6 +1463,43 @@ async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_u
     await _admin_conn(machine_id).request({"type": "restart"}, timeout=10)
     return {"ok": True}
 
+@app.post("/api/admin/machines/{machine_id}/block")
+def admin_block_machine(machine_id: str, body: dict = {}, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404)
+    machine.blocked = True
+    machine.blocked_reason = body.get("reason", "Openstaande factuur")
+    db.add(machine); db.commit()
+    conn = connected_machines.get(machine_id)
+    if conn:
+        import asyncio as _asyncio
+        try:
+            asyncio.get_event_loop().create_task(
+                conn.ws.send_json({"type": "block_machine", "reason": machine.blocked_reason})
+            )
+        except Exception:
+            pass
+    return {"ok": True, "blocked": True}
+
+@app.post("/api/admin/machines/{machine_id}/unblock")
+def admin_unblock_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not machine:
+        raise HTTPException(status_code=404)
+    machine.blocked = False
+    machine.blocked_reason = ""
+    db.add(machine); db.commit()
+    conn = connected_machines.get(machine_id)
+    if conn:
+        try:
+            asyncio.get_event_loop().create_task(
+                conn.ws.send_json({"type": "unblock_machine"})
+            )
+        except Exception:
+            pass
+    return {"ok": True, "blocked": False}
+
 @app.post("/api/admin/machines/{machine_id}/restart-app")
 async def admin_restart_app(machine_id: str, _: int = Depends(verify_admin_user)):
     await _admin_conn(machine_id).request({"type": "restart_app"}, timeout=10)
@@ -1849,7 +1894,7 @@ def admin_set_warranty(machine_id: str, body: dict, background_tasks: Background
 
 
 @app.get("/api/account/invoices")
-def get_account_invoices(customer_id: int = Depends(verify_customer), db: Session = Depends(get_session)):
+def get_account_invoices(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     invoices = db.exec(
         select(MixcareInvoice)
         .where(MixcareInvoice.customer_id == customer_id)
