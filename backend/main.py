@@ -1464,7 +1464,7 @@ async def admin_restart_machine(machine_id: str, _: int = Depends(verify_admin_u
     return {"ok": True}
 
 @app.post("/api/admin/machines/{machine_id}/block")
-def admin_block_machine(machine_id: str, body: dict = {}, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+async def admin_block_machine(machine_id: str, body: dict = {}, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404)
@@ -1473,17 +1473,14 @@ def admin_block_machine(machine_id: str, body: dict = {}, _: int = Depends(verif
     db.add(machine); db.commit()
     conn = connected_machines.get(machine_id)
     if conn:
-        import asyncio as _asyncio
         try:
-            asyncio.get_event_loop().create_task(
-                conn.ws.send_json({"type": "block_machine", "reason": machine.blocked_reason})
-            )
+            await conn.ws.send_json({"type": "block_machine", "reason": machine.blocked_reason})
         except Exception:
             pass
     return {"ok": True, "blocked": True}
 
 @app.post("/api/admin/machines/{machine_id}/unblock")
-def admin_unblock_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+async def admin_unblock_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
     if not machine:
         raise HTTPException(status_code=404)
@@ -1493,9 +1490,7 @@ def admin_unblock_machine(machine_id: str, _: int = Depends(verify_admin_user), 
     conn = connected_machines.get(machine_id)
     if conn:
         try:
-            asyncio.get_event_loop().create_task(
-                conn.ws.send_json({"type": "unblock_machine"})
-            )
+            await conn.ws.send_json({"type": "unblock_machine"})
         except Exception:
             pass
     return {"ok": True, "blocked": False}
