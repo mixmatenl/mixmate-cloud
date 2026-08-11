@@ -1297,17 +1297,6 @@ def admin_delete_customer(cid: int, _: int = Depends(verify_admin_user), db: Ses
     db.commit()
     return {"ok": True}
 
-@app.patch("/api/admin/machines/{machine_id}/warranty")
-def admin_set_warranty(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
-    """Admin activeert MIXCARE na contact met klant."""
-    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
-    if not machine:
-        raise HTTPException(status_code=404, detail="Machine niet gevonden")
-    machine.warranty_years = int(body.get("warranty_years", machine.warranty_years or 2))
-    machine.warranty_type  = body.get("warranty_type", machine.warranty_type or "factory")
-    db.add(machine); db.commit()
-    return _warranty_info(machine)
-
 @app.delete("/api/admin/machines/{machine_id}")
 def admin_delete_machine(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     """Verwijder een (offline) machine volledig uit het portaal."""

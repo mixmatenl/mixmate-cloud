@@ -646,11 +646,7 @@ function MixcareActivatieBlok({ ticket, onUpdate }) {
     setSaving(true); setMsg(null)
     try {
       await api.adminUpdateTicket(ticket.id, { status: 'opgelost' })
-      await fetch(`/api/admin/machines/${machineId}/warranty`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('mm_token')}` },
-        body: JSON.stringify({ warranty_years: years, warranty_type: 'mixcare' }),
-      })
+      await api.adminRaw('PATCH', `/api/admin/machines/${machineId}/warranty`, { warranty_years: years })
       onUpdate({ ...ticket, status: 'opgelost' })
       setMsg({ ok: true, text: `MIXCARE ${years} jaar geactiveerd.` })
     } catch (e) { setMsg({ ok: false, text: e.message }) }
