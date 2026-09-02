@@ -356,35 +356,34 @@ export default function Layout({ user, onLogout, children }) {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif', display: 'flex', flexDirection: 'column' }}>
-      {/* Desktop */}
-      <div style={{ display: 'flex', flex: 1, minHeight: '100vh' }}>
-        <div className="desktop-sidebar" style={{ display: 'none' }}>
-          {sidebar}
-        </div>
-        <style>{`
-          @media (min-width: 768px) { .desktop-sidebar { display: flex !important; } .mobile-fab { display: none !important; } }
-          @media (max-width: 767px) { .desktop-sidebar { display: none !important; } }
-        `}</style>
+    <div style={{ height: '100vh', display: 'flex', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif', background: T.bg, overflow: 'hidden' }}>
+      <style>{`
+        @media (min-width: 768px) { .desktop-sidebar { display: flex !important; } .mobile-fab { display: none !important; } }
+        @media (max-width: 767px)  { .desktop-sidebar { display: none  !important; } }
+      `}</style>
 
-        {/* Mobile overlay */}
-        <div className="mobile-fab">
-          {hamburger}
-          {mobileOpen && (
-            <>
-              <div onClick={() => setMobileOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 150, backdropFilter: 'blur(2px)' }} />
-              <div style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 232, zIndex: 160, overflowY: 'auto' }}>
-                {sidebar}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Inhoud */}
-        <main style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-          {children}
-        </main>
+      {/* Desktop sidebar */}
+      <div className="desktop-sidebar" style={{ display: 'none', height: '100vh', flexShrink: 0 }}>
+        {sidebar}
       </div>
+
+      {/* Mobile overlay */}
+      <div className="mobile-fab">
+        {hamburger}
+        {mobileOpen && (
+          <>
+            <div onClick={() => setMobileOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 150, backdropFilter: 'blur(2px)' }} />
+            <div style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 232, zIndex: 160 }}>
+              {sidebar}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Inhoud */}
+      <main style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh' }}>
+        {children}
+      </main>
     </div>
   )
 }
