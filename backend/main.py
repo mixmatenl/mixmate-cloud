@@ -4183,7 +4183,7 @@ async def pilot_active_offer(db: Session = Depends(get_session)):
 # ── Pilot: aanbiedingen beheer (admin) ────────────────────────────────────────
 
 @app.get("/api/pilot/offers")
-async def pilot_offers_list(admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_offers_list(admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     offers = db.exec(select(PilotOffer).order_by(PilotOffer.created_at.desc())).all()
     return [
         {
@@ -4196,7 +4196,7 @@ async def pilot_offers_list(admin_id: int = Depends(verify_hr_admin), db: Sessio
     ]
 
 @app.post("/api/pilot/offers")
-async def pilot_offer_create(body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_offer_create(body: dict, admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     offer = PilotOffer(
         title=body.get("title", "Pilot aanbieding"),
         price=float(body.get("price", 949.0)),
@@ -4210,7 +4210,7 @@ async def pilot_offer_create(body: dict, admin_id: int = Depends(verify_hr_admin
     return {"ok": True, "id": offer.id}
 
 @app.put("/api/pilot/offers/{offer_id}")
-async def pilot_offer_update(offer_id: int, body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_offer_update(offer_id: int, body: dict, admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     offer = db.get(PilotOffer, offer_id)
     if not offer:
         raise HTTPException(404)
@@ -4222,7 +4222,7 @@ async def pilot_offer_update(offer_id: int, body: dict, admin_id: int = Depends(
     return {"ok": True}
 
 @app.put("/api/pilot/offers/{offer_id}/activate")
-async def pilot_offer_activate(offer_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_offer_activate(offer_id: int, admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     offers = db.exec(select(PilotOffer)).all()
     for o in offers:
         o.is_active = (o.id == offer_id)
@@ -4230,7 +4230,7 @@ async def pilot_offer_activate(offer_id: int, admin_id: int = Depends(verify_hr_
     return {"ok": True}
 
 @app.delete("/api/pilot/offers/{offer_id}")
-async def pilot_offer_delete(offer_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_offer_delete(offer_id: int, admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     offer = db.get(PilotOffer, offer_id)
     if not offer:
         raise HTTPException(404)
@@ -4297,7 +4297,7 @@ async def pilot_apply(body: dict, db: Session = Depends(get_session)):
     return {"ok": True, "id": app_obj.id}
 
 @app.get("/api/pilot/applications")
-async def pilot_list(admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_list(admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     apps = db.exec(select(PilotApplication).order_by(PilotApplication.applied_at.desc())).all()
     return [
         {
@@ -4311,7 +4311,7 @@ async def pilot_list(admin_id: int = Depends(verify_hr_admin), db: Session = Dep
     ]
 
 @app.put("/api/pilot/applications/{app_id}")
-async def pilot_update(app_id: int, body: dict, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_update(app_id: int, body: dict, admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     a = db.get(PilotApplication, app_id)
     if not a:
         raise HTTPException(404)
@@ -4321,7 +4321,7 @@ async def pilot_update(app_id: int, body: dict, admin_id: int = Depends(verify_h
     return {"ok": True}
 
 @app.delete("/api/pilot/applications/{app_id}")
-async def pilot_delete(app_id: int, admin_id: int = Depends(verify_hr_admin), db: Session = Depends(get_session)):
+async def pilot_delete(app_id: int, admin_id: int = Depends(verify_admin), db: Session = Depends(get_session)):
     a = db.get(PilotApplication, app_id)
     if not a:
         raise HTTPException(404)
