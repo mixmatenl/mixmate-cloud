@@ -175,7 +175,8 @@ export default function Layout({ user, onLogout, children }) {
     <div style={{
       width: 232, flexShrink: 0,
       display: 'flex', flexDirection: 'column',
-      height: '100%',
+      height: '100vh',
+      position: 'sticky', top: 0,
       background: T.bg,
       borderRight: `1px solid ${T.border}`,
     }}>
