@@ -171,6 +171,9 @@ export default function Layout({ user, onLogout, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const path = location.pathname
 
+  // 5. Mobile: sluit sidebar bij elke navigatie
+  useEffect(() => { setMobileOpen(false) }, [location.pathname, location.search])
+
   const sidebar = (
     <div style={{
       width: 232, flexShrink: 0,
@@ -259,11 +262,9 @@ export default function Layout({ user, onLogout, children }) {
 
         return (
           <>
-            <NavSection label="Overzicht">
-              <NavRow active={inAdmin && (!s || s === 'dashboard')} to="/admin?s=dashboard" icon={Icons.dashboard} label="Dashboard" />
-            </NavSection>
-
+            {/* 1. Machines — dashboard samengevoegd, geen losse Overzicht-sectie */}
             <NavSection label="Machines">
+              <NavRow active={inAdmin && (!s || s === 'dashboard')} to="/admin?s=dashboard" icon={Icons.dashboard} label="Dashboard" />
               <NavRow active={path === '/' || path.startsWith('/machine')} to="/" icon={Icons.machine} label="Machines" />
               <NavRow active={inAdmin && s === 'machines'} to="/admin?s=machines" icon={Icons.search} label="Zoeken" />
             </NavSection>
@@ -295,7 +296,11 @@ export default function Layout({ user, onLogout, children }) {
                 <NavSubRow active={f === 'instellingen'} to="/admin?s=facturen&f=instellingen" label="Instellingen" />
               </>}
               <NavRow active={inPersoneel && t === 'pilot'} to="/personeel/beheer?t=pilot" icon={Icons.doc} label="Pilot" />
-              <NavRow active={path.startsWith('/onderhoud') && path === '/onderhoud'} to="/onderhoud" icon={Icons.wrench} label="Onderhoudbeheer" />
+            </NavSection>
+
+            {/* 2. Beheer — Onderhoudbeheer eigen sectie */}
+            <NavSection label="Beheer">
+              <NavRow active={path === '/onderhoud'} to="/onderhoud" icon={Icons.wrench} label="Onderhoudbeheer" />
             </NavSection>
 
             <NavSection label="Klanten">
@@ -307,13 +312,12 @@ export default function Layout({ user, onLogout, children }) {
               </>}
             </NavSection>
 
-            {user?.email?.toLowerCase() === 'r.muller@mixmate.nl' && (
-              <NavSection label="Personeel">
-                <NavRow active={inPersoneel && (!t || t === 'medewerkers')} to="/personeel/beheer?t=medewerkers" icon={Icons.users} label="Medewerkers" />
-                <NavRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" icon={Icons.festival} label="Festivals" />
-                <NavRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" icon={Icons.task} label="Taken" />
-              </NavSection>
-            )}
+            {/* 3. Personeel zichtbaar voor alle admins */}
+            <NavSection label="Personeel">
+              <NavRow active={inPersoneel && (!t || t === 'medewerkers')} to="/personeel/beheer?t=medewerkers" icon={Icons.users} label="Medewerkers" />
+              <NavRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" icon={Icons.festival} label="Festivals" />
+              <NavRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" icon={Icons.task} label="Taken" />
+            </NavSection>
 
             <NavSection label="Webshop">
               <NavRow active={inWebshop} to="/webshop" icon={Icons.webshop} label="Webshop" />
@@ -329,11 +333,11 @@ export default function Layout({ user, onLogout, children }) {
 
       </div>{/* einde scrollbare sectie */}
 
-      {/* Account — altijd zichtbaar onderaan */}
+      {/* 4. Account — altijd zichtbaar onderaan; medewerkers zien geen account-link */}
       <div style={{ padding: '0 10px 12px', flexShrink: 0 }}>
         <Divider />
         <NavSection>
-          <NavRow active={path === '/account'} to="/account" icon={Icons.user} label="Mijn account" />
+          {!isEmployee && <NavRow active={path === '/account'} to="/account" icon={Icons.user} label="Mijn account" />}
           <NavRow onClick={onLogout} icon={Icons.logout} label="Uitloggen" subtle />
         </NavSection>
       </div>
