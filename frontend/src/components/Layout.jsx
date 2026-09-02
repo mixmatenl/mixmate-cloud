@@ -173,12 +173,15 @@ export default function Layout({ user, onLogout, children }) {
 
   const sidebar = (
     <div style={{
-      width: 232, flexShrink: 0, padding: '16px 10px 12px',
+      width: 232, flexShrink: 0,
       display: 'flex', flexDirection: 'column',
-      overflowY: 'auto', height: '100%',
+      height: '100%',
       background: T.bg,
       borderRight: `1px solid ${T.border}`,
     }}>
+      {/* Scrollbare bovenste sectie */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 10px 8px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+
       {/* Logo + status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px 16px' }}>
         <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -323,16 +326,16 @@ export default function Layout({ user, onLogout, children }) {
         )
       })()}
 
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
+      </div>{/* einde scrollbare sectie */}
 
-      <Divider />
-
-      {/* Account */}
-      <NavSection>
-        <NavRow active={path === '/account'} to="/account" icon={Icons.user} label="Mijn account" />
-        <NavRow onClick={onLogout} icon={Icons.logout} label="Uitloggen" subtle />
-      </NavSection>
+      {/* Account — altijd zichtbaar onderaan */}
+      <div style={{ padding: '0 10px 12px', flexShrink: 0 }}>
+        <Divider />
+        <NavSection>
+          <NavRow active={path === '/account'} to="/account" icon={Icons.user} label="Mijn account" />
+          <NavRow onClick={onLogout} icon={Icons.logout} label="Uitloggen" subtle />
+        </NavSection>
+      </div>
     </div>
   )
 
