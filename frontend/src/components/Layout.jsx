@@ -28,13 +28,9 @@ const Icons = {
   shop:        <Icon><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></Icon>,
   check:       <Icon><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></Icon>,
   users:       <Icon><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Icon>,
-  festival:    <Icon><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></Icon>,
-  task:        <Icon><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></Icon>,
   email:       <Icon><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></Icon>,
   user:        <Icon><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></Icon>,
   logout:      <Icon><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Icon>,
-  contract:    <Icon><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></Icon>,
-  person:      <Icon><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></Icon>,
   package:     <Icon><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></Icon>,
   flask:       <Icon><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/></Icon>,
   tool:        <Icon><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></Icon>,
@@ -165,8 +161,7 @@ function initials(name) {
 const ADMIN_EMAILS = ['r.muller@mixmate.nl', 'info@mixmate.nl', 'h.louwrink@mixmate.nl']
 
 export default function Layout({ user, onLogout, children }) {
-  const isAdmin    = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
-  const isEmployee = !!user?.is_employee
+  const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
   const location   = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const path = location.pathname
@@ -212,23 +207,8 @@ export default function Layout({ user, onLogout, children }) {
 
       <Divider />
 
-      {/* ── Medewerker nav ── */}
-      {isEmployee && (() => {
-        const empS = new URLSearchParams(location.search).get('s')
-        const inPortaal = path === '/personeel'
-        return (
-          <NavSection label="Portaal">
-            <NavRow active={inPortaal && (!empS || empS === 'dashboard')} to="/personeel" icon={Icons.dashboard} label="Dashboard" />
-            <NavRow active={inPortaal && empS === 'festivals'} to="/personeel?s=festivals" icon={Icons.festival} label="Festivals" />
-            <NavRow active={inPortaal && empS === 'contract'} to="/personeel?s=contract" icon={Icons.contract} label="Contractgegevens" />
-            <NavRow active={inPortaal && empS === 'gegevens'} to="/personeel?s=gegevens" icon={Icons.person} label="Persoonlijke gegevens" />
-            <NavRow active={inPortaal && empS === 'melding'} to="/personeel?s=melding" icon={Icons.alert} label="Probleem melden" />
-          </NavSection>
-        )
-      })()}
-
       {/* ── Klant nav ── */}
-      {!isAdmin && !isEmployee && (
+      {!isAdmin && (
         <>
           <NavSection label="Machines">
             <NavRow active={path === '/' || path.startsWith('/machine')} to="/" icon={Icons.machine} label="Mijn machines" />
@@ -257,7 +237,6 @@ export default function Layout({ user, onLogout, children }) {
         const sp = new URLSearchParams(window.location.search)
         const s = sp.get('s'), f = sp.get('f'), t = sp.get('t')
         const inAdmin = path === '/admin'
-        const inPersoneel = path === '/personeel/beheer'
         const inWebshop = path === '/webshop'
 
         return (
@@ -295,7 +274,6 @@ export default function Layout({ user, onLogout, children }) {
                 <NavSubRow active={f === 'versturen'} to="/admin?s=facturen&f=versturen" label="Factuur versturen" />
                 <NavSubRow active={f === 'instellingen'} to="/admin?s=facturen&f=instellingen" label="Instellingen" />
               </>}
-              <NavRow active={inPersoneel && t === 'pilot'} to="/personeel/beheer?t=pilot" icon={Icons.doc} label="Pilot" />
             </NavSection>
 
             {/* 2. Beheer — Onderhoudbeheer eigen sectie */}
@@ -312,12 +290,6 @@ export default function Layout({ user, onLogout, children }) {
               </>}
             </NavSection>
 
-            {/* 3. Personeel zichtbaar voor alle admins */}
-            <NavSection label="Personeel">
-              <NavRow active={inPersoneel && (!t || t === 'medewerkers')} to="/personeel/beheer?t=medewerkers" icon={Icons.users} label="Medewerkers" />
-              <NavRow active={inPersoneel && t === 'festivals'} to="/personeel/beheer?t=festivals" icon={Icons.festival} label="Festivals" />
-              <NavRow active={inPersoneel && t === 'taken'} to="/personeel/beheer?t=taken" icon={Icons.task} label="Taken" />
-            </NavSection>
 
             <NavSection label="Webshop">
               <NavRow active={inWebshop} to="/webshop" icon={Icons.webshop} label="Webshop" />
@@ -333,11 +305,10 @@ export default function Layout({ user, onLogout, children }) {
 
       </div>{/* einde scrollbare sectie */}
 
-      {/* 4. Account — altijd zichtbaar onderaan; medewerkers zien geen account-link */}
       <div style={{ padding: '0 10px 12px', flexShrink: 0 }}>
         <Divider />
         <NavSection>
-          {!isEmployee && <NavRow active={path === '/account'} to="/account" icon={Icons.user} label="Mijn account" />}
+          <NavRow active={path === '/account'} to="/account" icon={Icons.user} label="Mijn account" />
           <NavRow onClick={onLogout} icon={Icons.logout} label="Uitloggen" subtle />
         </NavSection>
       </div>

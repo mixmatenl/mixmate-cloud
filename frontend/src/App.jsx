@@ -14,16 +14,11 @@ import Webshop from './pages/Webshop.jsx'
 import Apps from './pages/Apps.jsx'
 import Bestellen from './pages/Bestellen.jsx'
 import MijnBestellingen from './pages/MijnBestellingen.jsx'
-import Personeel from './pages/Personeel.jsx'
-import PersoneelAdmin from './pages/PersoneelAdmin.jsx'
-import PersoneelInvite from './pages/PersoneelInvite.jsx'
 import Onderhoud from './pages/Onderhoud.jsx'
 import OnderhoudMonteur from './pages/OnderhoudMonteur.jsx'
 import Layout from './components/Layout.jsx'
 import InstallBanner from './components/InstallBanner.jsx'
 import { api } from './api.js'
-
-const HR_ADMIN = 'r.muller@mixmate.nl'
 
 function EyeIcon({ open }) {
   return open
@@ -286,44 +281,6 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('mm_user') || 'null') } catch { return null }
   })
 
-  // Als is_employee / is_admin nog onbekend: blokkeer render tot we het weten
-  const [employeeChecked, setEmployeeChecked] = useState(
-    !token || !user || user.is_employee !== undefined
-  )
-  useEffect(() => {
-    if (token && user && user.is_employee === undefined) {
-      // Probeer eerst admin-check, daarna employee-check
-      const authHeader = { Authorization: `Bearer ${token}` }
-      fetch('/api/admin/me', { headers: authHeader })
-        .then(r => r.ok ? r.json() : null)
-        .then(adminData => {
-          if (adminData?.is_admin) {
-            const updated = { ...user, is_employee: false, is_admin: true }
-            localStorage.setItem('mm_user', JSON.stringify(updated))
-            localStorage.setItem('mixmate_user', JSON.stringify(updated))
-            setUser(updated)
-            setEmployeeChecked(true)
-          } else {
-            return fetch('/api/hr/me', { headers: authHeader })
-              .then(r => { if (r.ok) return r.json(); throw new Error() })
-              .then(() => {
-                const updated = { ...user, is_employee: true, is_admin: false }
-                localStorage.setItem('mm_user', JSON.stringify(updated))
-                localStorage.setItem('mixmate_user', JSON.stringify(updated))
-                setUser(updated)
-              })
-              .catch(() => {
-                const updated = { ...user, is_employee: false, is_admin: false }
-                localStorage.setItem('mm_user', JSON.stringify(updated))
-                localStorage.setItem('mixmate_user', JSON.stringify(updated))
-                setUser(updated)
-              })
-              .finally(() => setEmployeeChecked(true))
-          }
-        })
-        .catch(() => setEmployeeChecked(true))
-    }
-  }, [token])
 
   function onLogin(token, user) {
     localStorage.setItem('mm_token', token)
@@ -333,9 +290,7 @@ export default function App() {
     setToken(token)
     setUser(user)
     // Redirect naar juiste portaal na inloggen
-    if (user?.is_employee) {
-      window.history.replaceState({}, '', '/personeel')
-    } else if (user?.is_admin) {
+    if (user?.is_admin) {
       window.history.replaceState({}, '', '/admin?s=dashboard')
     }
   }
@@ -356,37 +311,12 @@ export default function App() {
     setUser(updated)
   }
 
-  if (!employeeChecked) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <div style={{ width: 28, height: 28, border: '2px solid #e5e5ea', borderTopColor: '#1d1d1f', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
-    )
-  }
-
   if (!token) {
     return (
       <Routes>
         <Route path="/onderhoud/:token" element={<OnderhoudMonteur />} />
-        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={onLogin} />} />
         <Route path="*" element={<Login onLogin={onLogin} />} />
       </Routes>
-    )
-  }
-
-  const isEmployee = !!user?.is_employee
-
-  if (isEmployee) {
-    return (
-      <Layout user={user} onLogout={onLogout}>
-        {user?.must_change_password && <ChangePasswordModal onDone={onPasswordChanged} />}
-        <Routes>
-          <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={() => {}} />} />
-          <Route path="/personeel" element={<Personeel />} />
-          <Route path="*" element={<Navigate to="/personeel" replace />} />
-        </Routes>
-      </Layout>
     )
   }
 
@@ -410,9 +340,6 @@ export default function App() {
         <Route path="/apps"      element={<Apps />} />
         <Route path="/bestellen" element={<Bestellen user={user} />} />
         <Route path="/mijn-bestellingen" element={<MijnBestellingen />} />
-        <Route path="/personeel/invite/:token" element={<PersoneelInvite onLogin={onLogin} />} />
-        <Route path="/personeel/beheer" element={user?.email?.toLowerCase() === HR_ADMIN ? <PersoneelAdmin /> : <Navigate to="/" replace />} />
-        <Route path="/personeel" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <InstallBanner />
