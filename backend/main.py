@@ -1306,13 +1306,7 @@ def admin_dashboard(_: int = Depends(verify_admin_user), db: Session = Depends(g
 
 @app.get("/api/admin/customers")
 def admin_search_customers(q: str = "", customer_id: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
-    # Medewerkers uitsluiten — die horen in het personeelsportaal, niet in de klantenlijst
-    emp_customer_ids = list(db.exec(
-        select(Employee.customer_id).where(Employee.customer_id.is_not(None))
-    ).all())
     query = select(Customer)
-    if emp_customer_ids:
-        query = query.where(Customer.id.not_in(emp_customer_ids))
     if q:
         like = f"%{q}%"
         query = query.where((Customer.name.ilike(like)) | (Customer.email.ilike(like)))
