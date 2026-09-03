@@ -470,6 +470,12 @@ const sel = { ...inp, appearance: 'none', cursor: 'pointer' }
 
 // ── Overzicht ─────────────────────────────────────────────────────────────────
 
+function resolveImgUrl(url, machineId) {
+  if (!url) return null
+  if (url.startsWith('/uploads/')) return `/api/machineapp/${machineId}/proxy${url}`
+  return url
+}
+
 function Overzicht({ status, machineId }) {
   const [recipes,   setRecipes]   = useState([])
   const [loading,   setLoading]   = useState(true)
@@ -603,8 +609,8 @@ function Overzicht({ status, machineId }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
                         {/* Professionele placeholder i.p.v. emoji */}
                         <div style={{ width: 32, height: 32, borderRadius: 9, overflow: 'hidden', background: 'linear-gradient(135deg, #f2f2f7, #e5e5ea)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {r.image_url
-                            ? <img src={r.image_url} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          {resolveImgUrl(r.image_url, machineId)
+                            ? <img src={resolveImgUrl(r.image_url, machineId)} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" strokeWidth="1.6" strokeLinecap="round"><path d="M8 21H5a2 2 0 0 1-2-2v-1a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v1a2 2 0 0 1-2 2h-3"/><path d="M9 3h6l1 9H8L9 3z"/></svg>
                           }
                         </div>
@@ -668,8 +674,8 @@ function Overzicht({ status, machineId }) {
                 ) : activity.map((a, i) => (
                   <div key={a.id} style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < activity.length - 1 ? '1px solid #f9f9f9' : 'none' }}>
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #f2f2f7, #e5e5ea)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                      {a.image_url
-                        ? <img src={a.image_url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      {resolveImgUrl(a.image_url, machineId)
+                        ? <img src={resolveImgUrl(a.image_url, machineId)} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" strokeWidth="1.6" strokeLinecap="round"><path d="M8 21H5a2 2 0 0 1-2-2v-1a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v1a2 2 0 0 1-2 2h-3"/><path d="M9 3h6l1 9H8L9 3z"/></svg>
                       }
                     </div>
@@ -1063,7 +1069,7 @@ function Catalogus({ machineId }) {
                     return (
                     <div key={r.id} style={{ padding: '12px 16px', borderBottom: i < recipes.length - 1 ? '1px solid #f2f2f7' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', background: locked ? '#fff8ee' : '#f2f2f7', flexShrink: 0, position: 'relative' }}>
-                        {r.image_url ? <img src={r.image_url} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        {resolveImgUrl(r.image_url, machineId) ? <img src={resolveImgUrl(r.image_url, machineId)} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🍸</div>}
                         {locked && <div style={{ position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, background: '#ff9500', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -1072,7 +1078,13 @@ function Catalogus({ machineId }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
                         <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 1 }}>
-                          {[r.category_name, r.glass_name, r.ingredients?.length ? `${r.ingredients.length} ingrediënten` : null].filter(Boolean).join(' · ')}
+                          {[
+                            r.category_name,
+                            r.glass_name,
+                            r.ingredients?.length
+                              ? r.ingredients.map(i => i.ingredient_name || i.name).filter(Boolean).join(', ')
+                              : null
+                          ].filter(Boolean).join(' · ')}
                         </div>
                       </div>
                       {r.pour_count > 0 && <div style={{ fontSize: 12, color: '#aeaeb2', flexShrink: 0 }}>{r.pour_count}×</div>}
