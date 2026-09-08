@@ -2049,6 +2049,24 @@ def get_account_invoices(customer_id: int = Depends(verify_token), db: Session =
     return result
 
 
+@app.get("/api/account/invoices/{source}/{invoice_id}/html")
+def get_account_invoice_html(source: str, invoice_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    customer = db.get(Customer, customer_id)
+    settings = _get_shop_settings(db)
+    if source == "manual":
+        inv = db.get(ManualInvoice, invoice_id)
+        if not inv or (customer and inv.customer_email != customer.email):
+            raise HTTPException(403, "Geen toegang")
+        return {"html": _build_manual_invoice_html(inv, settings)}
+    if source == "glass":
+        order = db.get(GlassOrder, invoice_id)
+        if not order or (customer and order.customer_email != customer.email):
+            raise HTTPException(403, "Geen toegang")
+        items = db.exec(select(GlassOrderItem).where(GlassOrderItem.order_id == invoice_id)).all()
+        return {"html": _build_invoice_html(order, items, settings)}
+    raise HTTPException(404, "Factuurtype niet gevonden")
+
+
 @app.get("/api/admin/invoices")
 def admin_get_invoices(q: str = "", _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     stmt = select(MixcareInvoice).order_by(MixcareInvoice.created_at.desc())

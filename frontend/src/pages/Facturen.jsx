@@ -1,5 +1,53 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { fetchApi } from '../api.js'
+
+function InvoiceModal({ inv, onClose }) {
+  const [html, setHtml] = useState(null)
+  const iframeRef = useRef(null)
+
+  useEffect(() => {
+    fetchApi(`/api/account/invoices/${inv.source}/${inv.id}/html`)
+      .then(r => setHtml(r.html))
+      .catch(() => setHtml('<p style="padding:40px;font-family:sans-serif;color:#666">Factuur kon niet worden geladen.</p>'))
+  }, [inv])
+
+  function download() {
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `${inv.invoice_number}.html`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function print() {
+    iframeRef.current?.contentWindow?.print()
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 820, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #f2f2f7', gap: 12, flexShrink: 0 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>{inv.invoice_number}</div>
+            <div style={{ fontSize: 13, color: '#aeaeb2' }}>{inv.subject}</div>
+          </div>
+          <button onClick={print} style={{ background: '#f2f2f7', border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1d1d1f' }}>🖨 Afdrukken</button>
+          <button onClick={download} disabled={!html} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>⬇ Download</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aeaeb2', padding: 4, lineHeight: 1 }}>✕</button>
+        </div>
+        {/* Content */}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          {html === null ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#aeaeb2', fontSize: 14 }}>Laden…</div>
+          ) : (
+            <iframe ref={iframeRef} srcDoc={html} style={{ width: '100%', height: '100%', border: 'none', minHeight: 500 }} title={inv.invoice_number} />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Card({ children, style }) {
   return (
@@ -73,6 +121,7 @@ function ContactForm() {
 
 export default function Facturen() {
   const [invoices, setInvoices] = useState(null)
+  const [selectedInvoice, setSelectedInvoice] = useState(null)
 
   useEffect(() => {
     fetchApi('/api/account/invoices')
@@ -119,7 +168,7 @@ export default function Facturen() {
           <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
             {invoices.map((inv, i) => (
               <div key={`${inv.source}-${inv.id}`} style={{ padding: '16px 20px', borderBottom: i < invoices.length - 1 ? '1px solid #f2f2f7' : 'none' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 14, fontWeight: 700, color: '#1d1d1f', fontFamily: 'monospace' }}>{inv.invoice_number}</span>
@@ -142,6 +191,15 @@ export default function Facturen() {
                       {` · ${fmt(inv.created_at)}`}
                     </div>
                   </div>
+                  {(inv.source === 'manual' || inv.source === 'glass') && (
+                    <button onClick={() => setSelectedInvoice(inv)} style={{
+                      flexShrink: 0, background: '#f2f2f7', border: 'none', borderRadius: 10,
+                      padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      fontFamily: 'inherit', color: '#1d1d1f', whiteSpace: 'nowrap',
+                    }}>
+                      Bekijk factuur
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -150,6 +208,10 @@ export default function Facturen() {
       )}
 
       <ContactForm />
+
+      {selectedInvoice && (
+        <InvoiceModal inv={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+      )}
     </div>
   )
 }
