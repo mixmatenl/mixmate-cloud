@@ -3652,8 +3652,8 @@ Richtlijnen:
 - Geen opsommingstekens, gewone lopende tekst
 - Schrijf alsof je de horeca-inkoper aanspreekt"""
 
-    client = _anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
+    client = _anthropic.AsyncAnthropic(api_key=api_key)
+    msg = await client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
