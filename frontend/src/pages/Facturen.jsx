@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { fetchApi } from '../api.js'
 
 function Card({ children, style }) {
@@ -16,9 +15,64 @@ function Card({ children, style }) {
 const SOURCE_LABEL = { mixcare: 'MIXCARE', manual: 'Handmatig', glass: 'Glazen' }
 const SOURCE_COLOR = { mixcare: '#5856d6', manual: '#34c759', glass: '#007aff' }
 
+function ContactForm() {
+  const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' })
+  const [status, setStatus] = useState(null) // null | 'sending' | 'ok' | 'error'
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const inp = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }
+
+  async function submit(e) {
+    e.preventDefault()
+    setStatus('sending')
+    try {
+      await fetchApi('/api/support/factuur', {
+        method: 'POST',
+        body: JSON.stringify(form),
+      })
+      setStatus('ok')
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  if (status === 'ok') return (
+    <Card style={{ padding: '32px 24px', textAlign: 'center' }}>
+      <div style={{ fontSize: 28, marginBottom: 12 }}>✅</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f', marginBottom: 8 }}>Bericht verzonden</div>
+      <div style={{ fontSize: 14, color: '#6e6e73' }}>We nemen zo snel mogelijk contact met u op via <strong>facturatie@mixmate.nl</strong>.</div>
+    </Card>
+  )
+
+  return (
+    <Card style={{ padding: '24px' }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>Vraag over een factuur?</div>
+      <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 20 }}>
+        Stuur ons een bericht of mail direct naar{' '}
+        <a href="mailto:facturatie@mixmate.nl" style={{ color: '#007aff', textDecoration: 'none', fontWeight: 600 }}>facturatie@mixmate.nl</a>
+      </div>
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input required value={form.name} onChange={e => set('name', e.target.value)} placeholder="Uw naam" style={inp} />
+          <input required type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="E-mailadres" style={inp} />
+        </div>
+        <input required value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="Onderwerp (bijv. factuurnummer)" style={inp} />
+        <textarea required value={form.message} onChange={e => set('message', e.target.value)} placeholder="Uw vraag of opmerking…" rows={4} style={{ ...inp, resize: 'vertical' }} />
+        <button type="submit" disabled={status === 'sending'} style={{
+          background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10,
+          padding: '11px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          fontFamily: 'inherit', alignSelf: 'flex-start', opacity: status === 'sending' ? 0.6 : 1,
+        }}>
+          {status === 'sending' ? 'Verzenden…' : 'Verstuur bericht'}
+        </button>
+        {status === 'error' && <div style={{ fontSize: 13, color: '#ff3b30' }}>Er ging iets mis. Mail ons op facturatie@mixmate.nl</div>}
+      </form>
+    </Card>
+  )
+}
+
 export default function Facturen() {
   const [invoices, setInvoices] = useState(null)
-  const navigate = useNavigate()
 
   useEffect(() => {
     fetchApi('/api/account/invoices')
@@ -36,20 +90,13 @@ export default function Facturen() {
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 20px', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif' }}>
-      <button
-        onClick={() => navigate(-1)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#007aff', fontSize: 14, fontWeight: 500, padding: 0, marginBottom: 24, fontFamily: 'inherit' }}
-      >
-        ← Terug
-      </button>
-
       <h1 style={{ fontSize: 28, fontWeight: 800, color: '#1d1d1f', margin: '0 0 4px', letterSpacing: -0.5 }}>Facturen</h1>
       <p style={{ fontSize: 15, color: '#6e6e73', margin: '0 0 28px' }}>Overzicht van al uw MIXMATE facturen.</p>
 
       {invoices === null ? (
         <div style={{ textAlign: 'center', padding: 60, color: '#6e6e73' }}>Laden…</div>
       ) : invoices.length === 0 ? (
-        <Card style={{ padding: '40px 24px', textAlign: 'center' }}>
+        <Card style={{ padding: '40px 24px', textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
           <div style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f', marginBottom: 8 }}>Nog geen facturen</div>
           <div style={{ fontSize: 14, color: '#6e6e73' }}>Uw facturen verschijnen hier zodra ze zijn aangemaakt.</div>
@@ -69,7 +116,7 @@ export default function Facturen() {
             </div>
           )}
 
-          <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
             {invoices.map((inv, i) => (
               <div key={`${inv.source}-${inv.id}`} style={{ padding: '16px 20px', borderBottom: i < invoices.length - 1 ? '1px solid #f2f2f7' : 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -102,10 +149,7 @@ export default function Facturen() {
         </>
       )}
 
-      <p style={{ fontSize: 13, color: '#aeaeb2', textAlign: 'center', marginTop: 32 }}>
-        Vragen over een factuur?{' '}
-        <a href="mailto:info@mixmate.nl" style={{ color: '#007aff' }}>info@mixmate.nl</a>
-      </p>
+      <ContactForm />
     </div>
   )
 }

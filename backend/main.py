@@ -1087,6 +1087,24 @@ async def submit_support(body: dict, customer_id: int = Depends(verify_token), d
     await _resend("info@mixmate.nl", subject, _email_html(email_body), reply_to=customer_email)
     return {"ok": True, "ticket_id": ticket.id}
 
+@app.post("/api/support/factuur")
+async def contact_factuur(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    """Stuur een factuurvraag naar facturatie@mixmate.nl."""
+    name    = body.get("name", "")
+    email   = body.get("email", "")
+    subject = body.get("subject", "Vraag over factuur")
+    message = body.get("message", "")
+    await _resend(
+        to=["facturatie@mixmate.nl"],
+        subject=f"Factuurvraag: {subject}",
+        html=_email_html(
+            f"<p><strong>Van:</strong> {name} &lt;{email}&gt;</p>"
+            f"<p><strong>Onderwerp:</strong> {subject}</p>"
+            f"<p><strong>Bericht:</strong><br>{message.replace(chr(10), '<br>')}</p>"
+        ),
+    )
+    return {"ok": True}
+
 @app.get("/api/support/tickets")
 def list_tickets(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     tickets = db.exec(
