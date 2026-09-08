@@ -632,14 +632,24 @@ const FAIRE_BOOKMARKLET = `javascript:(function(){
 
 function FaireImport({ onImported }) {
   const [open, setOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [showCode, setShowCode] = useState(false)
+  const [url, setUrl] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(FAIRE_BOOKMARKLET).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+  const doImport = async () => {
+    if (!url.trim()) return
+    setLoading(true)
+    setError('')
+    try {
+      const data = await api.faireImport(url.trim())
+      onImported(data)
+      setOpen(false)
+      setUrl('')
+    } catch (e) {
+      setError(e.message || 'Importeren mislukt')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (!open) {
@@ -660,76 +670,35 @@ function FaireImport({ onImported }) {
     <Card style={{ padding: 20, marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>Importeer via Faire</div>
-        <button onClick={() => setOpen(false)} style={{ background: 'rgba(0,0,0,.06)', border: 'none', borderRadius: 20, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <button onClick={() => { setOpen(false); setError(''); setUrl('') }} style={{ background: 'rgba(0,0,0,.06)', border: 'none', borderRadius: 20, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-
-      {/* Stap 1: bookmarklet installeren */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>1</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', marginBottom: 6 }}>Voeg de bookmarklet toe</div>
-          <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 10, lineHeight: 1.6 }}>
-            <strong>Methode A – slepen:</strong> sleep de knop hieronder naar je bookmarkbalk.<br/>
-            <strong>Methode B – handmatig (betrouwbaarder):</strong> klik "Kopieer code", maak een nieuwe bladwijzer aan in je browser, plak de code als URL.
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <a
-              href={FAIRE_BOOKMARKLET}
-              onClick={e => e.preventDefault()}
-              draggable
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7,
-                padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                background: '#f0efff', border: '1.5px solid #5856d6', color: '#5856d6',
-                textDecoration: 'none', cursor: 'grab', userSelect: 'none',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-              Faire → MIXMATE
-            </a>
-            <button onClick={copyCode} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-              background: copied ? '#e8f5e9' : '#f2f2f7', border: `1.5px solid ${copied ? '#4caf50' : '#e5e5ea'}`,
-              color: copied ? '#2e7d32' : '#1d1d1f', cursor: 'pointer', fontFamily: 'inherit',
-            }}>
-              {copied ? '✓ Gekopieerd!' : 'Kopieer code'}
-            </button>
-            <button onClick={() => setShowCode(v => !v)} style={{
-              fontSize: 12, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
-            }}>
-              {showCode ? 'Verberg code' : 'Toon code'}
-            </button>
-          </div>
-          {showCode && (
-            <textarea
-              readOnly
-              value={FAIRE_BOOKMARKLET}
-              style={{
-                marginTop: 10, width: '100%', height: 80, fontSize: 10, fontFamily: 'monospace',
-                border: '1px solid #e5e5ea', borderRadius: 8, padding: 8, resize: 'none', color: '#444',
-                background: '#f9f9f9',
-              }}
-            />
-          )}
-          <div style={{ marginTop: 10, fontSize: 12, color: '#6e6e73', lineHeight: 1.6 }}>
-            <strong>Handmatig bladwijzer toevoegen in Chrome:</strong><br/>
-            Druk op <strong>⌘D</strong> → klik op de bladwijzer → klik <strong>Meer opties</strong> → vervang de URL door de gekopieerde code → sla op.
-          </div>
-        </div>
+      <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 12 }}>
+        Plak de link van een Faire-productpagina (bijv. <code style={{ fontSize: 11, background: '#f2f2f7', padding: '2px 5px', borderRadius: 4 }}>faire.com/product/p_xxx</code>)
       </div>
-
-      <div style={{ borderTop: '1px solid #f2f2f7', marginBottom: 16 }} />
-
-      {/* Stap 2: gebruik */}
-      <div style={{ display: 'flex', gap: 12 }}>
-        <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>2</div>
-        <div style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6 }}>
-          Ga naar een <a href="https://www.faire.com" target="_blank" rel="noreferrer" style={{ color: '#007aff' }}>Faire-productpagina</a>, klik op de bladwijzer <strong>"Faire → MIXMATE"</strong>. Het portaal opent automatisch met het product ingevuld.
-        </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="url"
+          placeholder="https://www.faire.com/product/p_..."
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && doImport()}
+          style={{
+            flex: 1, padding: '9px 13px', borderRadius: 9, fontSize: 13,
+            border: '1.5px solid #e5e5ea', outline: 'none', fontFamily: 'inherit',
+          }}
+          autoFocus
+        />
+        <button onClick={doImport} disabled={loading || !url.trim()} style={{
+          padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 600,
+          background: loading ? '#e5e5ea' : '#1d1d1f', color: loading ? '#999' : '#fff',
+          border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+        }}>
+          {loading ? 'Bezig…' : 'Importeer'}
+        </button>
       </div>
+      {error && <div style={{ marginTop: 10, fontSize: 13, color: '#c0392b' }}>{error}</div>}
     </Card>
   )
 }

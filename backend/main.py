@@ -3513,31 +3513,17 @@ async def faire_import(data: dict, _=Depends(verify_admin_user)):
     product_token = m.group(1)
     fetch_url = f"https://www.faire.com/product/{product_token}"
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "Sec-Ch-Ua": '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"macOS"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-    }
-
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
-            resp = await client.get(fetch_url, headers=headers)
-    except httpx.RequestError as e:
+        import cloudscraper
+        scraper = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "darwin", "mobile": False})
+        resp = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: scraper.get(fetch_url, timeout=20)
+        )
+    except Exception as e:
         raise HTTPException(502, f"Kan Faire niet bereiken: {e}")
 
     if resp.status_code == 403:
-        raise HTTPException(403, "Faire blokkeert de automatische ophaalpoging (bot-beveiliging). Probeer de pagina opnieuw te laden of gebruik een andere productlink.")
+        raise HTTPException(403, "Faire blokkeert de automatische ophaalpoging.")
     if resp.status_code != 200:
         raise HTTPException(502, f"Faire gaf status {resp.status_code}")
 
