@@ -470,9 +470,8 @@ const sel = { ...inp, appearance: 'none', cursor: 'pointer' }
 
 // ── Overzicht ─────────────────────────────────────────────────────────────────
 
-function resolveImgUrl(url, machineId) {
+function resolveImgUrl(url) {
   if (!url) return null
-  if (url.startsWith('/uploads/')) return `/api/machineapp/${machineId}/proxy${url}`
   return url
 }
 

@@ -581,6 +581,76 @@ function ProductForm({ product, onSave, onCancel }) {
   )
 }
 
+function FaireImport({ onImported }) {
+  const [open, setOpen]       = useState(false)
+  const [url, setUrl]         = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+
+  async function doImport() {
+    if (!url.trim()) return
+    setLoading(true); setError('')
+    try {
+      const data = await api.faireImport(url.trim())
+      setUrl(''); setOpen(false)
+      onImported(data)
+    } catch (e) {
+      setError(e.message || 'Importeren mislukt')
+    }
+    setLoading(false)
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        padding: '9px 16px', borderRadius: 10, fontSize: 14, fontWeight: 600,
+        border: '1.5px solid #e5e5ea', background: '#fff', color: '#1d1d1f',
+        cursor: 'pointer', fontFamily: 'inherit',
+      }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Importeer via Faire
+      </button>
+    )
+  }
+
+  return (
+    <Card style={{ padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 6 }}>Importeer via Faire</div>
+      <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 14, lineHeight: 1.5 }}>
+        Plak een Faire-productlink (faire.com/brand/…/product/…) en het product wordt automatisch aangemaakt.
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <input
+          type="url"
+          value={url}
+          onChange={e => { setUrl(e.target.value); setError('') }}
+          onKeyDown={e => e.key === 'Enter' && doImport()}
+          placeholder="https://www.faire.com/brand/b_xxx/product/p_xxx"
+          style={{ ...inp, flex: 1 }}
+          autoFocus
+        />
+        <button onClick={doImport} disabled={loading || !url.trim()} style={{
+          background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10,
+          padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+          fontFamily: 'inherit', opacity: loading ? .6 : 1, whiteSpace: 'nowrap',
+        }}>
+          {loading ? 'Ophalen…' : 'Importeren'}
+        </button>
+        <button onClick={() => { setOpen(false); setUrl(''); setError('') }} style={{
+          background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10,
+          padding: '10px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+        }}>Annuleren</button>
+      </div>
+      {error && (
+        <div style={{ marginTop: 10, fontSize: 13, color: '#ff3b30', lineHeight: 1.5 }}>
+          ⚠ {error}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function Producten() {
   const [products, setProducts] = useState(null)
   const [editing, setEditing]   = useState(null)
@@ -609,7 +679,8 @@ function Producten() {
         <ProductForm product={editing === 'new' ? null : editing} onSave={save} onCancel={() => setEditing(null)} />
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 12 }}>
+        <FaireImport onImported={data => setEditing({ ...data, id: undefined })} />
         <button onClick={() => setEditing('new')} style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>+ Nieuw product</button>
       </div>
 

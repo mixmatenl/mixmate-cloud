@@ -3497,6 +3497,101 @@ def delete_product(product_id: int, db: Session = Depends(get_session), _=Depend
     db.delete(p); db.commit()
     return {"ok": True}
 
+@app.post("/api/shop/faire-import")
+async def faire_import(data: dict, _=Depends(verify_admin_user)):
+    """Haal productdata op van een Faire-productpagina."""
+    import re, json as _json
+    url = (data.get("url") or "").strip()
+    if not url or "faire.com" not in url:
+        raise HTTPException(400, "Geef een geldige Faire-product-URL op")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "nl-NL,nl;q=0.9,en;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            resp = await client.get(url, headers=headers)
+        if resp.status_code != 200:
+            raise HTTPException(502, f"Faire gaf status {resp.status_code}")
+        html = resp.text
+    except httpx.RequestError as e:
+        raise HTTPException(502, f"Kan Faire niet bereiken: {e}")
+
+    # Probeer __NEXT_DATA__ JSON te parsen
+    m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.S)
+    product = {}
+    if m:
+        try:
+            nd = _json.loads(m.group(1))
+            # Faire stopt productdata op verschillende nesting-paden
+            def dig(obj, *keys):
+                for k in keys:
+                    if not isinstance(obj, dict): return None
+                    obj = obj.get(k)
+                return obj
+            props = nd.get("props", {})
+            page  = props.get("pageProps", {})
+            # Pad 1: pageProps.product
+            p = page.get("product") or page.get("productData", {}).get("product") or {}
+            # Pad 2: pageProps.initialData.product
+            if not p:
+                p = dig(page, "initialData", "product") or {}
+            # Pad 3: pageProps.dehydratedState queries
+            if not p:
+                qs = dig(page, "dehydratedState", "queries") or []
+                for q in qs:
+                    d = dig(q, "state", "data")
+                    if isinstance(d, dict) and d.get("name") and d.get("retailWholesalePrice") is not None:
+                        p = d; break
+            name  = p.get("name") or p.get("title") or ""
+            desc  = p.get("description") or p.get("shortDescription") or ""
+            # Faire prijzen zijn in centen
+            price_cents = (
+                p.get("retailWholesalePrice") or
+                p.get("wholesalePrice") or
+                p.get("priceMinimum") or 0
+            )
+            price_excl = round(price_cents / 100, 2) if price_cents else 0
+            # Afbeelding
+            imgs = p.get("images") or p.get("photos") or []
+            img_url = ""
+            if imgs and isinstance(imgs[0], dict):
+                img_url = imgs[0].get("url") or imgs[0].get("src") or ""
+            elif imgs and isinstance(imgs[0], str):
+                img_url = imgs[0]
+            # Min afname
+            min_order = p.get("minimumOrderQuantity") or p.get("moq") or 1
+            product = {
+                "name": name,
+                "description": desc,
+                "price_excl": price_excl,
+                "image_url": img_url,
+                "min_order": int(min_order),
+                "unit": "stuk",
+            }
+        except Exception:
+            pass
+
+    # Fallback: open graph / meta tags
+    if not product.get("name"):
+        og_title = re.search(r'<meta property="og:title" content="([^"]+)"', html)
+        og_desc  = re.search(r'<meta property="og:description" content="([^"]+)"', html)
+        og_img   = re.search(r'<meta property="og:image" content="([^"]+)"', html)
+        product = {
+            "name": og_title.group(1) if og_title else "",
+            "description": og_desc.group(1) if og_desc else "",
+            "price_excl": 0,
+            "image_url": og_img.group(1) if og_img else "",
+            "min_order": 1,
+            "unit": "stuk",
+        }
+
+    if not product.get("name"):
+        raise HTTPException(422, "Kon geen productdata vinden op deze Faire-pagina. Probeer een directe productlink (faire.com/brand/.../product/...).")
+
+    return product
+
 @app.post("/api/shop/orders")
 async def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     settings = _get_shop_settings(db)
