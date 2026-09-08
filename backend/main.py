@@ -3693,9 +3693,7 @@ Geef ALLEEN het JSON-object terug, niets anders."""
     def _normalize_product_name(raw: str) -> str:
         """Zet naam om naar 'Waterglas 24 cl – Melodia' formaat."""
         import re as _re
-        # Splits op em-dash of gewone koppeltekens met spaties
-        parts = _re.split(r'\s*[–—-]\s*', raw, maxsplit=1)
-        def _fix_left(s: str) -> str:
+        def _fix_type(s: str) -> str:
             words = s.strip().split()
             result = []
             for i, w in enumerate(words):
@@ -3708,9 +3706,23 @@ Geef ALLEEN het JSON-object terug, niets anders."""
             return ' '.join(result)
         def _fix_brand(s: str) -> str:
             return s.strip().title()
-        if len(parts) == 2:
-            return f"{_fix_left(parts[0])} – {_fix_brand(parts[1])}"
-        return _fix_left(parts[0])
+
+        # Eerst proberen: split op em-dash of en-dash
+        dash_parts = _re.split(r'\s*[–—]\s*', raw, maxsplit=1)
+        if len(dash_parts) == 2:
+            return f"{_fix_type(dash_parts[0])} – {_fix_brand(dash_parts[1])}"
+
+        # Tweede poging: patroon "TYPE [GETAL] CL MERK" zonder streepje
+        # bijv. "SHOTGLAS 8 CL TIMELESS" of "Longdrinkglas 36 cl Melodia"
+        m = _re.match(r'^(.+?)\s+(\d+)\s+cl\s+(.+)$', raw.strip(), _re.IGNORECASE)
+        if m:
+            type_part = _fix_type(m.group(1))
+            vol = m.group(2)
+            brand = _fix_brand(m.group(3))
+            return f"{type_part} {vol} cl – {brand}"
+
+        # Fallback: alleen casing fixen
+        return _fix_type(raw)
 
     def _find_or_create_series(normalized_name: str) -> Optional[int]:
         """Extraheer serie-naam uit 'Type cl – Serie' en zoek/maak serie aan."""
