@@ -624,7 +624,7 @@ const FAIRE_BOOKMARKLET = `javascript:(function(){
 
   if(!payload.name){alert('Kon geen productdata vinden op deze pagina.');return;}
   var enc=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-  window.open('https://portaal.mixmate.nl/webshop?tab=Producten&faire='+enc,'_blank');
+  window.location.href='https://portaal.mixmate.nl/webshop?tab=Producten&faire='+enc;
 })();`
 
 function FaireImport({ onImported }) {
