@@ -447,10 +447,11 @@ function ProductForm({ product, onSave, onCancel }) {
   const generateDescription = async () => {
     setAiLoading(true)
     try {
-      const { description } = await api.aiDescription(form)
-      set('description', description)
+      const { name: aiName, description } = await api.aiDescription(form)
+      if (aiName) set('name', aiName)
+      if (description) set('description', description)
     } catch (e) {
-      alert('AI-beschrijving mislukt: ' + e.message)
+      alert('AI mislukt: ' + e.message)
     } finally {
       setAiLoading(false)
     }

@@ -3639,29 +3639,42 @@ async def ai_description(data: dict, _=Depends(verify_admin_user)):
 
     prompt = f"""Je bent copywriter voor MIXMATE. MIXMATE levert barartikelen — voornamelijk glazen — aan horecabedrijven in Nederland. De glazen worden gebruikt in de MIXMATE cocktailmachine: klanten koppelen een glas aan hun machine in het MIXMATE-portaal, waarna de machine automatisch de juiste hoeveelheid cocktail inschenkt.
 
-Schrijf een korte, professionele productbeschrijving in het Nederlands voor de MIXMATE-webshop.
+Geef een JSON-object terug met twee velden: "name" en "description".
 
-Product: {name}
-Ruwe omschrijving van leverancier: {description}
+Product (ruwe naam van leverancier): {name}
 Minimale afname: {min_order} {unit}
 
-Toon & stijl:
+Instructies voor "name":
+- Formaat: [Type] [inhoud in cl] cl – [Merknaam/Serie]
+- Voorbeelden: "Waterglas 24 cl – Melodia", "Longdrinkglas 36 cl – Archipelago", "Champagneglas 15 cl – Enoteca"
+- Type in het Nederlands (waterglas, longdrinkglas, wijnglas, champagneglas, etc.)
+- Inhoud in cl met kleine letters ("cl"), alleen als bekend uit de naam
+- Na de streep: alleen de serie- of merknaam, geen extra woorden
+- Als er geen inhoud of merknaam bekend is, laat dat deel dan weg
+
+Instructies voor "description":
 - Professioneel, direct en zelfverzekerd — zoals mixmate.nl
 - Spreek de horeca-inkoper aan (jij-vorm)
-- Max 2-3 zinnen, geen opsommingstekens, gewone lopende tekst
-- Vermeld dat het glas eenvoudig toe te voegen is aan de MIXMATE cocktailmachine (als het relevant is voor een glas)
-- Benadruk kwaliteit, duurzaamheid en geschiktheid voor professioneel gebruik
-- Geen prijsinformatie
-- Noem nooit "Faire", leveranciersnamen of inkoopkanalen
-- Geen markdown, geen koppen, geen vetgedrukte tekst"""
+- Max 2 zinnen, gewone lopende tekst
+- Vermeld dat het glas eenvoudig toe te voegen is aan de MIXMATE cocktailmachine
+- Benadruk kwaliteit en geschiktheid voor professioneel gebruik
+- Geen prijsinformatie, geen "Faire", geen leveranciersnamen
+- Geen markdown of vetgedrukte tekst
+
+Geef ALLEEN het JSON-object terug, niets anders."""
 
     client = _anthropic.AsyncAnthropic(api_key=api_key)
     msg = await client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=300,
+        max_tokens=400,
         messages=[{"role": "user", "content": prompt}],
     )
-    return {"description": msg.content[0].text.strip()}
+    import json as _json2
+    try:
+        result = _json2.loads(msg.content[0].text.strip())
+        return {"name": result.get("name", name), "description": result.get("description", "")}
+    except Exception:
+        return {"name": name, "description": msg.content[0].text.strip()}
 
 @app.post("/api/shop/orders")
 async def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
