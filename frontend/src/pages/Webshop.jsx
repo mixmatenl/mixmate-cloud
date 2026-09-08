@@ -581,24 +581,11 @@ function ProductForm({ product, onSave, onCancel }) {
   )
 }
 
-function FaireImport({ onImported }) {
-  const [open, setOpen]       = useState(false)
-  const [url, setUrl]         = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState('')
+// Bookmarklet die op een Faire-productpagina draait (minified, URL-encoded)
+const FAIRE_BOOKMARKLET = `javascript:(function(){var nd=document.getElementById('__NEXT_DATA__');if(!nd){alert('Open dit op een Faire-productpagina.');return;}var data;try{data=JSON.parse(nd.textContent);}catch(e){alert('Fout bij lezen productdata.');return;}var tm=location.pathname.match(/\\/(p_[a-z0-9]+)/);if(!tm){alert('Geen product-ID gevonden in de URL.');return;}var token=tm[1];function find(o,t,d){if(d>8||!o||typeof o!=='object')return null;if(Array.isArray(o)){for(var i=0;i<o.length;i++){var r=find(o[i],t,d+1);if(r)return r;}}else{if(o.token===t&&o.name)return o;var ks=Object.keys(o);for(var i=0;i<ks.length;i++){var r=find(o[ks[i]],t,d+1);if(r)return r;}}return null;}var p=find(data,token,0);if(!p){alert('Kon productdata niet vinden. Probeer een directe productpagina.');return;}var imgs=p.images||p.photos||[];var img=imgs.length>0?(imgs[0].url||imgs[0].src||''):'';var price=((p.retailWholesalePrice||p.wholesalePrice||p.priceMin||0)/100).toFixed(2);var desc=(p.description||p.shortDescription||'').replace(/<[^>]+>/g,'').trim();var payload={name:p.name||'',description:desc,price_excl:parseFloat(price),image_url:img,min_order:parseInt(p.minimumOrderQuantity||p.moq||1),unit:'stuk'};var enc=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));window.open('https://portaal.mixmate.nl/webshop?tab=Producten&faire='+enc,'_blank');})();`
 
-  async function doImport() {
-    if (!url.trim()) return
-    setLoading(true); setError('')
-    try {
-      const data = await api.faireImport(url.trim())
-      setUrl(''); setOpen(false)
-      onImported(data)
-    } catch (e) {
-      setError(e.message || 'Importeren mislukt')
-    }
-    setLoading(false)
-  }
+function FaireImport({ onImported }) {
+  const [open, setOpen] = useState(false)
 
   if (!open) {
     return (
@@ -616,37 +603,47 @@ function FaireImport({ onImported }) {
 
   return (
     <Card style={{ padding: 20, marginBottom: 16 }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 6 }}>Importeer via Faire</div>
-      <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 14, lineHeight: 1.5 }}>
-        Plak een Faire-productlink (faire.com/brand/…/product/…) en het product wordt automatisch aangemaakt.
-      </div>
-      <div style={{ display: 'flex', gap: 10 }}>
-        <input
-          type="url"
-          value={url}
-          onChange={e => { setUrl(e.target.value); setError('') }}
-          onKeyDown={e => e.key === 'Enter' && doImport()}
-          placeholder="https://www.faire.com/brand/b_xxx/product/p_xxx"
-          style={{ ...inp, flex: 1 }}
-          autoFocus
-        />
-        <button onClick={doImport} disabled={loading || !url.trim()} style={{
-          background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10,
-          padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
-          fontFamily: 'inherit', opacity: loading ? .6 : 1, whiteSpace: 'nowrap',
-        }}>
-          {loading ? 'Ophalen…' : 'Importeren'}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>Importeer via Faire</div>
+        <button onClick={() => setOpen(false)} style={{ background: 'rgba(0,0,0,.06)', border: 'none', borderRadius: 20, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
-        <button onClick={() => { setOpen(false); setUrl(''); setError('') }} style={{
-          background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10,
-          padding: '10px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
-        }}>Annuleren</button>
       </div>
-      {error && (
-        <div style={{ marginTop: 10, fontSize: 13, color: '#ff3b30', lineHeight: 1.5 }}>
-          ⚠ {error}
+
+      {/* Stap 1: bookmarklet installeren */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+        <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>1</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', marginBottom: 6 }}>Sleep deze knop naar je bookmarkbalk</div>
+          <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 10, lineHeight: 1.5 }}>
+            Zet de bookmarkbalk aan via <strong>Weergave → Bookmarkbalk tonen</strong> als je hem niet ziet.
+          </div>
+          <a
+            href={FAIRE_BOOKMARKLET}
+            onClick={e => e.preventDefault()}
+            draggable
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7,
+              padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+              background: '#f0efff', border: '1.5px solid #5856d6', color: '#5856d6',
+              textDecoration: 'none', cursor: 'grab', userSelect: 'none',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            Faire → MIXMATE
+          </a>
         </div>
-      )}
+      </div>
+
+      <div style={{ borderTop: '1px solid #f2f2f7', marginBottom: 16 }} />
+
+      {/* Stap 2: gebruik */}
+      <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>2</div>
+        <div style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6 }}>
+          Ga naar een <a href="https://www.faire.com" target="_blank" rel="noreferrer" style={{ color: '#007aff' }}>Faire-productpagina</a>, klik op de knop <strong>"Faire → MIXMATE"</strong> in je bookmarkbalk. Het portaal opent automatisch met het product ingevuld.
+        </div>
+      </div>
     </Card>
   )
 }
@@ -660,6 +657,21 @@ function Producten() {
   }, [])
 
   useEffect(() => { load() }, [])
+
+  // Vang ?faire=<base64> op uit de URL (gezet door de bookmarklet)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const faire = params.get('faire')
+    if (!faire) return
+    try {
+      const data = JSON.parse(decodeURIComponent(escape(atob(faire))))
+      setEditing({ ...data, id: undefined })
+      // Verwijder de param uit de URL zonder reload
+      const url = new URL(window.location.href)
+      url.searchParams.delete('faire')
+      window.history.replaceState({}, '', url.toString())
+    } catch {}
+  }, [])
 
   async function save(data) {
     if (editing === 'new') await api.createShopProduct(data)
