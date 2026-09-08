@@ -432,6 +432,7 @@ def create_tables():
             notes TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )""",
+        "ALTER TABLE shopsettings ADD COLUMN IF NOT EXISTS faire_api_token VARCHAR NOT NULL DEFAULT ''",
     ]
     for sql in migrations:
         try:
