@@ -106,10 +106,12 @@ export default function Bestellen({ user }) {
   const [err, setErr]               = useState('')
   const [series, setSeries]         = useState([])
   const [cartOpen, setCartOpen]     = useState(false)
+  const [pastOrders, setPastOrders] = useState([])
 
   useEffect(() => {
     api.getShopProductsPublic().then(setProducts).catch(() => {})
     api.getShopSeriesPublic().then(setSeries).catch(() => {})
+    api.getMyOrders().then(orders => setPastOrders(orders.slice(0, 3))).catch(() => {})
     const saved = sessionStorage.getItem('reorder_quantities')
     if (saved) { try { setQuantities(JSON.parse(saved)) } catch {} sessionStorage.removeItem('reorder_quantities') }
     api.accountMe().then(r => {
@@ -226,16 +228,62 @@ export default function Bestellen({ user }) {
         <div>
           {step === 'producten' ? (
             <div>
+              {/* Recent besteld */}
+              {pastOrders.length > 0 && (
+                <div style={{ marginBottom: 32 }}>
+                  <SectionHeader icon="🕐" title="Recent besteld" subtitle="Klik op een bestelling om deze opnieuw te plaatsen" />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {pastOrders.map(order => {
+                      const date = new Date(order.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })
+                      const total = order.total_excl
+                      const knownItems = order.items.filter(i => activeProducts.find(p => p.id === i.product_id))
+                      return (
+                        <div key={order.id} style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', display: 'flex', alignItems: 'center', gap: 14 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, color: '#aeaeb2', marginBottom: 4 }}>{date}</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', lineHeight: 1.4 }}>
+                              {knownItems.slice(0, 3).map(i => {
+                                const p = activeProducts.find(pr => pr.id === i.product_id)
+                                return p ? `${i.quantity}× ${p.name}` : null
+                              }).filter(Boolean).join(', ')}
+                              {knownItems.length > 3 && ` +${knownItems.length - 3} meer`}
+                            </div>
+                            <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4 }}>{fmtEur(total)} excl. BTW</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
+                              background: order.status === 'verzonden' ? '#edfaf1' : order.status === 'nieuw' ? '#fff8e6' : '#f2f2f7',
+                              color: order.status === 'verzonden' ? '#30d158' : order.status === 'nieuw' ? '#f59e0b' : '#6e6e73',
+                            }}>{order.status === 'verzonden' ? 'Verzonden' : order.status === 'nieuw' ? 'In behandeling' : order.status}</span>
+                            {knownItems.length > 0 && (
+                              <button type="button" onClick={() => {
+                                const newQtys = {}
+                                knownItems.forEach(i => { newQtys[i.product_id] = i.quantity })
+                                setQuantities(newQtys)
+                              }} style={{
+                                background: '#f2f2f7', border: 'none', borderRadius: 8, padding: '7px 12px',
+                                fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1d1d1f', whiteSpace: 'nowrap',
+                              }}>
+                                Opnieuw bestellen
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Catalogus */}
               {activeProducts.length === 0 ? (
                 <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen producten beschikbaar.</div>
               ) : (
                 <>
                   {seriesGroups.map(g => (
                     <div key={g.series.id} style={{ marginBottom: 32 }}>
-                      <div style={{ marginBottom: 14 }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#1d1d1f', letterSpacing: -.3 }}>{g.series.name}</div>
-                        {g.series.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 3 }}>{g.series.description}</div>}
-                      </div>
+                      <SectionHeader title={g.series.name} subtitle={g.series.description} />
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {g.products.map(p => <ProductRow key={p.id} p={p} qty={quantities[p.id] || 0} onSet={v => setQty(p.id, v)} />)}
                       </div>
@@ -243,7 +291,7 @@ export default function Bestellen({ user }) {
                   ))}
                   {unsorted.length > 0 && (
                     <div style={{ marginBottom: 32 }}>
-                      {seriesGroups.length > 0 && <div style={{ fontSize: 18, fontWeight: 800, color: '#1d1d1f', letterSpacing: -.3, marginBottom: 14 }}>Overige producten</div>}
+                      {seriesGroups.length > 0 && <SectionHeader title="Overige producten" />}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {unsorted.map(p => <ProductRow key={p.id} p={p} qty={quantities[p.id] || 0} onSet={v => setQty(p.id, v)} />)}
                       </div>
@@ -323,6 +371,18 @@ export default function Bestellen({ user }) {
           {selectedItems.length > 0 ? `Bekijk winkelwagen · ${fmtEur(totalPrice)}` : 'Selecteer producten'}
         </button>
       )}
+    </div>
+  )
+}
+
+function SectionHeader({ icon, title, subtitle }) {
+  return (
+    <div style={{ marginBottom: 14, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+      <div>
+        {icon && <span style={{ fontSize: 16, marginRight: 6 }}>{icon}</span>}
+        <span style={{ fontSize: 17, fontWeight: 800, color: '#1d1d1f', letterSpacing: -.3 }}>{title}</span>
+      </div>
+      {subtitle && <span style={{ fontSize: 13, color: '#aeaeb2' }}>{subtitle}</span>}
     </div>
   )
 }
