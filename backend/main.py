@@ -3499,72 +3499,143 @@ def delete_product(product_id: int, db: Session = Depends(get_session), _=Depend
     return {"ok": True}
 
 @app.post("/api/shop/faire-import")
-async def faire_import(data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
-    """Haal productdata op via de Faire Retailer API."""
-    import re
+async def faire_import(data: dict, _=Depends(verify_admin_user)):
+    """Haal productdata op van een Faire-productpagina."""
+    import re, json as _json, random, string
     url = (data.get("url") or "").strip()
     if not url or "faire.com" not in url:
         raise HTTPException(400, "Geef een geldige Faire-product-URL op")
 
-    # Haal API-token op uit instellingen
-    settings = _get_shop_settings(db)
-    token = settings.faire_api_token.strip()
-    if not token:
-        raise HTTPException(400, "Geen Faire API-token ingesteld. Ga naar Webshop → Instellingen en voeg je Faire API-token toe.")
-
-    # Extraheer product-token uit URL (p_xxxxxxxx)
-    m = re.search(r'/(p_[a-z0-9]+)', url)
+    # Normaliseer URL naar faire.com/product/p_xxx
+    m = re.search(r'(p_[a-z0-9]+)', url)
     if not m:
-        raise HTTPException(400, "Kon geen product-ID vinden in de URL. Gebruik een directe productlink (faire.com/brand/.../product/p_xxx).")
+        raise HTTPException(400, "Kon geen product-ID vinden in de URL.")
     product_token = m.group(1)
+    fetch_url = f"https://www.faire.com/product/{product_token}"
 
-    api_url = f"https://www.faire.com/api/v2/products/{product_token}"
     headers = {
-        "Authorization": f"Bearer {token}",
-        "X-Faire-Channel": "RETAILER_APP",
-        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Ch-Ua": '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
     }
+
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(api_url, headers=headers)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20, http2=True) as client:
+            resp = await client.get(fetch_url, headers=headers)
     except httpx.RequestError as e:
         raise HTTPException(502, f"Kan Faire niet bereiken: {e}")
 
-    if resp.status_code == 401:
-        raise HTTPException(401, "Faire API-token is ongeldig of verlopen. Controleer je token in de instellingen.")
     if resp.status_code == 403:
-        raise HTTPException(403, "Toegang geweigerd. Controleer of je token de juiste rechten heeft.")
-    if resp.status_code == 404:
-        raise HTTPException(404, "Product niet gevonden op Faire. Controleer de URL.")
+        raise HTTPException(403, "Faire blokkeert de automatische ophaalpoging (bot-beveiliging). Probeer de pagina opnieuw te laden of gebruik een andere productlink.")
     if resp.status_code != 200:
         raise HTTPException(502, f"Faire gaf status {resp.status_code}")
 
-    try:
-        p = resp.json()
-    except Exception:
-        raise HTTPException(502, "Faire gaf een ongeldig antwoord terug.")
+    html = resp.text
 
-    # Faire API: prijzen zijn in centen (USD of EUR)
-    price_cents = (
-        p.get("wholesale_price") or
-        p.get("retail_price") or 0
-    )
-    price_excl = round(price_cents / 100, 2) if price_cents else 0
+    # Parse __NEXT_DATA__ — Faire/Next.js stopt hier alle productdata in
+    nd_match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.S)
+    product = {}
 
-    # Afbeelding
-    imgs = p.get("images") or []
-    img_url = ""
-    if imgs:
-        img_url = imgs[0].get("url") or imgs[0].get("src") or "" if isinstance(imgs[0], dict) else imgs[0]
+    if nd_match:
+        try:
+            nd = _json.loads(nd_match.group(1))
 
-    return {
-        "name": p.get("name") or "",
-        "description": p.get("description") or p.get("short_description") or "",
-        "price_excl": price_excl,
-        "image_url": img_url,
-        "min_order": int(p.get("min_order_quantity") or p.get("minimum_order_quantity") or 1),
-        "unit": "stuk",
-    }
+            def _find_product(obj, token, depth=0):
+                """Zoek recursief naar het product-object met de juiste token."""
+                if depth > 8 or not isinstance(obj, (dict, list)):
+                    return None
+                if isinstance(obj, list):
+                    for item in obj:
+                        r = _find_product(item, token, depth + 1)
+                        if r: return r
+                if isinstance(obj, dict):
+                    if obj.get("token") == token and obj.get("name"):
+                        return obj
+                    for v in obj.values():
+                        r = _find_product(v, token, depth + 1)
+                        if r: return r
+                return None
+
+            p = _find_product(nd, product_token) or {}
+
+            if p:
+                # Prijs (Faire slaat op in centen)
+                price_cents = (
+                    p.get("retailWholesalePrice") or
+                    p.get("wholesalePrice") or
+                    p.get("priceMin") or
+                    p.get("price") or 0
+                )
+                price_excl = round(price_cents / 100, 2) if price_cents else 0
+
+                # Afbeelding
+                imgs = p.get("images") or p.get("photos") or []
+                img_url = ""
+                if imgs:
+                    first = imgs[0]
+                    img_url = (first.get("url") or first.get("src") or "") if isinstance(first, dict) else str(first)
+
+                # Omschrijving — strip HTML-tags
+                raw_desc = p.get("description") or p.get("shortDescription") or ""
+                clean_desc = re.sub(r'<[^>]+>', '', raw_desc).strip()
+
+                product = {
+                    "name": p.get("name") or "",
+                    "description": clean_desc,
+                    "price_excl": price_excl,
+                    "image_url": img_url,
+                    "min_order": int(p.get("minimumOrderQuantity") or p.get("moq") or 1),
+                    "unit": "stuk",
+                }
+        except Exception:
+            pass
+
+    # Fallback: JSON-LD structured data
+    if not product.get("name"):
+        ld_match = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+        if ld_match:
+            try:
+                ld = _json.loads(ld_match.group(1))
+                if isinstance(ld, list): ld = ld[0]
+                price_str = (ld.get("offers") or {}).get("price") or "0"
+                product = {
+                    "name": ld.get("name") or "",
+                    "description": re.sub(r'<[^>]+>', '', ld.get("description") or "").strip(),
+                    "price_excl": float(price_str) if price_str else 0,
+                    "image_url": ld.get("image") or "",
+                    "min_order": 1,
+                    "unit": "stuk",
+                }
+            except Exception:
+                pass
+
+    # Fallback: Open Graph meta-tags
+    if not product.get("name"):
+        og = lambda prop: (re.search(rf'<meta property="{prop}" content="([^"]+)"', html) or [None, ""])[1]
+        product = {
+            "name": og("og:title"),
+            "description": og("og:description"),
+            "price_excl": 0,
+            "image_url": og("og:image"),
+            "min_order": 1,
+            "unit": "stuk",
+        }
+
+    if not product.get("name"):
+        raise HTTPException(422, "Kon geen productdata vinden. Zorg dat je een directe productlink gebruikt (faire.com/product/p_xxx).")
+
+    return product
 
 @app.post("/api/shop/orders")
 async def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
