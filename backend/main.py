@@ -3651,7 +3651,8 @@ Richtlijnen:
 - Geen prijsinformatie in de beschrijving
 - Geen opsommingstekens, gewone lopende tekst
 - Schrijf alsof je de horeca-inkoper aanspreekt
-- Noem nooit "Faire" of andere leveranciersnamen"""
+- Noem nooit "Faire" of andere leveranciersnamen
+- Geen markdown, geen koppen, geen vetgedrukte tekst — alleen gewone lopende tekst"""
 
     client = _anthropic.AsyncAnthropic(api_key=api_key)
     msg = await client.messages.create(
