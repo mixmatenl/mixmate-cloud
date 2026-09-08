@@ -3663,10 +3663,13 @@ Product (ruwe naam van leverancier): {name}
 Minimale afname: {min_order} {unit}
 
 Instructies voor "name":
-- Formaat: [Type] [inhoud in cl] cl – [Merknaam/Serie]
+- Formaat: [Type] [getal] cl – [Merknaam/Serie]
+- EXACT deze schrijfwijze: "cl" altijd in kleine letters, nooit "CL" of "Cl"
+- Het streepje is altijd een em-dash "–" (niet "-")
+- Alleen het eerste woord van het type begint met een hoofdletter, de rest lowercase
 - Voorbeelden: "Waterglas 24 cl – Melodia", "Longdrinkglas 36 cl – Archipelago", "Champagneglas 15 cl – Enoteca"
 - Type in het Nederlands (waterglas, longdrinkglas, wijnglas, champagneglas, etc.)
-- Inhoud in cl met kleine letters ("cl"), alleen als bekend uit de naam
+- Inhoud in cl alleen als bekend uit de naam
 - Na de streep: alleen de serie- of merknaam, geen extra woorden
 - Als er geen inhoud of merknaam bekend is, laat dat deel dan weg
 
