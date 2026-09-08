@@ -235,7 +235,7 @@ export default function Layout({ user, onLogout, children }) {
       {/* ── Admin nav ── */}
       {isAdmin && (() => {
         const sp = new URLSearchParams(window.location.search)
-        const s = sp.get('s'), f = sp.get('f'), t = sp.get('t')
+        const s = sp.get('s'), f = sp.get('f'), t = sp.get('t'), tab = sp.get('tab')
         const inAdmin = path === '/admin'
         const inWebshop = path === '/webshop'
 
@@ -294,9 +294,10 @@ export default function Layout({ user, onLogout, children }) {
             <NavSection label="Webshop">
               <NavRow active={inWebshop} to="/webshop" icon={Icons.webshop} label="Webshop" />
               {inWebshop && <>
-                <NavSubRow active={f === 'producten'} to="/webshop?f=producten" label="Producten" />
-                <NavSubRow active={f === 'categorieen'} to="/webshop?f=categorieen" label="Categorieën" />
-                <NavSubRow active={f === 'rapportages'} to="/webshop?f=rapportages" label="Rapportages" />
+                <NavSubRow active={tab === 'Producten'} to="/webshop?tab=Producten" label="Producten" />
+                <NavSubRow active={tab === 'Series'} to="/webshop?tab=Series" label="Series" />
+                <NavSubRow active={tab === 'Rapportage'} to="/webshop?tab=Rapportage" label="Rapportages" />
+                <NavSubRow active={tab === 'Instellingen'} to="/webshop?tab=Instellingen" label="Instellingen" />
               </>}
             </NavSection>
           </>

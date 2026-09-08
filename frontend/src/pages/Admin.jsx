@@ -1620,18 +1620,8 @@ function FactuurInstellingen() {
 function FacturenTab({ filter }) {
   const subTab = filter === 'versturen' ? 'versturen' : filter === 'instellingen' ? 'instellingen' : 'overzicht'
 
-  const tabStyle = (active) => ({
-    fontSize: 14, fontWeight: 600, padding: '8px 18px', borderRadius: 20, border: 'none', cursor: 'pointer',
-    background: active ? '#1d1d1f' : 'transparent', color: active ? '#fff' : '#6e6e73', fontFamily: 'inherit',
-  })
-
   return (
     <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f2f2f7', borderRadius: 24, padding: 4, width: 'fit-content' }}>
-        <a href="/admin?s=facturen&f=overzicht" style={{ textDecoration: 'none' }}><button type="button" style={tabStyle(subTab === 'overzicht')}>Overzicht</button></a>
-        <a href="/admin?s=facturen&f=versturen" style={{ textDecoration: 'none' }}><button type="button" style={tabStyle(subTab === 'versturen')}>Factuur versturen</button></a>
-        <a href="/admin?s=facturen&f=instellingen" style={{ textDecoration: 'none' }}><button type="button" style={tabStyle(subTab === 'instellingen')}>Instellingen</button></a>
-      </div>
       {subTab === 'overzicht'    && <FacturenOverzicht />}
       {subTab === 'versturen'    && <FactuurVersturen />}
       {subTab === 'instellingen' && <FactuurInstellingen />}

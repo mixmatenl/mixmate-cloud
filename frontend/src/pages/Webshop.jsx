@@ -1211,7 +1211,15 @@ function Series() {
 // ── Hoofd component ───────────────────────────────────────────────────────────
 
 export default function Webshop() {
-  const [tab, setTab] = useState('Producten')
+  const params = new URLSearchParams(window.location.search)
+  const urlTab = params.get('tab')
+  const [tab, setTab] = useState(TABS.includes(urlTab) ? urlTab : 'Producten')
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const t = p.get('tab')
+    if (t && TABS.includes(t)) setTab(t)
+  }, [window.location.search])
 
   return (
     <div style={{ maxWidth: 820, margin: '0 auto', padding: '24px' }}>

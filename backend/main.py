@@ -1712,7 +1712,16 @@ async def customer_verify_response(machine_id: str, token: str, response: str, d
             subject=f"✅ Klant akkoord (mail) — {name}",
             html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft via e-mail <strong>akkoord gegeven</strong> voor het beheer van de machine.</p>"),
         )
-        html = "<h2 style='font-family:sans-serif;color:#34c759'>✅ Bedankt! MIXMATE kan nu aan de slag.</h2><p style='font-family:sans-serif'>U kunt dit venster sluiten.</p>"
+        html = """
+<div style="text-align:center;margin-bottom:32px">
+  <div style="width:64px;height:64px;background:#000;border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>
+  <p style="font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#FF751F;margin:0 0 10px">MIXMATE</p>
+  <h1 style="font-size:26px;font-weight:800;color:#000;margin:0 0 12px;line-height:1.2">Bedankt voor uw toestemming!</h1>
+  <p style="font-size:15px;color:rgba(0,0,0,.5);margin:0 0 32px;line-height:1.6">MIXMATE kan nu aan de slag. We zorgen voor alles — u hoeft niets meer te doen.</p>
+  <a href="https://portaal.mixmate.nl" style="display:inline-block;padding:14px 32px;background:#000;color:#fff;border-radius:50px;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:.01em">Naar het portaal →</a>
+</div>"""
     else:
         _verification_state[machine_id] = {"status": "denied", "ts": time.time()}
         await _resend(
@@ -1720,9 +1729,18 @@ async def customer_verify_response(machine_id: str, token: str, response: str, d
             subject=f"❌ Klant niet akkoord (mail) — {name}",
             html=_email_html(f"<p>De klant van <strong>{name}</strong> heeft via e-mail <strong>geen toestemming gegeven</strong> voor beheer van de machine.</p>"),
         )
-        html = "<h2 style='font-family:sans-serif;color:#ff3b30'>❌ Bericht ontvangen.</h2><p style='font-family:sans-serif'>MIXMATE is op de hoogte gesteld. U kunt dit venster sluiten.</p>"
+        html = """
+<div style="text-align:center;margin-bottom:32px">
+  <div style="width:64px;height:64px;background:#ff3b30;border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </div>
+  <p style="font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#FF751F;margin:0 0 10px">MIXMATE</p>
+  <h1 style="font-size:26px;font-weight:800;color:#000;margin:0 0 12px;line-height:1.2">Bericht ontvangen</h1>
+  <p style="font-size:15px;color:rgba(0,0,0,.5);margin:0 0 32px;line-height:1.6">MIXMATE is op de hoogte gesteld. U kunt dit venster sluiten.</p>
+  <a href="https://portaal.mixmate.nl" style="display:inline-block;padding:14px 32px;background:#000;color:#fff;border-radius:50px;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:.01em">Naar het portaal →</a>
+</div>"""
 
-    return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'></head><body style='margin:0;padding:40px 24px;background:#f9f9fb;'>{html}</body></html>""")
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>*{{box-sizing:border-box;margin:0;padding:0}}body{{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f2ef;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:40px 24px}}.card{{background:#fff;border-radius:24px;padding:48px 40px;max-width:420px;width:100%;box-shadow:0 2px 24px rgba(0,0,0,.06)}}</style></head><body><div class="card">{html}</div></body></html>""")
 
 
 @app.post("/api/admin/machines/{machine_id}/send-contact-email")
