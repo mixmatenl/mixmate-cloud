@@ -6,16 +6,93 @@ const inp = {
   padding: '11px 13px', fontSize: 15, fontFamily: 'inherit',
   outline: 'none', background: '#fff', color: '#1d1d1f', boxSizing: 'border-box',
 }
-
 const labelStyle = {
   display: 'block', fontSize: 12, fontWeight: 600, color: '#6e6e73',
   textTransform: 'uppercase', letterSpacing: .3, marginBottom: 6,
 }
 
-function Card({ children, style }) {
+function fmtEur(n) {
+  return '€ ' + Number(n).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function CartIcon({ count }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,.05)', overflow: 'hidden', ...style }}>
-      {children}
+    <div style={{ position: 'relative', display: 'inline-flex' }}>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+      </svg>
+      {count > 0 && (
+        <span style={{
+          position: 'absolute', top: -6, right: -8, background: '#FF751F',
+          color: '#fff', borderRadius: '50%', width: 18, height: 18,
+          fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>{count}</span>
+      )}
+    </div>
+  )
+}
+
+function QtyControl({ qty, min, onSet }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#f2f2f7', borderRadius: 12, overflow: 'hidden' }}>
+      <button type="button" onClick={() => onSet(qty - 1)} style={{
+        width: 36, height: 36, border: 'none', background: 'none', cursor: 'pointer',
+        fontSize: 18, color: qty > 0 ? '#1d1d1f' : '#c7c7cc', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>−</button>
+      <span style={{ width: 32, textAlign: 'center', fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>{qty || 0}</span>
+      <button type="button" onClick={() => onSet(qty + 1)} style={{
+        width: 36, height: 36, border: 'none', background: 'none', cursor: 'pointer',
+        fontSize: 18, color: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>+</button>
+    </div>
+  )
+}
+
+function Cart({ items, quantities, onRemove, onCheckout, onBack, compact }) {
+  const total = items.reduce((s, p) => s + p.price_excl * (quantities[p.id] || 0), 0)
+  const totalQty = items.reduce((s, p) => s + (quantities[p.id] || 0), 0)
+
+  if (items.length === 0) return (
+    <div style={{ textAlign: 'center', padding: '32px 16px', color: '#aeaeb2' }}>
+      <CartIcon count={0} />
+      <div style={{ marginTop: 12, fontSize: 14 }}>Uw winkelwagen is leeg</div>
+    </div>
+  )
+
+  return (
+    <div>
+      {items.map(p => (
+        <div key={p.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #f2f2f7' }}>
+          {p.image_url && (
+            <img src={p.image_url} alt={p.name} style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', lineHeight: 1.3 }}>{p.name}</div>
+            <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 2 }}>{quantities[p.id]}× {fmtEur(p.price_excl)}</div>
+          </div>
+          <div style={{ flexShrink: 0, textAlign: 'right' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1d1d1f' }}>{fmtEur(p.price_excl * quantities[p.id])}</div>
+            <button type="button" onClick={() => onRemove(p.id)} style={{ fontSize: 11, color: '#ff3b30', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 4, fontFamily: 'inherit' }}>
+              Verwijderen
+            </button>
+          </div>
+        </div>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 13, color: '#6e6e73' }}>
+        <span>Subtotaal excl. BTW</span>
+        <span style={{ fontWeight: 600, color: '#1d1d1f' }}>{fmtEur(total)}</span>
+      </div>
+      <div style={{ fontSize: 11, color: '#aeaeb2', marginBottom: 16 }}>BTW wordt vermeld op de factuur</div>
+      {!compact && (
+        <button type="button" onClick={onCheckout} style={{
+          width: '100%', padding: '14px', borderRadius: 12, border: 'none',
+          background: '#1d1d1f', color: '#fff', fontSize: 15, fontWeight: 700,
+          cursor: 'pointer', fontFamily: 'inherit',
+        }}>
+          Bestellen ({totalQty} {totalQty === 1 ? 'product' : 'producten'})
+        </button>
+      )}
     </div>
   )
 }
@@ -27,8 +104,8 @@ export default function Bestellen({ user }) {
   const [form, setForm]             = useState(null)
   const [sending, setSending]       = useState(false)
   const [err, setErr]               = useState('')
-
-  const [series, setSeries] = useState([])
+  const [series, setSeries]         = useState([])
+  const [cartOpen, setCartOpen]     = useState(false)
 
   useEffect(() => {
     api.getShopProductsPublic().then(setProducts).catch(() => {})
@@ -37,13 +114,13 @@ export default function Bestellen({ user }) {
     if (saved) { try { setQuantities(JSON.parse(saved)) } catch {} sessionStorage.removeItem('reorder_quantities') }
     api.accountMe().then(r => {
       setForm({
-        customer_company:  r.company       || '',
-        customer_phone:    r.phone         || '',
-        address_line1:     r.address_line1 || '',
-        postal_code:       r.postal_code   || '',
-        city:              r.city          || '',
-        country:           r.country       || 'Nederland',
-        notes:             '',
+        customer_company: r.company       || '',
+        customer_phone:   r.phone         || '',
+        address_line1:    r.address_line1 || '',
+        postal_code:      r.postal_code   || '',
+        city:             r.city          || '',
+        country:          r.country       || 'Nederland',
+        notes:            '',
       })
     }).catch(() => {
       setForm({ customer_company: '', customer_phone: '', address_line1: '', postal_code: '', city: '', country: 'Nederland', notes: '' })
@@ -54,10 +131,12 @@ export default function Bestellen({ user }) {
     const n = Math.max(0, parseInt(val) || 0)
     setQuantities(q => ({ ...q, [id]: n }))
   }
+  function removeFromCart(id) { setQty(id, 0) }
 
-  const activeProducts  = products.filter(p => p.active)
-  const selectedItems   = activeProducts.filter(p => (quantities[p.id] || 0) >= p.min_order)
-  const totalItems      = selectedItems.reduce((s, p) => s + (quantities[p.id] || 0), 0)
+  const activeProducts = products.filter(p => p.active)
+  const selectedItems  = activeProducts.filter(p => (quantities[p.id] || 0) >= p.min_order)
+  const totalQty       = selectedItems.reduce((s, p) => s + (quantities[p.id] || 0), 0)
+  const totalPrice     = selectedItems.reduce((s, p) => s + p.price_excl * (quantities[p.id] || 0), 0)
 
   function setField(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
@@ -76,199 +155,213 @@ export default function Bestellen({ user }) {
     setSending(false)
   }
 
+  // Groepeer producten per serie
+  const seriesGroups = series
+    .map(s => ({ series: s, products: activeProducts.filter(p => p.series_id === s.id) }))
+    .filter(g => g.products.length > 0)
+  const unsorted = activeProducts.filter(p => !p.series_id)
+
+  if (step === 'bevestigd') return (
+    <div style={{ maxWidth: 520, margin: '80px auto', padding: '0 24px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', textAlign: 'center' }}>
+      <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#edfaf1', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#34c759" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h2 style={{ fontSize: 24, fontWeight: 800, color: '#1d1d1f', margin: '0 0 12px' }}>Bestelling geplaatst!</h2>
+      <p style={{ fontSize: 15, color: '#6e6e73', lineHeight: 1.7, margin: '0 0 32px' }}>
+        Bedankt, <strong>{user?.name}</strong>. We sturen een bevestiging naar <strong>{user?.email}</strong> en nemen zo snel mogelijk contact op.
+      </p>
+      <button onClick={() => { setStep('producten'); setQuantities({}) }}
+        style={{ background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 12, padding: '14px 28px', fontSize: 15, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+        Nieuwe bestelling plaatsen
+      </button>
+    </div>
+  )
+
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', minHeight: '100vh' }}>
+      <style>{`
+        @media (max-width: 768px) { .bestellen-grid { display: block !important; } .cart-sidebar { display: none !important; } }
+        @media (min-width: 769px) { .cart-fab { display: none !important; } }
+      `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1d1d1f', margin: '0 0 4px', letterSpacing: -.4 }}>Glazen bestellen</h1>
-        <p style={{ fontSize: 14, color: '#aeaeb2', margin: 0 }}>Kies uw producten en controleer uw gegevens. U ontvangt een factuur per e-mail.</p>
+      <div style={{ padding: '28px 32px 0', maxWidth: 1100, margin: '0 auto' }}>
+        {step === 'gegevens' && (
+          <button type="button" onClick={() => setStep('producten')} style={{ background: 'none', border: 'none', color: '#007aff', fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '0 0 16px', fontFamily: 'inherit' }}>
+            ← Terug naar producten
+          </button>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#1d1d1f', margin: '0 0 4px', letterSpacing: -.5 }}>
+              {step === 'producten' ? 'Glazen bestellen' : 'Uw gegevens'}
+            </h1>
+            <p style={{ fontSize: 14, color: '#aeaeb2', margin: 0 }}>
+              {step === 'producten' ? 'Kies uw producten per serie.' : 'Controleer uw gegevens en plaats de bestelling.'}
+            </p>
+          </div>
+          {/* Stappen indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {['producten','gegevens'].map((s, i) => (
+              <React.Fragment key={s}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 700,
+                  background: step === s ? '#1d1d1f' : (step === 'gegevens' && i === 0) ? '#34c759' : '#e5e5ea',
+                  color: (step === s || (step === 'gegevens' && i === 0)) ? '#fff' : '#aeaeb2',
+                }}>
+                  {step === 'gegevens' && i === 0 ? '✓' : i + 1}
+                </div>
+                {i === 0 && <div style={{ width: 32, height: 2, background: step === 'gegevens' ? '#34c759' : '#e5e5ea', borderRadius: 1 }} />}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {step === 'bevestigd' ? (
-        <Card style={{ padding: '40px 32px', textAlign: 'center' }}>
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#edfaf1', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#34c759" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1d1d1f', margin: '0 0 8px' }}>Bestelling geplaatst</h2>
-          <p style={{ fontSize: 14, color: '#6e6e73', lineHeight: 1.6, margin: '0 0 24px' }}>
-            Bedankt, <strong>{user?.name}</strong>. We sturen een bevestiging naar <strong>{user?.email}</strong> en nemen zo snel mogelijk contact op.
-          </p>
-          <button onClick={() => { setStep('producten'); setQuantities({}) }}
-            style={{ background: '#f2f2f7', border: 'none', borderRadius: 10, padding: '12px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1d1d1f' }}>
-            Nieuwe bestelling
-          </button>
-        </Card>
+      {/* Body */}
+      <div className="bestellen-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, maxWidth: 1100, margin: '0 auto', padding: '0 32px 64px', alignItems: 'start' }}>
 
-      ) : step === 'producten' ? (
-        <>
-          {activeProducts.length === 0 ? (
-            <Card><div style={{ padding: 32, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen producten beschikbaar.</div></Card>
-          ) : (() => {
-            // Groepeer per serie; producten zonder serie onderaan
-            const seriesGroups = series.map(s => ({ series: s, products: activeProducts.filter(p => p.series_id === s.id) })).filter(g => g.products.length > 0)
-            const unsorted = activeProducts.filter(p => !p.series_id)
-
-            function ProductCard({ p }) {
-              const qty = quantities[p.id] || 0
-              const selected = qty >= p.min_order
-              return (
-                <Card style={{ padding: '16px 18px', border: `1.5px solid ${selected ? '#1d1d1f' : 'transparent'}`, transition: 'border-color .15s' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                    {p.image_url && (
-                      <div style={{ width: 72, height: 72, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
-                        <img src={p.image_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {/* Linker kolom: producten of gegevens */}
+        <div>
+          {step === 'producten' ? (
+            <div>
+              {activeProducts.length === 0 ? (
+                <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>Geen producten beschikbaar.</div>
+              ) : (
+                <>
+                  {seriesGroups.map(g => (
+                    <div key={g.series.id} style={{ marginBottom: 32 }}>
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#1d1d1f', letterSpacing: -.3 }}>{g.series.name}</div>
+                        {g.series.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 3 }}>{g.series.description}</div>}
                       </div>
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: '#1d1d1f' }}>{p.name}</div>
-                      {p.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4, lineHeight: 1.5 }}>{p.description}</div>}
-                      <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>
-                          € {p.price_excl.toFixed(2).replace('.', ',')}
-                          <span style={{ fontSize: 12, fontWeight: 400, color: '#aeaeb2' }}> excl. BTW / {p.unit}</span>
-                        </span>
-                        {p.min_order > 1 && (
-                          <span style={{ fontSize: 12, color: '#ff9500', background: '#fff8ee', borderRadius: 6, padding: '2px 8px', fontWeight: 600 }}>
-                            min. {p.min_order}
-                          </span>
-                        )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {g.products.map(p => <ProductRow key={p.id} p={p} qty={quantities[p.id] || 0} onSet={v => setQty(p.id, v)} />)}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      <button onClick={() => setQty(p.id, qty - 1)} style={{ width: 32, height: 32, borderRadius: 10, border: '1.5px solid #e5e5ea', background: '#f2f2f7', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1d1d1f' }}>−</button>
-                      <input type="number" min="0" value={qty || ''} onChange={e => setQty(p.id, e.target.value)} placeholder="0"
-                        style={{ width: 52, textAlign: 'center', border: '1.5px solid #e5e5ea', borderRadius: 10, padding: '6px 0', fontSize: 15, fontFamily: 'inherit', outline: 'none' }} />
-                      <button onClick={() => setQty(p.id, qty + 1)} style={{ width: 32, height: 32, borderRadius: 10, border: '1.5px solid #e5e5ea', background: '#f2f2f7', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1d1d1f' }}>+</button>
-                    </div>
-                  </div>
-                  {qty > 0 && qty < p.min_order && (
-                    <div style={{ marginTop: 10, fontSize: 12, color: '#ff9500', fontWeight: 500 }}>
-                      Minimum afname is {p.min_order} {p.unit}
+                  ))}
+                  {unsorted.length > 0 && (
+                    <div style={{ marginBottom: 32 }}>
+                      {seriesGroups.length > 0 && <div style={{ fontSize: 18, fontWeight: 800, color: '#1d1d1f', letterSpacing: -.3, marginBottom: 14 }}>Overige producten</div>}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {unsorted.map(p => <ProductRow key={p.id} p={p} qty={quantities[p.id] || 0} onSet={v => setQty(p.id, v)} />)}
+                      </div>
                     </div>
                   )}
-                </Card>
-              )
-            }
-
-            return (
-              <div style={{ marginBottom: 24 }}>
-                {seriesGroups.map(g => (
-                  <div key={g.series.id} style={{ marginBottom: 24 }}>
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f', letterSpacing: -.2 }}>{g.series.name}</div>
-                      {g.series.description && <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>{g.series.description}</div>}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {g.products.map(p => <ProductCard key={p.id} p={p} />)}
-                    </div>
-                  </div>
-                ))}
-                {unsorted.length > 0 && (
-                  <div style={{ marginBottom: 24 }}>
-                    {seriesGroups.length > 0 && (
-                      <div style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f', letterSpacing: -.2, marginBottom: 10 }}>Overig</div>
-                    )}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {unsorted.map(p => <ProductCard key={p.id} p={p} />)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })()}
-
-          <button onClick={() => setStep('gegevens')} disabled={selectedItems.length === 0} style={{
-            width: '100%', padding: '16px', borderRadius: 14, border: 'none',
-            background: selectedItems.length > 0 ? '#1d1d1f' : '#e5e5ea',
-            color: selectedItems.length > 0 ? '#fff' : '#aeaeb2',
-            fontSize: 16, fontWeight: 600, cursor: selectedItems.length > 0 ? 'pointer' : 'not-allowed',
-            fontFamily: 'inherit', transition: 'background .2s',
-          }}>
-            {selectedItems.length > 0 ? `Doorgaan met ${totalItems} product${totalItems !== 1 ? 'en' : ''}` : 'Selecteer minimaal één product'}
-          </button>
-        </>
-
-      ) : (
-        /* Stap 2 – gegevens */
-        <div>
-          {/* Bestelling samenvatting */}
-          <Card style={{ padding: '14px 18px', marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 10 }}>Uw bestelling</div>
-            {selectedItems.map(p => (
-              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#1d1d1f', marginBottom: 4 }}>
-                <span>{quantities[p.id]}× {p.name}</span>
-                <span style={{ fontWeight: 600 }}>€ {(p.price_excl * quantities[p.id]).toFixed(2).replace('.', ',')}</span>
-              </div>
-            ))}
-            <button onClick={() => setStep('producten')}
-              style={{ marginTop: 10, fontSize: 13, color: '#007aff', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
-              ← Producten wijzigen
-            </button>
-          </Card>
-
-          {/* Accountgegevens (readonly) */}
-          <Card style={{ padding: '14px 18px', marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 10 }}>Uw account</div>
-            <div style={{ fontSize: 14, color: '#1d1d1f', marginBottom: 2 }}>{user?.name}</div>
-            <div style={{ fontSize: 13, color: '#aeaeb2' }}>{user?.email}</div>
-          </Card>
-
-          {form && (
-            <form onSubmit={submit} style={{ background: '#fff', borderRadius: 14, padding: '20px 18px', boxShadow: '0 1px 3px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>Aflevergegevens</div>
-              <p style={{ margin: 0, fontSize: 13, color: '#aeaeb2', lineHeight: 1.5 }}>
-                Velden zijn vooringevuld vanuit uw account. U kunt ze hier aanpassen voor deze bestelling.
-              </p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={labelStyle}>Bedrijf</label>
-                  <input value={form.customer_company} onChange={e => setField('customer_company', e.target.value)} placeholder="Bedrijfsnaam" style={inp} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Telefoon</label>
-                  <input type="tel" value={form.customer_phone} onChange={e => setField('customer_phone', e.target.value)} placeholder="+31 6 00000000" style={inp} />
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>Afleveradres</label>
-                <input value={form.address_line1} onChange={e => setField('address_line1', e.target.value)} placeholder="Straatnaam en huisnummer" style={inp} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
-                <div>
-                  <label style={labelStyle}>Postcode</label>
-                  <input value={form.postal_code} onChange={e => setField('postal_code', e.target.value)} placeholder="1234 AB" style={inp} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Stad</label>
-                  <input value={form.city} onChange={e => setField('city', e.target.value)} placeholder="Amsterdam" style={inp} />
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>Opmerkingen</label>
-                <textarea value={form.notes} onChange={e => setField('notes', e.target.value)} placeholder="Eventuele opmerkingen…" rows={3} style={{ ...inp, resize: 'vertical' }} />
-              </div>
-
-              {err && (
-                <div style={{ background: '#fff1f0', border: '1px solid #ffd6d3', color: '#ff3b30', borderRadius: 10, padding: '11px 14px', fontSize: 13 }}>{err}</div>
+                </>
               )}
-
-              <button type="submit" disabled={sending} style={{
-                padding: '16px', borderRadius: 12, border: 'none',
-                background: '#1d1d1f', color: '#fff',
-                fontSize: 16, fontWeight: 600, cursor: sending ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit', opacity: sending ? .7 : 1,
-              }}>
-                {sending ? 'Bestelling plaatsen…' : 'Bestelling plaatsen'}
-              </button>
-              <p style={{ fontSize: 12, color: '#aeaeb2', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
-                Na het plaatsen ontvangt u een bevestiging per e-mail. De factuur wordt apart verstuurd.
-              </p>
-            </form>
+            </div>
+          ) : (
+            /* Stap 2 – gegevens */
+            form && (
+              <form onSubmit={submit} style={{ background: '#fff', borderRadius: 16, padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', paddingBottom: 12, borderBottom: '1px solid #f2f2f7' }}>Aflevergegevens</div>
+                <p style={{ margin: 0, fontSize: 13, color: '#aeaeb2', lineHeight: 1.5 }}>
+                  Velden zijn vooringevuld vanuit uw account. U kunt ze hier aanpassen voor deze bestelling.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div><label style={labelStyle}>Bedrijf</label>
+                    <input value={form.customer_company} onChange={e => setField('customer_company', e.target.value)} placeholder="Bedrijfsnaam" style={inp} /></div>
+                  <div><label style={labelStyle}>Telefoon</label>
+                    <input type="tel" value={form.customer_phone} onChange={e => setField('customer_phone', e.target.value)} placeholder="+31 6 00000000" style={inp} /></div>
+                </div>
+                <div><label style={labelStyle}>Afleveradres</label>
+                  <input value={form.address_line1} onChange={e => setField('address_line1', e.target.value)} placeholder="Straatnaam en huisnummer" style={inp} /></div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+                  <div><label style={labelStyle}>Postcode</label>
+                    <input value={form.postal_code} onChange={e => setField('postal_code', e.target.value)} placeholder="1234 AB" style={inp} /></div>
+                  <div><label style={labelStyle}>Stad</label>
+                    <input value={form.city} onChange={e => setField('city', e.target.value)} placeholder="Amsterdam" style={inp} /></div>
+                </div>
+                <div><label style={labelStyle}>Opmerkingen</label>
+                  <textarea value={form.notes} onChange={e => setField('notes', e.target.value)} placeholder="Eventuele opmerkingen…" rows={3} style={{ ...inp, resize: 'vertical' }} /></div>
+                {err && <div style={{ background: '#fff1f0', border: '1px solid #ffd6d3', color: '#ff3b30', borderRadius: 10, padding: '11px 14px', fontSize: 13 }}>{err}</div>}
+                <button type="submit" disabled={sending} style={{
+                  padding: '16px', borderRadius: 12, border: 'none', background: '#1d1d1f', color: '#fff',
+                  fontSize: 16, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: sending ? .7 : 1,
+                }}>{sending ? 'Bestelling plaatsen…' : 'Bestelling plaatsen'}</button>
+                <p style={{ fontSize: 12, color: '#aeaeb2', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
+                  Na het plaatsen ontvangt u een bevestiging per e-mail. De factuur wordt apart verstuurd.
+                </p>
+              </form>
+            )
           )}
         </div>
+
+        {/* Rechter kolom: winkelwagen (desktop) */}
+        <div className="cart-sidebar" style={{ position: 'sticky', top: 24 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, paddingBottom: 14, borderBottom: '1px solid #f2f2f7' }}>
+              <CartIcon count={totalQty} />
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>Winkelwagen</span>
+              {totalQty > 0 && <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: '#1d1d1f' }}>{fmtEur(totalPrice)}</span>}
+            </div>
+            <Cart items={selectedItems} quantities={quantities} onRemove={removeFromCart}
+              onCheckout={() => setStep('gegevens')} compact={step === 'gegevens'} />
+            {step === 'gegevens' && selectedItems.length > 0 && (
+              <button type="button" onClick={() => setStep('producten')}
+                style={{ width: '100%', marginTop: 10, padding: '10px', borderRadius: 10, border: '1px solid #e5e5ea', background: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#6e6e73' }}>
+                ← Producten wijzigen
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Floating cart button (mobiel) */}
+      {step === 'producten' && (
+        <button className="cart-fab" type="button" onClick={() => setCartOpen(!cartOpen)} style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          background: selectedItems.length > 0 ? '#1d1d1f' : '#e5e5ea',
+          color: selectedItems.length > 0 ? '#fff' : '#aeaeb2',
+          border: 'none', borderRadius: 50, padding: '14px 28px',
+          fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+          boxShadow: '0 4px 20px rgba(0,0,0,.18)', display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap',
+        }}>
+          <CartIcon count={totalQty} />
+          {selectedItems.length > 0 ? `Bekijk winkelwagen · ${fmtEur(totalPrice)}` : 'Selecteer producten'}
+        </button>
       )}
+    </div>
+  )
+}
+
+function ProductRow({ p, qty, onSet }) {
+  const selected = qty >= p.min_order
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 14, padding: '14px 16px',
+      border: `1.5px solid ${selected ? '#1d1d1f' : 'transparent'}`,
+      boxShadow: '0 1px 3px rgba(0,0,0,.04)', transition: 'border-color .15s',
+      display: 'flex', alignItems: 'center', gap: 14,
+    }}>
+      {p.image_url ? (
+        <img src={p.image_url} alt={p.name} style={{ width: 60, height: 60, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
+      ) : (
+        <div style={{ width: 60, height: 60, borderRadius: 10, background: '#f2f2f7', flexShrink: 0 }} />
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', lineHeight: 1.3 }}>{p.name}</div>
+        {p.description && <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 3, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{p.description}</div>}
+        <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>
+            {fmtEur(p.price_excl)}
+            <span style={{ fontSize: 12, fontWeight: 400, color: '#aeaeb2' }}> excl. BTW / {p.unit}</span>
+          </span>
+          {p.min_order > 1 && (
+            <span style={{ fontSize: 11, color: '#FF751F', background: '#fff3eb', borderRadius: 6, padding: '2px 7px', fontWeight: 600 }}>
+              min. {p.min_order}
+            </span>
+          )}
+        </div>
+        {qty > 0 && qty < p.min_order && (
+          <div style={{ marginTop: 4, fontSize: 11, color: '#FF751F', fontWeight: 500 }}>
+            Minimum afname is {p.min_order} {p.unit}
+          </div>
+        )}
+      </div>
+      <QtyControl qty={qty} min={p.min_order} onSet={onSet} />
     </div>
   )
 }
