@@ -1252,13 +1252,16 @@ function FacturenOverzicht() {
   async function toggleStatus(inv) {
     setUpdatingId(inv.id + inv.source)
     const newStatus = inv.status === 'betaald' ? 'openstaand' : 'betaald'
-    const url = inv.source === 'manual'
-      ? `/api/admin/invoices/manual/${inv.id}`
-      : `/api/admin/invoices/${inv.id}`
     try {
-      await api.adminRaw('PATCH', url, { status: newStatus })
+      if (inv.source === 'glass') {
+        await api.updatePaymentStatus(inv.id, newStatus)
+      } else if (inv.source === 'manual') {
+        await api.adminRaw('PATCH', `/api/admin/invoices/manual/${inv.id}`, { status: newStatus })
+      } else {
+        await api.adminRaw('PATCH', `/api/admin/invoices/${inv.id}`, { status: newStatus })
+      }
       setInvoices(prev => prev.map(i => (i.id === inv.id && i.source === inv.source) ? { ...i, status: newStatus } : i))
-    } catch {}
+    } catch (e) { alert('Fout: ' + e.message) }
     setUpdatingId(null)
   }
 
