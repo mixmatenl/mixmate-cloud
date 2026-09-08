@@ -782,7 +782,7 @@ function Producten() {
   }, [])
 
   async function save(data) {
-    if (editing === 'new') await api.createShopProduct(data)
+    if (editing === 'new' || !editing?.id) await api.createShopProduct(data)
     else await api.updateShopProduct(editing.id, data)
     setEditing(null)
     load()
