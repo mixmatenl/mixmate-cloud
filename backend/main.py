@@ -3637,22 +3637,23 @@ async def ai_description(data: dict, _=Depends(verify_admin_user)):
     unit        = data.get("unit", "stuk")
     min_order   = data.get("min_order", 1)
 
-    prompt = f"""Je bent copywriter voor MIXMATE, een Nederlandse B2B groothandel in barartikelen.
-Schrijf een korte, professionele productbeschrijving in het Nederlands voor de webshop.
+    prompt = f"""Je bent copywriter voor MIXMATE. MIXMATE levert barartikelen — voornamelijk glazen — aan horecabedrijven in Nederland. De glazen worden gebruikt in de MIXMATE cocktailmachine: klanten koppelen een glas aan hun machine in het MIXMATE-portaal, waarna de machine automatisch de juiste hoeveelheid cocktail inschenkt.
+
+Schrijf een korte, professionele productbeschrijving in het Nederlands voor de MIXMATE-webshop.
 
 Product: {name}
 Ruwe omschrijving van leverancier: {description}
-Prijs (excl. btw): €{price_excl} per {unit}
 Minimale afname: {min_order} {unit}
 
-Richtlijnen:
-- Max 3 zinnen, zakelijk maar aantrekkelijk
-- Benadruk kwaliteit en praktisch gebruik
-- Geen prijsinformatie in de beschrijving
-- Geen opsommingstekens, gewone lopende tekst
-- Schrijf alsof je de horeca-inkoper aanspreekt
-- Noem nooit "Faire" of andere leveranciersnamen
-- Geen markdown, geen koppen, geen vetgedrukte tekst — alleen gewone lopende tekst"""
+Toon & stijl:
+- Professioneel, direct en zelfverzekerd — zoals mixmate.nl
+- Spreek de horeca-inkoper aan (jij-vorm)
+- Max 2-3 zinnen, geen opsommingstekens, gewone lopende tekst
+- Vermeld dat het glas eenvoudig toe te voegen is aan de MIXMATE cocktailmachine (als het relevant is voor een glas)
+- Benadruk kwaliteit, duurzaamheid en geschiktheid voor professioneel gebruik
+- Geen prijsinformatie
+- Noem nooit "Faire", leveranciersnamen of inkoopkanalen
+- Geen markdown, geen koppen, geen vetgedrukte tekst"""
 
     client = _anthropic.AsyncAnthropic(api_key=api_key)
     msg = await client.messages.create(
