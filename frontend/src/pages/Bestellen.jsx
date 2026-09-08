@@ -34,17 +34,46 @@ function CartIcon({ count }) {
 }
 
 function QtyControl({ qty, min, onSet }) {
+  const boxes = min > 1 ? Math.floor(qty / min) : qty
+  const loose = min > 1 ? qty % min : 0
+
+  if (qty === 0) return (
+    <button type="button" onClick={() => onSet(min)} style={{
+      background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 12,
+      padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+      fontFamily: 'inherit', whiteSpace: 'nowrap',
+    }}>
+      + Doos ({min})
+    </button>
+  )
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#f2f2f7', borderRadius: 12, overflow: 'hidden' }}>
-      <button type="button" onClick={() => onSet(qty - 1)} style={{
-        width: 36, height: 36, border: 'none', background: 'none', cursor: 'pointer',
-        fontSize: 18, color: qty > 0 ? '#1d1d1f' : '#c7c7cc', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>−</button>
-      <span style={{ width: 32, textAlign: 'center', fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>{qty || 0}</span>
-      <button type="button" onClick={() => onSet(qty + 1)} style={{
-        width: 36, height: 36, border: 'none', background: 'none', cursor: 'pointer',
-        fontSize: 18, color: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>+</button>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+      {/* Hoeveelheid rij */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#f2f2f7', borderRadius: 12, overflow: 'hidden' }}>
+        <button type="button" onClick={() => onSet(qty <= min ? 0 : qty - 1)} style={{
+          width: 36, height: 36, border: 'none', background: 'none', cursor: 'pointer',
+          fontSize: 18, color: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>−</button>
+        <span style={{ minWidth: 32, textAlign: 'center', fontSize: 15, fontWeight: 600, color: '#1d1d1f', padding: '0 4px' }}>{qty}</span>
+        <button type="button" onClick={() => onSet(qty + 1)} style={{
+          width: 36, height: 36, border: 'none', background: 'none', cursor: 'pointer',
+          fontSize: 18, color: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>+</button>
+      </div>
+      {/* Doos toevoegen */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {min > 1 && (
+          <span style={{ fontSize: 11, color: '#aeaeb2' }}>
+            {boxes > 0 && `${boxes} doos${boxes > 1 ? 'en' : ''}`}{loose > 0 && `${boxes > 0 ? ' + ' : ''}${loose} los`}
+          </span>
+        )}
+        <button type="button" onClick={() => onSet(qty + min)} style={{
+          background: '#f2f2f7', border: 'none', borderRadius: 8,
+          padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          fontFamily: 'inherit', color: '#1d1d1f', whiteSpace: 'nowrap',
+        }}>+ Doos</button>
+      </div>
     </div>
   )
 }
@@ -415,11 +444,6 @@ function ProductRow({ p, qty, onSet }) {
             </span>
           )}
         </div>
-        {qty > 0 && qty < p.min_order && (
-          <div style={{ marginTop: 4, fontSize: 11, color: '#FF751F', fontWeight: 500 }}>
-            Minimum afname is {p.min_order} {p.unit}
-          </div>
-        )}
       </div>
       <QtyControl qty={qty} min={p.min_order} onSet={onSet} />
     </div>
