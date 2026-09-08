@@ -3690,12 +3690,35 @@ Geef ALLEEN het JSON-object terug, niets anders."""
         max_tokens=400,
         messages=[{"role": "user", "content": prompt}],
     )
+    def _normalize_product_name(raw: str) -> str:
+        """Zet naam om naar 'Waterglas 24 cl – Melodia' formaat."""
+        import re as _re
+        # Splits op em-dash of gewone koppeltekens met spaties
+        parts = _re.split(r'\s*[–—-]\s*', raw, maxsplit=1)
+        def _fix_left(s: str) -> str:
+            words = s.strip().split()
+            result = []
+            for i, w in enumerate(words):
+                if w.upper() == 'CL':
+                    result.append('cl')
+                elif i == 0:
+                    result.append(w.capitalize())
+                else:
+                    result.append(w.lower())
+            return ' '.join(result)
+        def _fix_brand(s: str) -> str:
+            return s.strip().title()
+        if len(parts) == 2:
+            return f"{_fix_left(parts[0])} – {_fix_brand(parts[1])}"
+        return _fix_left(parts[0])
+
     import json as _json2
     try:
         result = _json2.loads(msg.content[0].text.strip())
-        return {"name": result.get("name", name), "description": result.get("description", "")}
+        raw_name = result.get("name", name)
+        return {"name": _normalize_product_name(raw_name), "description": result.get("description", "")}
     except Exception:
-        return {"name": name, "description": msg.content[0].text.strip()}
+        return {"name": _normalize_product_name(name), "description": msg.content[0].text.strip()}
 
 @app.post("/api/shop/orders")
 async def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
