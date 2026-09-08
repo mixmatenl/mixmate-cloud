@@ -3531,7 +3531,7 @@ async def faire_import(data: dict, _=Depends(verify_admin_user)):
     }
 
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20, http2=True) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             resp = await client.get(fetch_url, headers=headers)
     except httpx.RequestError as e:
         raise HTTPException(502, f"Kan Faire niet bereiken: {e}")
