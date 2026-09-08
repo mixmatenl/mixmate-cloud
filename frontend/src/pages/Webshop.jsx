@@ -772,10 +772,27 @@ function Producten() {
     if (!faire) return
     try {
       const data = JSON.parse(decodeURIComponent(escape(atob(faire))))
-      setEditing({ ...data, id: undefined })
       const url = new URL(window.location.href)
       url.searchParams.delete('faire')
       window.history.replaceState({}, '', url.toString())
+
+      // Koppel automatisch aan serie op basis van naam (deel na '–')
+      const brandMatch = data.name?.match(/–\s*(.+)$/)
+      if (brandMatch) {
+        const brandName = brandMatch[1].trim()
+        api.getShopSeries().then(allSeries => {
+          const found = allSeries.find(s => s.name.toLowerCase() === brandName.toLowerCase())
+          if (found) {
+            setEditing({ ...data, id: undefined, series_id: found.id })
+          } else {
+            api.createShopSeries({ name: brandName, description: '', sort_order: 0 }).then(created => {
+              setEditing({ ...data, id: undefined, series_id: created.id })
+            }).catch(() => setEditing({ ...data, id: undefined }))
+          }
+        }).catch(() => setEditing({ ...data, id: undefined }))
+      } else {
+        setEditing({ ...data, id: undefined })
+      }
     } catch {}
   }, [])
 
