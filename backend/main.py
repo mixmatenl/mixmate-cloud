@@ -3650,7 +3650,8 @@ Richtlijnen:
 - Benadruk kwaliteit en praktisch gebruik
 - Geen prijsinformatie in de beschrijving
 - Geen opsommingstekens, gewone lopende tekst
-- Schrijf alsof je de horeca-inkoper aanspreekt"""
+- Schrijf alsof je de horeca-inkoper aanspreekt
+- Noem nooit "Faire" of andere leveranciersnamen"""
 
     client = _anthropic.AsyncAnthropic(api_key=api_key)
     msg = await client.messages.create(
