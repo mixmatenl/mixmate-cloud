@@ -3642,7 +3642,7 @@ async def faire_import(data: dict, _=Depends(verify_admin_user)):
     return product
 
 @app.post("/api/shop/ai-description")
-async def ai_description(data: dict, _=Depends(verify_admin_user)):
+async def ai_description(data: dict, db: Session = Depends(get_session), _=Depends(verify_admin_user)):
     """Genereer een professionele productbeschrijving via Claude."""
     import anthropic as _anthropic
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
@@ -3712,13 +3712,36 @@ Geef ALLEEN het JSON-object terug, niets anders."""
             return f"{_fix_left(parts[0])} – {_fix_brand(parts[1])}"
         return _fix_left(parts[0])
 
+    def _find_or_create_series(normalized_name: str) -> Optional[int]:
+        """Extraheer serie-naam uit 'Type cl – Serie' en zoek/maak serie aan."""
+        import re as _re2
+        m = _re2.search(r'–\s*(.+)$', normalized_name)
+        if not m:
+            return None
+        serie_name = m.group(1).strip()
+        if not serie_name:
+            return None
+        all_series = db.exec(select(GlassSeries)).all()
+        for s in all_series:
+            if s.name.lower() == serie_name.lower():
+                return s.id
+        new_series = GlassSeries(name=serie_name)
+        db.add(new_series)
+        db.commit()
+        db.refresh(new_series)
+        return new_series.id
+
     import json as _json2
     try:
         result = _json2.loads(msg.content[0].text.strip())
         raw_name = result.get("name", name)
-        return {"name": _normalize_product_name(raw_name), "description": result.get("description", "")}
+        norm_name = _normalize_product_name(raw_name)
+        series_id = _find_or_create_series(norm_name)
+        return {"name": norm_name, "description": result.get("description", ""), "series_id": series_id}
     except Exception:
-        return {"name": _normalize_product_name(name), "description": msg.content[0].text.strip()}
+        norm_name = _normalize_product_name(name)
+        series_id = _find_or_create_series(norm_name)
+        return {"name": norm_name, "description": msg.content[0].text.strip(), "series_id": series_id}
 
 @app.post("/api/shop/orders")
 async def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):

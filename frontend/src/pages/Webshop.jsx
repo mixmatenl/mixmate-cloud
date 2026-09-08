@@ -447,9 +447,10 @@ function ProductForm({ product, onSave, onCancel }) {
   const generateDescription = async () => {
     setAiLoading(true)
     try {
-      const { name: aiName, description } = await api.aiDescription(form)
+      const { name: aiName, description, series_id } = await api.aiDescription(form)
       if (aiName) set('name', aiName)
       if (description) set('description', description)
+      if (series_id) set('series_id', series_id)
     } catch (e) {
       alert('AI mislukt: ' + e.message)
     } finally {
