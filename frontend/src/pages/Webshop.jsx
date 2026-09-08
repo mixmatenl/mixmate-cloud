@@ -427,6 +427,9 @@ function Bestellingen() {
 // ── Producten ─────────────────────────────────────────────────────────────────
 
 function ProductForm({ product, onSave, onCancel }) {
+  const [allSeries, setAllSeries] = useState([])
+  useEffect(() => { api.getShopSeries().then(setAllSeries).catch(() => {}) }, [])
+
   const [form, setForm] = useState({
     name: product?.name ?? '',
     description: product?.description ?? '',
@@ -437,6 +440,7 @@ function ProductForm({ product, onSave, onCancel }) {
     min_order: product?.min_order ?? 1,
     active: product?.active ?? true,
     image_url: product?.image_url ?? '',
+    series_id: product?.series_id ?? null,
   })
   const [saving, setSaving] = useState(false)
   const [imgLoading, setImgLoading] = useState(false)
@@ -592,6 +596,13 @@ function ProductForm({ product, onSave, onCancel }) {
             <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Min. afname</div>
             <input type="number" min="1" value={form.min_order} onChange={e => set('min_order', e.target.value)} style={inp} />
           </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Serie</div>
+          <select value={form.series_id ?? ''} onChange={e => set('series_id', e.target.value ? Number(e.target.value) : null)} style={{ ...inp, background: '#fff' }}>
+            <option value="">— Geen serie —</option>
+            {allSeries.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14, color: '#1d1d1f' }}>
           <input type="checkbox" checked={form.active} onChange={e => set('active', e.target.checked)} style={{ width: 16, height: 16 }} />
