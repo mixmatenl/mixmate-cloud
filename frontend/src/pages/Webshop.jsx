@@ -934,6 +934,23 @@ function Instellingen() {
         <SettingsField label="Website" name="website" value={form.website} onChange={handleChange} placeholder="www.mixmate.nl" />
       </SettingsSection>
 
+      <SettingsSection label="Faire integratie">
+        <div>
+          <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Faire API-token</div>
+          <input
+            name="faire_api_token"
+            type="password"
+            value={form.faire_api_token ?? ''}
+            onChange={handleChange}
+            placeholder="Plak hier je Faire Retailer API-token"
+            style={inp}
+          />
+          <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 6, lineHeight: 1.5 }}>
+            Te vinden op <a href="https://www.faire.com/brand-portal/api-tokens" target="_blank" rel="noreferrer" style={{ color: '#007aff' }}>faire.com → Instellingen → API-tokens</a>. Vereist om producten te importeren via de Faire-link.
+          </div>
+        </div>
+      </SettingsSection>
+
       <SettingsSection label="Factuurinstellingen">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <SettingsField label="BTW-percentage (%)"    name="btw_rate"     type="number" value={form.btw_rate}     onChange={handleChange} placeholder="21" />
