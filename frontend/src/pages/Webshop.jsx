@@ -582,7 +582,50 @@ function ProductForm({ product, onSave, onCancel }) {
 }
 
 // Bookmarklet die op een Faire-productpagina draait (minified, URL-encoded)
-const FAIRE_BOOKMARKLET = `javascript:(function(){var nd=document.getElementById('__NEXT_DATA__');if(!nd){alert('Open dit op een Faire-productpagina.');return;}var data;try{data=JSON.parse(nd.textContent);}catch(e){alert('Fout bij lezen productdata.');return;}var tm=location.pathname.match(/\\/(p_[a-z0-9]+)/);if(!tm){alert('Geen product-ID gevonden in de URL.');return;}var token=tm[1];function find(o,t,d){if(d>8||!o||typeof o!=='object')return null;if(Array.isArray(o)){for(var i=0;i<o.length;i++){var r=find(o[i],t,d+1);if(r)return r;}}else{if(o.token===t&&o.name)return o;var ks=Object.keys(o);for(var i=0;i<ks.length;i++){var r=find(o[ks[i]],t,d+1);if(r)return r;}}return null;}var p=find(data,token,0);if(!p){alert('Kon productdata niet vinden. Probeer een directe productpagina.');return;}var imgs=p.images||p.photos||[];var img=imgs.length>0?(imgs[0].url||imgs[0].src||''):'';var price=((p.retailWholesalePrice||p.wholesalePrice||p.priceMin||0)/100).toFixed(2);var desc=(p.description||p.shortDescription||'').replace(/<[^>]+>/g,'').trim();var payload={name:p.name||'',description:desc,price_excl:parseFloat(price),image_url:img,min_order:parseInt(p.minimumOrderQuantity||p.moq||1),unit:'stuk'};var enc=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));window.open('https://portaal.mixmate.nl/webshop?tab=Producten&faire='+enc,'_blank');})();`
+const FAIRE_BOOKMARKLET = `javascript:(function(){
+  if(!location.hostname.includes('faire.com')){alert('Open dit op een Faire-productpagina.');return;}
+  var payload={name:'',description:'',price_excl:0,image_url:'',min_order:1,unit:'stuk'};
+
+  // Poging 1: __NEXT_DATA__ JSON
+  var nd=document.getElementById('__NEXT_DATA__');
+  if(nd){try{
+    var data=JSON.parse(nd.textContent);
+    var tm=location.pathname.match(/\\/(p_[a-z0-9]+)/);
+    if(tm){var token=tm[1];
+      function find(o,t,d){if(d>8||!o||typeof o!=='object')return null;if(Array.isArray(o)){for(var i=0;i<o.length;i++){var r=find(o[i],t,d+1);if(r)return r;}}else{if(o.token===t&&o.name)return o;var ks=Object.keys(o);for(var i=0;i<ks.length;i++){var r=find(o[ks[i]],t,d+1);if(r)return r;}}return null;}
+      var p=find(data,token,0);
+      if(p){var imgs=p.images||p.photos||[];payload.name=p.name||'';payload.description=(p.description||p.shortDescription||'').replace(/<[^>]+>/g,'').trim();payload.price_excl=parseFloat(((p.retailWholesalePrice||p.wholesalePrice||p.priceMin||0)/100).toFixed(2));payload.image_url=imgs.length>0?(imgs[0].url||imgs[0].src||imgs[0]||''):'';payload.min_order=parseInt(p.minimumOrderQuantity||p.moq||1);}
+    }
+  }catch(e){}}
+
+  // Poging 2: JSON-LD structured data
+  if(!payload.name){var lds=document.querySelectorAll('script[type="application/ld+json"]');for(var i=0;i<lds.length;i++){try{var ld=JSON.parse(lds[i].textContent);if(Array.isArray(ld))ld=ld[0];if(ld&&ld.name){payload.name=ld.name;payload.description=(ld.description||'').replace(/<[^>]+>/g,'').trim();var op=ld.offers||{};payload.price_excl=parseFloat(op.price||0)||0;payload.image_url=ld.image||'';break;}}catch(e){}}}
+
+  // Poging 3: Open Graph meta + DOM
+  if(!payload.name){
+    var og=function(p){var m=document.querySelector('meta[property="'+p+'"]');return m?m.getAttribute('content'):'';};
+    payload.name=og('og:title')||document.querySelector('h1')?document.querySelector('h1').innerText.trim():'';
+    payload.description=og('og:description');
+    payload.image_url=og('og:image');
+  }
+
+  // Prijs uit DOM als nog steeds 0
+  if(!payload.price_excl){
+    var priceEl=document.querySelector('[data-testid="wholesale-price"],[class*="wholesalePrice"],[class*="wholesale-price"],[class*="price"]');
+    if(priceEl){var pm=priceEl.innerText.match(/[\\d,\\.]+/);if(pm)payload.price_excl=parseFloat(pm[0].replace(',','.'));}
+  }
+
+  // Min afname uit DOM
+  var moqEl=document.querySelector('[data-testid="moq"],[class*="minOrder"],[class*="minimum-order"]');
+  if(moqEl){var mm=moqEl.innerText.match(/\\d+/);if(mm)payload.min_order=parseInt(mm[0]);}
+
+  // Doos-grootte uit tekst "Doos van X"
+  if(payload.min_order===1){var body=document.body.innerText;var dm=body.match(/[Dd]oos van (\\d+)/);if(dm)payload.min_order=parseInt(dm[1]);}
+
+  if(!payload.name){alert('Kon geen productdata vinden op deze pagina.');return;}
+  var enc=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  window.open('https://portaal.mixmate.nl/webshop?tab=Producten&faire='+enc,'_blank');
+})();`
 
 function FaireImport({ onImported }) {
   const [open, setOpen] = useState(false)
