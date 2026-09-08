@@ -3623,6 +3623,43 @@ async def faire_import(data: dict, _=Depends(verify_admin_user)):
 
     return product
 
+@app.post("/api/shop/ai-description")
+async def ai_description(data: dict, _=Depends(verify_admin_user)):
+    """Genereer een professionele productbeschrijving via Claude."""
+    import anthropic as _anthropic
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(503, "ANTHROPIC_API_KEY niet ingesteld")
+
+    name        = data.get("name", "")
+    description = data.get("description", "")
+    price_excl  = data.get("price_excl", 0)
+    unit        = data.get("unit", "stuk")
+    min_order   = data.get("min_order", 1)
+
+    prompt = f"""Je bent copywriter voor MIXMATE, een Nederlandse B2B groothandel in barartikelen.
+Schrijf een korte, professionele productbeschrijving in het Nederlands voor de webshop.
+
+Product: {name}
+Ruwe omschrijving van leverancier: {description}
+Prijs (excl. btw): €{price_excl} per {unit}
+Minimale afname: {min_order} {unit}
+
+Richtlijnen:
+- Max 3 zinnen, zakelijk maar aantrekkelijk
+- Benadruk kwaliteit en praktisch gebruik
+- Geen prijsinformatie in de beschrijving
+- Geen opsommingstekens, gewone lopende tekst
+- Schrijf alsof je de horeca-inkoper aanspreekt"""
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    msg = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return {"description": msg.content[0].text.strip()}
+
 @app.post("/api/shop/orders")
 async def place_order(data: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     settings = _get_shop_settings(db)

@@ -440,8 +440,21 @@ function ProductForm({ product, onSave, onCancel }) {
   })
   const [saving, setSaving] = useState(false)
   const [imgLoading, setImgLoading] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const generateDescription = async () => {
+    setAiLoading(true)
+    try {
+      const { description } = await api.aiDescription(form)
+      set('description', description)
+    } catch (e) {
+      alert('AI-beschrijving mislukt: ' + e.message)
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   function handleImage(e) {
     const file = e.target.files[0]
@@ -536,7 +549,19 @@ function ProductForm({ product, onSave, onCancel }) {
         </div>
 
         <input required value={form.name} onChange={e => set('name', e.target.value)} placeholder="Naam *" style={inp} />
-        <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Omschrijving" rows={3} style={{ ...inp, resize: 'vertical' }} />
+        <div style={{ position: 'relative' }}>
+          <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Omschrijving" rows={3} style={{ ...inp, resize: 'vertical', paddingRight: 130 }} />
+          <button type="button" onClick={generateDescription} disabled={aiLoading || !form.name} title="Genereer beschrijving met AI" style={{
+            position: 'absolute', top: 8, right: 8,
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '5px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+            background: aiLoading ? '#f2f2f7' : '#f0efff', border: '1px solid #5856d6',
+            color: aiLoading ? '#999' : '#5856d6', cursor: aiLoading ? 'default' : 'pointer',
+            fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }}>
+            {aiLoading ? '…' : '✨ AI'}
+          </button>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
             <div style={{ fontSize: 12, color: '#6e6e73', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: .3 }}>Glasinhoud (ml)</div>
@@ -632,24 +657,21 @@ const FAIRE_BOOKMARKLET = `javascript:(function(){
 
 function FaireImport({ onImported }) {
   const [open, setOpen] = useState(false)
-  const [url, setUrl] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const bookmarkRef = useRef(null)
 
-  const doImport = async () => {
-    if (!url.trim()) return
-    setLoading(true)
-    setError('')
-    try {
-      const data = await api.faireImport(url.trim())
-      onImported(data)
-      setOpen(false)
-      setUrl('')
-    } catch (e) {
-      setError(e.message || 'Importeren mislukt')
-    } finally {
-      setLoading(false)
+  // React sanitizeert javascript: hrefs — zet de href direct op de DOM na render
+  useEffect(() => {
+    if (open && bookmarkRef.current) {
+      bookmarkRef.current.setAttribute('href', FAIRE_BOOKMARKLET)
     }
+  }, [open])
+
+  const copyCode = () => {
+    navigator.clipboard.writeText(FAIRE_BOOKMARKLET).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
   }
 
   if (!open) {
@@ -670,35 +692,63 @@ function FaireImport({ onImported }) {
     <Card style={{ padding: 20, marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>Importeer via Faire</div>
-        <button onClick={() => { setOpen(false); setError(''); setUrl('') }} style={{ background: 'rgba(0,0,0,.06)', border: 'none', borderRadius: 20, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <button onClick={() => setOpen(false)} style={{ background: 'rgba(0,0,0,.06)', border: 'none', borderRadius: 20, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 12 }}>
-        Plak de link van een Faire-productpagina (bijv. <code style={{ fontSize: 11, background: '#f2f2f7', padding: '2px 5px', borderRadius: 4 }}>faire.com/product/p_xxx</code>)
+
+      <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 16, lineHeight: 1.6 }}>
+        Voeg de bladwijzer eenmalig toe. Daarna: open een Faire-productpagina → klik de bladwijzer → product staat direct ingevuld.
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          type="url"
-          placeholder="https://www.faire.com/product/p_..."
-          value={url}
-          onChange={e => setUrl(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && doImport()}
-          style={{
-            flex: 1, padding: '9px 13px', borderRadius: 9, fontSize: 13,
-            border: '1.5px solid #e5e5ea', outline: 'none', fontFamily: 'inherit',
-          }}
-          autoFocus
-        />
-        <button onClick={doImport} disabled={loading || !url.trim()} style={{
-          padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 600,
-          background: loading ? '#e5e5ea' : '#1d1d1f', color: loading ? '#999' : '#fff',
-          border: 'none', cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-        }}>
-          {loading ? 'Bezig…' : 'Importeer'}
-        </button>
+
+      {/* Stap 1 */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>1</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', marginBottom: 8 }}>
+            Sleep naar je bladwijzerbalk <span style={{ fontWeight: 400, color: '#6e6e73' }}>of klik "Kopieer" en maak handmatig een bladwijzer</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <a
+              ref={bookmarkRef}
+              href="#"
+              onClick={e => e.preventDefault()}
+              draggable
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+                padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+                background: '#f0efff', border: '1.5px solid #5856d6', color: '#5856d6',
+                textDecoration: 'none', cursor: 'grab', userSelect: 'none',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+              Faire → MIXMATE
+            </a>
+            <button onClick={copyCode} style={{
+              padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+              background: copied ? '#e8f5e9' : '#f2f2f7',
+              border: `1.5px solid ${copied ? '#4caf50' : '#e5e5ea'}`,
+              color: copied ? '#2e7d32' : '#1d1d1f',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              {copied ? '✓ Gekopieerd!' : 'Kopieer code'}
+            </button>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#8e8e93', lineHeight: 1.5 }}>
+            Handmatig (Chrome): druk <strong>⌘D</strong> → Meer opties → vervang de URL door de gekopieerde code.
+          </div>
+        </div>
       </div>
-      {error && <div style={{ marginTop: 10, fontSize: 13, color: '#c0392b' }}>{error}</div>}
+
+      <div style={{ borderTop: '1px solid #f2f2f7', margin: '14px 0' }} />
+
+      {/* Stap 2 */}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#1d1d1f', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>2</div>
+        <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.6 }}>
+          Ga naar een <a href="https://www.faire.com" target="_blank" rel="noreferrer" style={{ color: '#007aff' }}>Faire-productpagina</a> en klik de bladwijzer <strong>"Faire → MIXMATE"</strong>. Het portaal opent automatisch met het product ingevuld.
+        </div>
+      </div>
     </Card>
   )
 }
@@ -713,7 +763,7 @@ function Producten() {
 
   useEffect(() => { load() }, [])
 
-  // Vang ?faire=<base64> op uit de URL (gezet door de bookmarklet)
+  // Vang ?faire=<base64> op uit de URL (gezet door de extensie)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const faire = params.get('faire')
@@ -721,10 +771,13 @@ function Producten() {
     try {
       const data = JSON.parse(decodeURIComponent(escape(atob(faire))))
       setEditing({ ...data, id: undefined })
-      // Verwijder de param uit de URL zonder reload
       const url = new URL(window.location.href)
       url.searchParams.delete('faire')
       window.history.replaceState({}, '', url.toString())
+      // Genereer automatisch een AI-beschrijving
+      api.aiDescription(data).then(r => {
+        setEditing(prev => prev ? { ...prev, description: r.description } : prev)
+      }).catch(() => {})
     } catch {}
   }, [])
 

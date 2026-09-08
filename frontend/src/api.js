@@ -175,6 +175,7 @@ export const api = {
   // Webshop – producten (admin)
   getShopProducts:      ()           => req('GET',    '/api/shop/products'),
   faireImport:          (url)        => req('POST',   '/api/shop/faire-import', { url }),
+  aiDescription:        (data)       => req('POST',   '/api/shop/ai-description', data),
   createShopProduct:    (data)       => req('POST',   '/api/shop/products', data),
   updateShopProduct:    (id, data)   => req('PATCH',  `/api/shop/products/${id}`, data),
   deleteShopProduct:    (id)         => req('DELETE', `/api/shop/products/${id}`),
