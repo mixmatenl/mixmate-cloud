@@ -774,10 +774,6 @@ function Producten() {
       const url = new URL(window.location.href)
       url.searchParams.delete('faire')
       window.history.replaceState({}, '', url.toString())
-      // Genereer automatisch een AI-beschrijving
-      api.aiDescription(data).then(r => {
-        setEditing(prev => prev ? { ...prev, description: r.description } : prev)
-      }).catch(() => {})
     } catch {}
   }, [])
 
