@@ -37,3 +37,22 @@ button, input, select, textarea {
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); border-radius: 4px; }
+
+/* ── Mobile responsive overrides (iOS app + narrow browsers) ── */
+@media (max-width: 767px) {
+  /* Machine detail: 2-koloms grid → 1 kolom */
+  .machine-overview-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Machine detail rechter sidebar verbergen op mobiel */
+  .activity-sidebar {
+    display: none !important;
+  }
+
+  /* Order cards altijd verticaal */
+  .order-card {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+}

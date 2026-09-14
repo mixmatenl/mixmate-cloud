@@ -562,7 +562,7 @@ function Overzicht({ status, machineId }) {
           </div>
 
           {/* 2-koloms layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, alignItems: 'start' }}>
+          <div className="machine-overview-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, alignItems: 'start' }}>
 
             {/* LINKER KOLOM */}
             <div>
@@ -629,7 +629,7 @@ function Overzicht({ status, machineId }) {
             </div>
 
             {/* RECHTER KOLOM */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="activity-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
               {/* Ingrediënten status */}
               <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
