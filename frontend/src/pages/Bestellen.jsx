@@ -223,7 +223,7 @@ export default function Bestellen({ user }) {
       `}</style>
 
       {/* Header */}
-      <div className="bestellen-header" style={{ padding: '28px 32px 0', maxWidth: 1100, margin: '0 auto' }}>
+      <div className="bestellen-header" style={{ padding: 'max(20px, 4vw) max(16px, 4vw) 0', maxWidth: 1100, margin: '0 auto' }}>
         {step === 'gegevens' && (
           <button type="button" onClick={() => setStep('producten')} style={{ background: 'none', border: 'none', color: '#007aff', fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '0 0 16px', fontFamily: 'inherit' }}>
             ← Terug naar producten
@@ -258,7 +258,7 @@ export default function Bestellen({ user }) {
       </div>
 
       {/* Body */}
-      <div className="bestellen-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, maxWidth: 1100, margin: '0 auto', padding: '0 32px 64px', alignItems: 'start', boxSizing: 'border-box' }}>
+      <div className="bestellen-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, maxWidth: 1100, margin: '0 auto', padding: 'max(0px,0px) max(16px, 4vw) 80px', alignItems: 'start', boxSizing: 'border-box' }}>
 
         {/* Linker kolom: producten of gegevens */}
         <div>
@@ -274,7 +274,7 @@ export default function Bestellen({ user }) {
                       const total = order.total_excl
                       const knownItems = order.items.filter(i => activeProducts.find(p => p.id === i.product_id))
                       return (
-                        <div key={order.id} className="order-card" style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div key={order.id} className="order-card" style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', display: 'flex', flexDirection: 'column', gap: 10 }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, color: '#aeaeb2', marginBottom: 4 }}>{date}</div>
                             <div style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f', lineHeight: 1.4 }}>
@@ -286,7 +286,7 @@ export default function Bestellen({ user }) {
                             </div>
                             <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 4 }}>{fmtEur(total)} excl. BTW</div>
                           </div>
-                          <div className="order-card-actions" style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                          <div className="order-card-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             <span style={{
                               fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
                               background: order.status === 'verzonden' ? '#edfaf1' : order.status === 'nieuw' ? '#fff8e6' : '#f2f2f7',
