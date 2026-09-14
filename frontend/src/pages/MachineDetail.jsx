@@ -366,14 +366,16 @@ export default function MachineDetail({ user, onLogout }) {
             </div>
           </div>
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: 0, overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', paddingBottom: 1 }}>
+            <style>{`.mm-tabs::-webkit-scrollbar{display:none}`}</style>
             {TABS.map(t => (
               <button key={t} onClick={() => setTab(t)} style={{
-                padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 13, fontWeight: tab === t ? 600 : 400,
-                color: tab === t ? '#1d1d1f' : '#6e6e73',
+                padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 14, fontWeight: tab === t ? 600 : 400,
+                color: tab === t ? '#1d1d1f' : '#8e8e93',
                 borderBottom: `2px solid ${tab === t ? '#1d1d1f' : 'transparent'}`,
                 whiteSpace: 'nowrap', transition: 'color .15s', fontFamily: 'inherit',
+                flexShrink: 0,
               }}>{t}</button>
             ))}
           </div>
