@@ -10,6 +10,10 @@ import json
 import os
 import secrets
 import hashlib
+import hmac
+import base64
+import re
+import time
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Optional
@@ -108,6 +112,23 @@ class FlushSchedule(SQLModel, table=True):
     machine_id: str = Field(index=True, unique=True)
     enabled: bool = True
     day_of_week: int = 0   # 0=maandag … 6=zondag
+
+class MachineBackup(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    customer_id: int = Field(index=True, foreign_key="customer.id")
+    source_machine_id: str
+    source_machine_name: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    # JSON: {"ingredient_categories": [...], "ingredients": [...], "glasses": [...], "categories": [...], "recipes": [...]}
+    data_json: str = "{}"
+
+class PartyTicket(SQLModel, table=True):
+    id: str = Field(primary_key=True)                 # uuid4
+    email: str = Field(index=True, unique=True)       # max 1 ticket per adres
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str = "issued"                            # issued | used
+    used_at: Optional[datetime] = None
+    scanned_by: Optional[str] = None
 
 class TicketResponse(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -921,12 +942,14 @@ def _email_info_row(label: str, value: str, last: bool = False) -> str:
         f"</tr>"
     )
 
-async def _resend(to: str | list, subject: str, html: str, reply_to: str = "") -> None:
+async def _resend(to: str | list, subject: str, html: str, reply_to: str = "", attachments: list | None = None) -> bool:
     if not RESEND_API_KEY:
-        return
+        return False
     payload: dict = {"from": FROM_EMAIL, "to": to if isinstance(to, list) else [to], "subject": subject, "html": html}
     if reply_to:
         payload["reply_to"] = reply_to
+    if attachments:
+        payload["attachments"] = attachments
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(
@@ -937,8 +960,11 @@ async def _resend(to: str | list, subject: str, html: str, reply_to: str = "") -
             )
             if r.status_code >= 400:
                 print(f"[RESEND ERROR] status={r.status_code} to={to} body={r.text[:300]}", flush=True)
+                return False
+            return True
     except Exception as exc:
         print(f"[RESEND EXCEPTION] to={to} subject={subject!r}: {exc}", flush=True)
+        return False
 
 async def _send_reset_email(to_email: str, to_name: str, code: str):
     reset_url = f"{PORTAL_URL}/login?mode=reset&email={to_email}&code={code}"
@@ -3394,6 +3420,281 @@ async def update_category(machine_id: str, cat_id: int, body: dict, customer_id:
 @app.delete("/api/machines/{machine_id}/categories/{cat_id}")
 async def delete_category(machine_id: str, cat_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     return await _get_conn(machine_id, customer_id, db).request({"type": "delete_category", "id": cat_id})
+
+# ── Machine-backup (recepten/ingrediënten/glazen/categorieën) ─────────────────
+# Recepten/ingrediënten/etc. staan lokaal op de machine (via websocket-relay hierboven),
+# niet in de cloud-database. Een backup haalt dus een live snapshot op en bewaart die
+# hier, zodat 'm ook nog bestaat als de oude machine allang is uitgeschakeld/verkocht.
+
+@app.post("/api/machines/{machine_id}/backup")
+async def create_machine_backup(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    machine = _check_machine_access(machine_id, customer_id, db)
+    conn = _get_conn(machine_id, customer_id, db)
+
+    data = {
+        "ingredient_categories": (await conn.request({"type": "get_ingredient_categories"})).get("items", []),
+        "ingredients":           (await conn.request({"type": "get_ingredients"})).get("items", []),
+        "glasses":               (await conn.request({"type": "get_glasses"})).get("items", []),
+        "categories":            (await conn.request({"type": "get_categories"})).get("items", []),
+        "recipes":               (await conn.request({"type": "get_recipes"})).get("items", []),
+    }
+
+    backup = MachineBackup(
+        customer_id=customer_id,
+        source_machine_id=machine_id,
+        source_machine_name=machine.name,
+        data_json=json.dumps(data),
+    )
+    db.add(backup)
+    db.commit()
+    db.refresh(backup)
+
+    return {
+        "id": backup.id,
+        "source_machine_id": backup.source_machine_id,
+        "source_machine_name": backup.source_machine_name,
+        "created_at": backup.created_at.isoformat(),
+        "counts": {k: len(v) for k, v in data.items()},
+    }
+
+@app.get("/api/backups")
+def list_machine_backups(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    backups = db.exec(
+        select(MachineBackup)
+        .where(MachineBackup.customer_id == customer_id)
+        .order_by(MachineBackup.created_at.desc())
+    ).all()
+    result = []
+    for b in backups:
+        data = json.loads(b.data_json)
+        result.append({
+            "id": b.id,
+            "source_machine_id": b.source_machine_id,
+            "source_machine_name": b.source_machine_name,
+            "created_at": b.created_at.isoformat(),
+            "counts": {k: len(v) for k, v in data.items()},
+        })
+    return result
+
+@app.delete("/api/backups/{backup_id}")
+def delete_machine_backup(backup_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    backup = db.get(MachineBackup, backup_id)
+    if not backup or backup.customer_id != customer_id:
+        raise HTTPException(status_code=404, detail="Backup niet gevonden")
+    db.delete(backup)
+    db.commit()
+    return {"ok": True}
+
+@app.post("/api/machines/{machine_id}/restore")
+async def restore_machine_backup(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    backup = db.get(MachineBackup, body.get("backup_id"))
+    if not backup or backup.customer_id != customer_id:
+        raise HTTPException(status_code=404, detail="Backup niet gevonden")
+
+    _check_machine_access(machine_id, customer_id, db)
+    conn = _get_conn(machine_id, customer_id, db)
+    data = json.loads(backup.data_json)
+
+    counts = {"ingredient_categories": 0, "ingredients": 0, "glasses": 0, "categories": 0, "recipes": 0}
+
+    # Volgorde is belangrijk: recepten verwijzen naar ingrediënten/glazen/categorieën,
+    # en ingrediënten verwijzen naar ingrediëntcategorieën. IDs verschillen altijd tussen
+    # machines, dus we mappen oude → nieuwe id's terwijl we ze opnieuw aanmaken.
+
+    ing_cat_map = {}
+    for c in data.get("ingredient_categories", []):
+        created = await conn.request({"type": "create_ingredient_category", "data": {
+            "name": c["name"], "sort_order": c.get("sort_order", 0),
+        }})
+        ing_cat_map[c["id"]] = created.get("id")
+        counts["ingredient_categories"] += 1
+
+    ingredient_map = {}
+    for i in data.get("ingredients", []):
+        new_cat_id = ing_cat_map.get(i["ingredient_category_id"]) if i.get("ingredient_category_id") else None
+        created = await conn.request({"type": "create_ingredient", "data": {
+            "name": i["name"],
+            "is_carbonated": i.get("is_carbonated", False),
+            "image_url": i.get("image_url", ""),
+            "ingredient_category_id": new_cat_id,
+        }})
+        ingredient_map[i["id"]] = created.get("id")
+        counts["ingredients"] += 1
+
+    glass_map = {}
+    for g in data.get("glasses", []):
+        created = await conn.request({"type": "create_glass", "data": {
+            "name": g["name"], "volume_ml": g["volume_ml"], "sort_order": g.get("sort_order", 0),
+        }})
+        glass_map[g["id"]] = created.get("id")
+        counts["glasses"] += 1
+
+    cat_map = {}
+    for c in data.get("categories", []):
+        created = await conn.request({"type": "create_category", "data": {
+            "name": c["name"], "sort_order": c.get("sort_order", 0),
+        }})
+        cat_map[c["id"]] = created.get("id")
+        counts["categories"] += 1
+
+    for r in data.get("recipes", []):
+        new_ingredients = []
+        for ri in r.get("ingredients", []):
+            new_ing_id = ingredient_map.get(ri["ingredient_id"])
+            if new_ing_id is None:
+                continue
+            new_ingredients.append({
+                "ingredient_id": new_ing_id, "amount_ml": ri["amount_ml"], "order": ri.get("order", 0),
+            })
+        await conn.request({"type": "create_recipe", "data": {
+            "name": r["name"],
+            "description": r.get("description", ""),
+            "category_id": cat_map.get(r["category_id"]) if r.get("category_id") else None,
+            "glass_id": glass_map.get(r["glass_id"]) if r.get("glass_id") else None,
+            "image_url": r.get("image_url", ""),
+            "ingredients": new_ingredients,
+        }})
+        counts["recipes"] += 1
+
+    return {"ok": True, "counts": counts}
+
+# ── Personeelsfeest-tickets ───────────────────────────────────────────────────
+# Website claimt een ticket (mail met QR); de portaal-app scant en valideert.
+# QR-inhoud: MM1.<ticket-id>.<hmac16> — geen persoonsgegevens in de code zelf.
+
+TICKET_SECRET          = os.getenv("TICKET_SECRET", "")
+TICKET_ALLOWED_DOMAINS = {d.strip().lower() for d in os.getenv("TICKET_ALLOWED_DOMAINS", "mixmate.nl").split(",") if d.strip()}
+PARTY_NAME             = os.getenv("PARTY_NAME", "Personeelsfeest")
+PARTY_DATE             = os.getenv("PARTY_DATE", "")       # bijv. "vrijdag 12 december 2026, 19:00"
+PARTY_LOCATION         = os.getenv("PARTY_LOCATION", "")
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_ticket_hits: dict[str, list[float]] = {}
+
+def _rate_limited(key: str, limit: int, window: int = 3600) -> bool:
+    now = time.time()
+    hits = [t for t in _ticket_hits.get(key, []) if now - t < window]
+    if len(hits) >= limit:
+        _ticket_hits[key] = hits
+        return True
+    hits.append(now)
+    _ticket_hits[key] = hits
+    return False
+
+def _ticket_sig(ticket_id: str) -> str:
+    mac = hmac.new(TICKET_SECRET.encode(), f"MM1.{ticket_id}".encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(mac).decode().rstrip("=")[:16]
+
+def _ticket_code(ticket_id: str) -> str:
+    return f"MM1.{ticket_id}.{_ticket_sig(ticket_id)}"
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}"
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
+
+async def _send_ticket_mail(email: str, ticket_id: str) -> bool:
+    import segno, io
+    buf = io.BytesIO()
+    segno.make(_ticket_code(ticket_id), error="m").save(buf, kind="png", scale=8, border=2)
+    png_b64 = base64.b64encode(buf.getvalue()).decode()
+    details = "".join(f"<p style='margin:0 0 4px;font-size:14px;color:#1d1d1f;'><b>{l}:</b> {v}</p>"
+                      for l, v in (("Wanneer", PARTY_DATE), ("Waar", PARTY_LOCATION)) if v)
+    html = (
+        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>Je ticket voor het {PARTY_NAME}</h2>"
+        "<p style='margin:0 0 16px;font-size:14px;color:#6e6e73;line-height:1.6;'>Laat deze QR-code bij de ingang scannen. Het ticket is persoonlijk en werkt één keer.</p>"
+        f"{details}<img src='cid:ticket-qr' width='240' height='240' alt='Ticket QR-code' style='display:block;margin:16px 0;'/>"
+    )
+    return await _resend(email, f"Je ticket voor het {PARTY_NAME}", html,
+                         attachments=[{"filename": "ticket.png", "content": png_b64, "content_id": "ticket-qr"}])
+
+@app.post("/api/tickets/claim")
+async def claim_ticket(body: dict, request: Request, db: Session = Depends(get_session)):
+    if not TICKET_SECRET:
+        raise HTTPException(status_code=500, detail="Tickets niet geconfigureerd")
+    if _rate_limited(f"ip:{_client_ip(request)}", 20):
+        raise HTTPException(status_code=429, detail="Probeer het later opnieuw")
+    email = (body.get("email") or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Ongeldig e-mailadres")
+    if _rate_limited(f"mail:{email}", 5):
+        raise HTTPException(status_code=429, detail="Probeer het later opnieuw")
+    if email.rpartition("@")[2] not in TICKET_ALLOWED_DOMAINS:
+        raise HTTPException(status_code=403, detail="Gebruik je werkadres")
+
+    import uuid
+    ticket = PartyTicket(id=str(uuid.uuid4()), email=email)
+    try:
+        db.add(ticket)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Er is al een ticket gestuurd")
+    if not await _send_ticket_mail(email, ticket.id):
+        db.delete(ticket)          # mail mislukt: geen "verbrand" adres achterlaten
+        db.commit()
+        raise HTTPException(status_code=502, detail="Mail kon niet worden verstuurd")
+    return {"ok": True}
+
+def _can_scan_tickets(customer_id: int, db: Session) -> bool:
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return False
+    if customer.email in ADMIN_EMAILS:
+        return True
+    emp = db.exec(select(Employee).where(
+        (Employee.customer_id == customer_id) | (Employee.email == customer.email)
+    )).first()
+    return bool(emp and emp.active)
+
+@app.get("/api/tickets/scanner-access")
+def ticket_scanner_access(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    return {"allowed": _can_scan_tickets(customer_id, db)}
+
+@app.post("/api/tickets/validate")
+def validate_ticket(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    if not TICKET_SECRET or not _can_scan_tickets(customer_id, db):
+        raise HTTPException(status_code=403, detail="Geen scannerrechten")
+    code = (body.get("code") or "").strip()
+    scanner = (body.get("scanner") or "").strip()[:80] or "onbekend"
+    parts = code.split(".")
+    if len(parts) != 3 or parts[0] != "MM1" or not hmac.compare_digest(parts[2], _ticket_sig(parts[1])):
+        return {"result": "invalid"}
+    ticket = db.get(PartyTicket, parts[1])
+    if not ticket:
+        return {"result": "invalid"}
+    # Atomair: alleen de eerste scanner kan issued → used zetten
+    res = db.execute(text(
+        "UPDATE partyticket SET status='used', used_at=:now, scanned_by=:by WHERE id=:id AND status='issued'"
+    ).bindparams(now=datetime.utcnow(), by=scanner, id=ticket.id))
+    db.commit()
+    if res.rowcount == 1:
+        return {"result": "valid", "usedAt": datetime.utcnow().isoformat() + "Z", "holder": _mask_email(ticket.email)}
+    db.refresh(ticket)
+    return {"result": "already_used", "usedAt": (ticket.used_at.isoformat() + "Z") if ticket.used_at else None,
+            "scannedBy": ticket.scanned_by, "holder": _mask_email(ticket.email)}
+
+@app.post("/api/admin/tickets/resend")
+async def admin_resend_ticket(body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    email = (body.get("email") or "").strip().lower()
+    ticket = db.exec(select(PartyTicket).where(PartyTicket.email == email)).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Geen ticket voor dit adres")
+    if ticket.status == "used":
+        raise HTTPException(status_code=409, detail="Ticket is al gebruikt")
+    if not await _send_ticket_mail(email, ticket.id):
+        raise HTTPException(status_code=502, detail="Mail kon niet worden verstuurd")
+    return {"ok": True}
+
+@app.delete("/api/admin/tickets")
+def admin_purge_tickets(_: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Bewaartermijn: verwijdert alle ticketgegevens (e-mailadressen) na het feest."""
+    n = len(db.exec(select(PartyTicket)).all())
+    db.exec(delete(PartyTicket))
+    db.commit()
+    return {"deleted": n}
 
 # ── Bartender PIN relay ───────────────────────────────────────────────────────
 

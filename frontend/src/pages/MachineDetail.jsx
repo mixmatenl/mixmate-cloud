@@ -1908,9 +1908,52 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
   const [pinSaving,    setPinSaving]   = useState(false)
   const [pinMsg,       setPinMsg]      = useState(null)
 
+  // Backup / herstel
+  const [backingUp,    setBackingUp]   = useState(false)
+  const [backupMsg,    setBackupMsg]   = useState(null)
+  const [backups,      setBackups]     = useState([])
+  const [backupsLoading, setBackupsLoading] = useState(true)
+  const [restoringId,  setRestoringId] = useState(null)
+  const [restoreMsg,   setRestoreMsg]  = useState(null)
+
+  function loadBackups() {
+    setBackupsLoading(true)
+    api.listBackups().then(setBackups).catch(() => {}).finally(() => setBackupsLoading(false))
+  }
+
   useEffect(() => {
     api.getBartenderPin(machineId).then(r => setCurrentPin(r.pin)).catch(() => {})
+    loadBackups()
   }, [machineId])
+
+  async function makeBackup() {
+    setBackingUp(true); setBackupMsg(null)
+    try {
+      const b = await api.createBackup(machineId)
+      setBackupMsg({ ok: true, text: `Backup gemaakt: ${b.counts.recipes} recepten, ${b.counts.ingredients} ingrediënten, ${b.counts.glasses} glazen, ${b.counts.categories} categorieën.` })
+      loadBackups()
+    } catch (e) {
+      setBackupMsg({ ok: false, text: e.message || 'Backup maken mislukt — is de machine online?' })
+    }
+    setBackingUp(false)
+  }
+
+  async function restoreFromBackup(backupId) {
+    if (!confirm('Deze recepten, ingrediënten, glazen en categorieën worden toegevoegd aan deze machine (bestaande items blijven staan). Doorgaan?')) return
+    setRestoringId(backupId); setRestoreMsg(null)
+    try {
+      const r = await api.restoreBackup(machineId, backupId)
+      setRestoreMsg({ ok: true, text: `Hersteld: ${r.counts.recipes} recepten, ${r.counts.ingredients} ingrediënten, ${r.counts.glasses} glazen, ${r.counts.categories} categorieën.` })
+    } catch (e) {
+      setRestoreMsg({ ok: false, text: e.message || 'Herstellen mislukt — is de machine online?' })
+    }
+    setRestoringId(null)
+  }
+
+  async function removeBackup(backupId) {
+    if (!confirm('Deze backup verwijderen? Dit kan niet ongedaan gemaakt worden.')) return
+    try { await api.deleteBackup(backupId); loadBackups() } catch {}
+  }
 
   async function savePin(e) {
     e.preventDefault(); setPinSaving(true); setPinMsg(null)
@@ -2038,6 +2081,65 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
               {serialErr && <div style={{ fontSize: 13, color: '#ff3b30', marginTop: 6 }}>{serialErr}</div>}
             </>
           )}
+        </div>
+      </Group>
+
+      <Group label="Back-up">
+        <div style={{ padding: '14px 16px' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 8 }}>
+            Recepten, ingrediënten, glazen en categorieën
+          </div>
+          <div style={{ fontSize: 13, color: '#6e6e73', marginBottom: 12, lineHeight: 1.5 }}>
+            Maak een backup voordat je deze machine vervangt, zodat je de cocktailkaart op je nieuwe machine kunt terugzetten.
+          </div>
+          <button onClick={makeBackup} disabled={backingUp} style={{
+            background: '#1d1d1f', color: '#fff', border: 'none', borderRadius: 10,
+            padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            fontFamily: 'inherit', opacity: backingUp ? .4 : 1,
+          }}>
+            {backingUp ? 'Backup maken…' : 'Backup maken'}
+          </button>
+          {backupMsg && <div style={{ fontSize: 13, color: backupMsg.ok ? '#34c759' : '#ff3b30', marginTop: 8 }}>{backupMsg.text}</div>}
+        </div>
+
+        <div style={{ padding: '14px 16px', borderTop: '1px solid #f2f2f7' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 8 }}>
+            Herstellen op deze machine
+          </div>
+          {backupsLoading ? (
+            <div style={{ fontSize: 13, color: '#aeaeb2' }}>Laden…</div>
+          ) : backups.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#aeaeb2' }}>Je hebt nog geen backups gemaakt.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {backups.map(b => (
+                <div key={b.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  background: '#f9f9f9', borderRadius: 10, padding: '10px 12px',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>{b.source_machine_name || b.source_machine_id}</div>
+                    <div style={{ fontSize: 11.5, color: '#aeaeb2' }}>
+                      {new Date(b.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {' · '}{b.counts.recipes} recepten · {b.counts.ingredients} ingrediënten
+                    </div>
+                  </div>
+                  <button onClick={() => restoreFromBackup(b.id)} disabled={restoringId === b.id} style={{
+                    background: '#fff', border: '1px solid #e5e5ea', color: '#1d1d1f',
+                    borderRadius: 8, padding: '6px 12px', fontSize: 12.5, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: restoringId === b.id ? .5 : 1,
+                  }}>
+                    {restoringId === b.id ? 'Bezig…' : 'Herstellen'}
+                  </button>
+                  <button onClick={() => removeBackup(b.id)} title="Verwijderen" style={{
+                    background: 'none', border: 'none', color: '#ff3b30', cursor: 'pointer',
+                    fontSize: 16, padding: '2px 4px', flexShrink: 0, lineHeight: 1,
+                  }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {restoreMsg && <div style={{ fontSize: 13, color: restoreMsg.ok ? '#34c759' : '#ff3b30', marginTop: 10 }}>{restoreMsg.text}</div>}
         </div>
       </Group>
 

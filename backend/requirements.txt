@@ -10,3 +10,4 @@ apscheduler>=3.10.0
 boto3
 cloudscraper>=1.2.71
 anthropic>=0.30.0
+segno>=1.6.0

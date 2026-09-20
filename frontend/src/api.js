@@ -131,6 +131,12 @@ export const api = {
   getMachinePours:     (mid, date) => req('GET', `/api/machines/${mid}/pours${date ? `?date=${date}` : ''}`),
   getMachinePourStats: (mid)       => req('GET', `/api/machines/${mid}/pour-stats`),
 
+  // Backup (recepten/ingrediënten/glazen/categorieën)
+  createBackup:  (mid)              => req('POST',   `/api/machines/${mid}/backup`),
+  listBackups:   ()                 => req('GET',    '/api/backups'),
+  deleteBackup:  (backupId)         => req('DELETE',  `/api/backups/${backupId}`),
+  restoreBackup: (mid, backupId)    => req('POST',    `/api/machines/${mid}/restore`, { backup_id: backupId }),
+
   // Admin
   adminMe:              ()              => req('GET',   '/api/admin/me'),
   adminSearchCustomers: (q)             => req('GET',   `/api/admin/customers?q=${encodeURIComponent(q || '')}`),
