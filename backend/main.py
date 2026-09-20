@@ -3563,7 +3563,7 @@ async def restore_machine_backup(machine_id: str, body: dict, customer_id: int =
 # QR-inhoud: MM1.<ticket-id>.<hmac16> — geen persoonsgegevens in de code zelf.
 
 TICKET_SECRET          = os.getenv("TICKET_SECRET", "")
-TICKET_ALLOWED_DOMAINS = {d.strip().lower() for d in os.getenv("TICKET_ALLOWED_DOMAINS", "mixmate.nl").split(",") if d.strip()}
+TICKET_ALLOWED_DOMAINS = {d.strip().lower() for d in os.getenv("TICKET_ALLOWED_DOMAINS", "*").split(",") if d.strip()}
 PARTY_NAME             = os.getenv("PARTY_NAME", "Personeelsfeest")
 PARTY_DATE             = os.getenv("PARTY_DATE", "")       # bijv. "vrijdag 12 december 2026, 19:00"
 PARTY_LOCATION         = os.getenv("PARTY_LOCATION", "")
@@ -3621,7 +3621,7 @@ async def claim_ticket(body: dict, request: Request, db: Session = Depends(get_s
         raise HTTPException(status_code=400, detail="Ongeldig e-mailadres")
     if _rate_limited(f"mail:{email}", 5):
         raise HTTPException(status_code=429, detail="Probeer het later opnieuw")
-    if email.rpartition("@")[2] not in TICKET_ALLOWED_DOMAINS:
+    if "*" not in TICKET_ALLOWED_DOMAINS and email.rpartition("@")[2] not in TICKET_ALLOWED_DOMAINS:
         raise HTTPException(status_code=403, detail="Gebruik je werkadres")
 
     import uuid
