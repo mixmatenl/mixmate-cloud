@@ -3633,7 +3633,8 @@ async def claim_ticket(body: dict, request: Request, db: Session = Depends(get_s
 
     import uuid
     try:
-        wanted = max(1, min(int(body.get("count") or 1), TICKET_MAX_PER_EMAIL))
+        raw = next((body[k] for k in ("count", "quantity", "aantal", "tickets", "amount", "qty") if body.get(k)), 1)
+        wanted = max(1, min(int(raw), TICKET_MAX_PER_EMAIL))
     except (TypeError, ValueError):
         wanted = 1
     existing = len(db.exec(select(PartyTicket).where(PartyTicket.email == email)).all())
