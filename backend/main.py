@@ -124,7 +124,7 @@ class MachineBackup(SQLModel, table=True):
 
 class PartyTicket(SQLModel, table=True):
     id: str = Field(primary_key=True)                 # uuid4
-    email: str = Field(index=True, unique=True)       # max 1 ticket per adres
+    email: str = Field(index=True)                    # meerdere tickets per adres toegestaan (zie TICKET_MAX_PER_EMAIL)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     status: str = "issued"                            # issued | used
     used_at: Optional[datetime] = None
@@ -407,6 +407,7 @@ def create_tables():
         "ALTER TABLE glassproduct ADD COLUMN series_id INTEGER REFERENCES glassseries(id)",
         "ALTER TABLE glassproduct ADD COLUMN volume_ml REAL NOT NULL DEFAULT 0.0",
         "ALTER TABLE employee ADD COLUMN birth_place VARCHAR NOT NULL DEFAULT ''",
+        "DROP INDEX IF EXISTS ix_partyticket_email",
         "ALTER TABLE festivalticket ADD COLUMN ticket_date VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE festivalticket ADD COLUMN release_date VARCHAR NOT NULL DEFAULT ''",
         "ALTER TABLE employeetask ADD COLUMN form_fields TEXT NOT NULL DEFAULT ''",
@@ -3564,6 +3565,7 @@ async def restore_machine_backup(machine_id: str, body: dict, customer_id: int =
 
 TICKET_SECRET          = os.getenv("TICKET_SECRET", "")
 TICKET_ALLOWED_DOMAINS = {d.strip().lower() for d in os.getenv("TICKET_ALLOWED_DOMAINS", "*").split(",") if d.strip()}
+TICKET_MAX_PER_EMAIL   = int(os.getenv("TICKET_MAX_PER_EMAIL", "5"))
 PARTY_NAME             = os.getenv("PARTY_NAME", "Personeelsfeest")
 PARTY_DATE             = os.getenv("PARTY_DATE", "")       # bijv. "vrijdag 12 december 2026, 19:00"
 PARTY_LOCATION         = os.getenv("PARTY_LOCATION", "")
@@ -3595,20 +3597,25 @@ def _client_ip(request: Request) -> str:
     fwd = request.headers.get("x-forwarded-for", "")
     return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
 
-async def _send_ticket_mail(email: str, ticket_id: str) -> bool:
+async def _send_ticket_mail(email: str, ticket_ids: list[str]) -> bool:
     import segno, io
-    buf = io.BytesIO()
-    segno.make(_ticket_code(ticket_id), error="m").save(buf, kind="png", scale=8, border=2)
-    png_b64 = base64.b64encode(buf.getvalue()).decode()
+    attachments, imgs = [], ""
+    for i, tid in enumerate(ticket_ids, 1):
+        buf = io.BytesIO()
+        segno.make(_ticket_code(tid), error="m").save(buf, kind="png", scale=8, border=2)
+        cid = f"ticket-qr-{i}"
+        attachments.append({"filename": f"ticket-{i}.png", "content": base64.b64encode(buf.getvalue()).decode(), "content_id": cid})
+        label = f"<p style='margin:16px 0 4px;font-size:13px;font-weight:600;color:#1d1d1f;'>Ticket {i} van {len(ticket_ids)}</p>" if len(ticket_ids) > 1 else ""
+        imgs += f"{label}<img src='cid:{cid}' width='240' height='240' alt='Ticket QR-code' style='display:block;margin:8px 0 16px;'/>"
     details = "".join(f"<p style='margin:0 0 4px;font-size:14px;color:#1d1d1f;'><b>{l}:</b> {v}</p>"
                       for l, v in (("Wanneer", PARTY_DATE), ("Waar", PARTY_LOCATION)) if v)
+    plural = len(ticket_ids) > 1
     html = (
-        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>Je ticket voor het {PARTY_NAME}</h2>"
-        "<p style='margin:0 0 16px;font-size:14px;color:#6e6e73;line-height:1.6;'>Laat deze QR-code bij de ingang scannen. Het ticket is persoonlijk en werkt één keer.</p>"
-        f"{details}<img src='cid:ticket-qr' width='240' height='240' alt='Ticket QR-code' style='display:block;margin:16px 0;'/>"
+        f"<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;'>Je {'tickets' if plural else 'ticket'} voor het {PARTY_NAME}</h2>"
+        f"<p style='margin:0 0 16px;font-size:14px;color:#6e6e73;line-height:1.6;'>Laat de QR-code bij de ingang scannen. Elk ticket werkt één keer.</p>"
+        f"{details}{imgs}"
     )
-    return await _resend(email, f"Je ticket voor het {PARTY_NAME}", html,
-                         attachments=[{"filename": "ticket.png", "content": png_b64, "content_id": "ticket-qr"}])
+    return await _resend(email, f"Je {'tickets' if plural else 'ticket'} voor het {PARTY_NAME}", html, attachments=attachments)
 
 @app.post("/api/tickets/claim")
 async def claim_ticket(body: dict, request: Request, db: Session = Depends(get_session)):
@@ -3625,15 +3632,20 @@ async def claim_ticket(body: dict, request: Request, db: Session = Depends(get_s
         raise HTTPException(status_code=403, detail="Gebruik je werkadres")
 
     import uuid
-    ticket = PartyTicket(id=str(uuid.uuid4()), email=email)
     try:
-        db.add(ticket)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="Er is al een ticket gestuurd")
-    if not await _send_ticket_mail(email, ticket.id):
-        db.delete(ticket)          # mail mislukt: geen "verbrand" adres achterlaten
+        wanted = max(1, min(int(body.get("count") or 1), TICKET_MAX_PER_EMAIL))
+    except (TypeError, ValueError):
+        wanted = 1
+    existing = len(db.exec(select(PartyTicket).where(PartyTicket.email == email)).all())
+    if existing + wanted > TICKET_MAX_PER_EMAIL:
+        raise HTTPException(status_code=409, detail="Er zijn al tickets gestuurd")
+    tickets = [PartyTicket(id=str(uuid.uuid4()), email=email) for _ in range(wanted)]
+    for t in tickets:
+        db.add(t)
+    db.commit()
+    if not await _send_ticket_mail(email, [t.id for t in tickets]):
+        for t in tickets:          # mail mislukt: geen "verbrande" tickets achterlaten
+            db.delete(t)
         db.commit()
         raise HTTPException(status_code=502, detail="Mail kon niet worden verstuurd")
     return {"ok": True}
@@ -3679,12 +3691,10 @@ def validate_ticket(body: dict, customer_id: int = Depends(verify_token), db: Se
 @app.post("/api/admin/tickets/resend")
 async def admin_resend_ticket(body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     email = (body.get("email") or "").strip().lower()
-    ticket = db.exec(select(PartyTicket).where(PartyTicket.email == email)).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Geen ticket voor dit adres")
-    if ticket.status == "used":
-        raise HTTPException(status_code=409, detail="Ticket is al gebruikt")
-    if not await _send_ticket_mail(email, ticket.id):
+    open_tickets = db.exec(select(PartyTicket).where(PartyTicket.email == email, PartyTicket.status == "issued")).all()
+    if not open_tickets:
+        raise HTTPException(status_code=404, detail="Geen ongebruikte tickets voor dit adres")
+    if not await _send_ticket_mail(email, [t.id for t in open_tickets]):
         raise HTTPException(status_code=502, detail="Mail kon niet worden verstuurd")
     return {"ok": True}
 
