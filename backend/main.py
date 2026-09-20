@@ -3698,6 +3698,27 @@ async def admin_resend_ticket(body: dict, _: int = Depends(verify_admin_user), d
         raise HTTPException(status_code=502, detail="Mail kon niet worden verstuurd")
     return {"ok": True}
 
+@app.post("/api/admin/tickets/grant")
+async def admin_grant_tickets(body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Maakt extra tickets aan voor een adres (negeert limiet en rate limit) en mailt alleen de nieuwe."""
+    if not TICKET_SECRET:
+        raise HTTPException(status_code=500, detail="Tickets niet geconfigureerd")
+    import uuid
+    email = (body.get("email") or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Ongeldig e-mailadres")
+    count = max(1, min(int(body.get("count") or 1), 20))
+    tickets = [PartyTicket(id=str(uuid.uuid4()), email=email) for _ in range(count)]
+    for t in tickets:
+        db.add(t)
+    db.commit()
+    if not await _send_ticket_mail(email, [t.id for t in tickets]):
+        for t in tickets:
+            db.delete(t)
+        db.commit()
+        raise HTTPException(status_code=502, detail="Mail kon niet worden verstuurd")
+    return {"ok": True, "created": count}
+
 @app.delete("/api/admin/tickets")
 def admin_purge_tickets(_: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
     """Bewaartermijn: verwijdert alle ticketgegevens (e-mailadressen) na het feest."""
