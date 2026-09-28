@@ -3846,6 +3846,30 @@ async def set_bartender_pin(machine_id: str, body: dict, customer_id: int = Depe
 
 # ── Pompen relay ──────────────────────────────────────────────────────────────
 
+# Functies die nieuwe machinecode nodig hebben, met de minimale machine-versie. Een oudere machine kent het
+# berichttype niet en zou 30 seconden niet reageren; we geven liever meteen een duidelijke melding.
+# Voeg hier een regel toe bij elke nieuwe functie die ook in de machine-software (mixmate-repo) zit.
+FEATURE_MIN_VERSION = {
+    "create_pump": "6.2.30",
+    "delete_pump": "6.2.30",
+}
+
+def _version_tuple(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in (v or "").strip().lstrip("v").split(".")[:3])
+    except ValueError:
+        return ()
+
+def _require_machine_feature(machine_id: str, feature: str, db: Session):
+    needed = FEATURE_MIN_VERSION.get(feature)
+    machine = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    have = _version_tuple(machine.version if machine else "")
+    if needed and have and have < _version_tuple(needed):
+        raise HTTPException(
+            status_code=426,
+            detail=f"Deze functie vereist machine-versie {needed}. Deze machine draait {machine.version}. Werk de machine eerst bij (Instellingen → Update nu).",
+        )
+
 # Pompen aanmaken/verwijderen is bewust beperkt tot beheerders (ADMIN_EMAILS) en accounts uit
 # PUMP_ADMIN_EMAILS: een pomp heeft een gpio_pin en stuurt echte hardware aan.
 PUMP_ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("PUMP_ADMIN_EMAILS", "").split(",") if e.strip()}
@@ -3867,6 +3891,7 @@ def _require_pump_admin(customer_id: int, db: Session):
 @app.post("/api/machines/{machine_id}/pumps")
 async def create_pump(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _require_pump_admin(customer_id, db)
+    _require_machine_feature(machine_id, "create_pump", db)
     try:
         data = {
             "slot": int(body["slot"]),
@@ -3883,6 +3908,7 @@ async def create_pump(machine_id: str, body: dict, customer_id: int = Depends(ve
 @app.delete("/api/machines/{machine_id}/pumps/{pump_id}")
 async def delete_pump(machine_id: str, pump_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     _require_pump_admin(customer_id, db)
+    _require_machine_feature(machine_id, "delete_pump", db)
     return await _get_conn(machine_id, customer_id, db).request({"type": "delete_pump", "id": pump_id})
 
 @app.patch("/api/machines/{machine_id}/pumps/{pump_id}")
