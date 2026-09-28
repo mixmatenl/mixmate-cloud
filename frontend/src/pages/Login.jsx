@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { api } from '../api.js'
 
 export default function Login({ onLogin }) {
-  const [mode,     setMode]     = useState('login') // 'login' | 'register' | 'forgot' | 'verify'
+  const [mode,     setMode]     = useState('login') // 'login' | 'register' | 'forgot' | 'verify' | 'verifyemail'
   const [name,     setName]     = useState('')
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -18,6 +18,11 @@ export default function Login({ onLogin }) {
       setEmail(p.get('email') || '')
       setCode(p.get('code') || '')
       setMode('verify')
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (p.get('mode') === 'verifyemail') {
+      setEmail(p.get('email') || '')
+      setCode(p.get('code') || '')
+      setMode('verifyemail')
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -37,7 +42,16 @@ export default function Login({ onLogin }) {
 
       } else if (mode === 'register') {
         const r = await api.register(name, email, password)
-        onLogin(r.token, { name: r.name, email: r.email, must_change_password: false })
+        if (r.verification_required) {
+          setPassword(''); setCode(''); setMode('verifyemail')
+          setInfo('We hebben een 6-cijferige code gestuurd naar je e-mailadres. Vul die hier in om je account te activeren. Controleer ook je spam.')
+        } else {
+          onLogin(r.token, { name: r.name, email: r.email, must_change_password: false })
+        }
+
+      } else if (mode === 'verifyemail') {
+        const r = await api.verifyEmail(email, code)
+        onLogin(r.token, { name: r.name, email: r.email, must_change_password: r.must_change_password })
 
       } else if (mode === 'forgot') {
         await api.forgotPassword(email)
@@ -49,7 +63,12 @@ export default function Login({ onLogin }) {
         onLogin(r.token, { name: r.name, email: r.email, must_change_password: false })
       }
     } catch (err) {
-      setError(err.message)
+      if (mode === 'login' && err.status === 403 && /geverifieerd/i.test(err.message)) {
+        setPassword(''); setCode(''); setMode('verifyemail')
+        setInfo('Je e-mailadres is nog niet bevestigd. We hebben een nieuwe code gestuurd. Controleer ook je spam.')
+      } else {
+        setError(err.message)
+      }
     } finally {
       setLoading(false)
     }
@@ -78,7 +97,7 @@ export default function Login({ onLogin }) {
         )}
 
         {/* Terugknop bij forgot/verify */}
-        {(mode === 'forgot' || mode === 'verify') && (
+        {(mode === 'forgot' || mode === 'verify' || mode === 'verifyemail') && (
           <button onClick={() => switchMode('login')}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -92,6 +111,12 @@ export default function Login({ onLogin }) {
             <div className="text-center pb-1">
               <div className="text-base font-semibold text-[#111]">Wachtwoord vergeten</div>
               <div className="text-xs text-gray-500 mt-1">Voer je e-mailadres in. Je ontvangt een herstelcode per e-mail.</div>
+            </div>
+          )}
+          {mode === 'verifyemail' && (
+            <div className="text-center pb-1">
+              <div className="text-base font-semibold text-[#111]">Bevestig je e-mailadres</div>
+              <div className="text-xs text-gray-500 mt-1">Voer de 6-cijferige code uit je e-mail in.</div>
             </div>
           )}
           {mode === 'verify' && (
@@ -119,12 +144,12 @@ export default function Login({ onLogin }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">E-mailadres</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
               autoComplete="email"
-              readOnly={mode === 'verify'}
-              className={`w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 ${mode === 'verify' ? 'bg-gray-50 text-gray-500' : ''}`}
+              readOnly={mode === 'verify' || mode === 'verifyemail'}
+              className={`w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 ${(mode === 'verify' || mode === 'verifyemail') ? 'bg-gray-50 text-gray-500' : ''}`}
               placeholder="jouw@email.nl" />
           </div>
 
-          {mode === 'verify' && (
+          {(mode === 'verify' || mode === 'verifyemail') && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Verificatiecode uit je e-mail</label>
               <input type="text" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required
@@ -134,7 +159,7 @@ export default function Login({ onLogin }) {
             </div>
           )}
 
-          {mode !== 'forgot' && (
+          {mode !== 'forgot' && mode !== 'verifyemail' && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 {mode === 'verify' ? 'Nieuw wachtwoord' : 'Wachtwoord'}
@@ -157,9 +182,23 @@ export default function Login({ onLogin }) {
               register: 'Account aanmaken',
               forgot:   'Herstelcode versturen',
               verify:   'Wachtwoord opslaan',
+              verifyemail: 'Account activeren',
             }[mode]}
           </button>
         </form>
+
+        {mode === 'verifyemail' && (
+          <div className="text-center mt-4">
+            <button onClick={async () => {
+                setError(null)
+                try { await api.resendVerification(email); setInfo('Nieuwe code verstuurd. Controleer ook je spam.') }
+                catch (e) { setError(e.message) }
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+              Geen code ontvangen? Opnieuw versturen
+            </button>
+          </div>
+        )}
 
         {mode === 'login' && (
           <div className="text-center mt-4">

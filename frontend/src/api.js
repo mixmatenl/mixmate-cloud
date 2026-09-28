@@ -38,6 +38,8 @@ export const api = {
   // Auth
   login:          (email, password)              => req('POST', '/api/auth/login',           { email, password }),
   register:       (name, email, password)        => req('POST', '/api/auth/register',        { name, email, password }),
+  verifyEmail:     (email, code)                    => req('POST', '/api/auth/verify-email',        { email, code }),
+  resendVerification: (email)                       => req('POST', '/api/auth/resend-verification', { email }),
   changePassword:  (current_password, new_password) => req('POST', '/api/auth/change-password',  { current_password, new_password }),
   forgotPassword:  (email)                          => req('POST', '/api/auth/forgot-password',  { email }),
   resetPassword:   (email, code, password)          => req('POST', '/api/auth/reset-password',   { email, code, password }),

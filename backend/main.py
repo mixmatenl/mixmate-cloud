@@ -57,6 +57,9 @@ class Customer(SQLModel, table=True):
     country: str = "Nederland"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_login: Optional[datetime] = None
+    email_verified: bool = Field(default=False)
+    verify_code_hash: Optional[str] = None
+    verify_expires: Optional[datetime] = None
     machines: list["Machine"] = Relationship(back_populates="customer")
 
 class Machine(SQLModel, table=True):
@@ -465,6 +468,28 @@ def create_tables():
         except Exception as exc:
             print(f"[MIGRATION SKIP] {sql[:60]} — {exc}", flush=True)
 
+    # E-mailverificatie: bestaande accounts blijven werken. De UPDATE draait alleen als de kolom
+    # zojuist is toegevoegd, anders zouden nieuwe (ongeverifieerde) accounts elke start alsnog geverifieerd worden.
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE customer ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE"))
+            conn.commit()
+        with engine.connect() as conn:
+            conn.execute(text("UPDATE customer SET email_verified = TRUE"))
+            conn.commit()
+        print("[MIGRATION OK] email_verified toegevoegd; bestaande accounts geverifieerd", flush=True)
+    except Exception as exc:
+        print(f"[MIGRATION SKIP] email_verified — {exc}", flush=True)
+    for sql in (
+        "ALTER TABLE customer ADD COLUMN verify_code_hash VARCHAR",
+        "ALTER TABLE customer ADD COLUMN verify_expires TIMESTAMP",
+    ):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(sql)); conn.commit()
+        except Exception:
+            pass
+
 def get_session():
     with Session(engine) as session:
         yield session
@@ -652,6 +677,7 @@ def _create_admin_if_needed():
                 email=admin_email,
                 name="Admin",
                 password_hash=hash_password(admin_pass),
+                email_verified=True,
             )
             db.add(customer)
             db.commit()
@@ -769,19 +795,42 @@ async def machine_ws(machine_id: str, websocket: WebSocket, db: Session = Depend
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-@app.post("/api/auth/login")
-def login(body: dict, db: Session = Depends(get_session)):
-    email    = (body.get("email") or "").strip().lower()
-    password = body.get("password") or ""
+VERIFY_CODE_TTL_MIN = 30
 
-    customer = db.exec(select(Customer).where(Customer.email == email)).first()
-    if not customer or not verify_password(password, customer.password_hash):
-        raise HTTPException(status_code=401, detail="Onjuist e-mailadres of wachtwoord")
+def _hash_verify_code(code: str) -> str:
+    return hashlib.sha256(f"verify:{code}".encode()).hexdigest()
 
-    customer.last_login = datetime.utcnow()
+async def _send_verification_email(customer: Customer, db: Session) -> None:
+    """Maakt een nieuwe 6-cijferige code aan (vervangt de vorige) en mailt die."""
+    code = f"{secrets.randbelow(1000000):06d}"
+    customer.verify_code_hash = _hash_verify_code(code)
+    customer.verify_expires = datetime.utcnow() + timedelta(minutes=VERIFY_CODE_TTL_MIN)
     db.add(customer)
     db.commit()
+    if not RESEND_API_KEY:
+        print(f"[VERIFY] geen RESEND_API_KEY; code voor {customer.email}: {code}", flush=True)
+    verify_url = f"{PORTAL_URL}/login?mode=verifyemail&email={customer.email}&code={code}"
+    body = (
+        "<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+        "letter-spacing:-0.5px;'>Bevestig je e-mailadres</h2>"
+        f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+        f"Hallo {customer.name or customer.email}, gebruik de onderstaande code om je account te activeren.</p>"
+        "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+        " style='background:#f5f5f7;border-radius:16px;margin-bottom:24px;'><tr>"
+        "<td style='padding:24px;text-align:center;'>"
+        "<p style='margin:0 0 10px;font-size:11px;font-weight:700;color:#6e6e73;"
+        "text-transform:uppercase;letter-spacing:1.5px;'>Verificatiecode</p>"
+        f"<p style='margin:0 0 10px;font-size:40px;font-weight:800;letter-spacing:14px;"
+        f"color:#1d1d1f;font-family:Courier New,Courier,monospace;'>{code}</p>"
+        f"<p style='margin:0;font-size:12px;color:#aeaeb2;'>Geldig voor {VERIFY_CODE_TTL_MIN} minuten</p>"
+        "</td></tr></table>"
+        + _email_button(verify_url, "E-mailadres bevestigen →") +
+        "<p style='margin:16px 0 0;font-size:13px;color:#aeaeb2;line-height:1.6;'>"
+        "Heb je geen account aangemaakt? Dan kun je deze e-mail negeren.</p>"
+    )
+    await _resend(customer.email, "Bevestig je e-mailadres — MIXMATE", _email_html(body))
 
+def _login_response(customer: Customer) -> dict:
     return {
         "token": create_token(customer.id),
         "name": customer.name,
@@ -790,8 +839,28 @@ def login(body: dict, db: Session = Depends(get_session)):
         "is_admin": customer.email in ADMIN_EMAILS,
     }
 
+@app.post("/api/auth/login")
+async def login(body: dict, db: Session = Depends(get_session)):
+    email    = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+
+    customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    if not customer or not verify_password(password, customer.password_hash):
+        raise HTTPException(status_code=401, detail="Onjuist e-mailadres of wachtwoord")
+
+    if not customer.email_verified:
+        # Wachtwoord klopt, maar het adres is nog niet bevestigd: stuur (beperkt) een nieuwe code
+        if not _rate_limited(f"verify-mail:{email}", 3):
+            await _send_verification_email(customer, db)
+        raise HTTPException(status_code=403, detail="E-mailadres nog niet geverifieerd. We hebben een code gestuurd.")
+
+    customer.last_login = datetime.utcnow()
+    db.add(customer)
+    db.commit()
+    return _login_response(customer)
+
 @app.post("/api/auth/register")
-def register(body: dict, db: Session = Depends(get_session)):
+async def register(body: dict, request: Request, db: Session = Depends(get_session)):
     email    = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
     name     = (body.get("name") or "").strip()
@@ -801,11 +870,43 @@ def register(body: dict, db: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail="Wachtwoord moet minimaal 8 tekens zijn")
     if db.exec(select(Customer).where(Customer.email == email)).first():
         raise HTTPException(status_code=409, detail="Dit e-mailadres is al in gebruik")
-    customer = Customer(email=email, name=name, password_hash=hash_password(password))
+    if _rate_limited(f"register-ip:{_client_ip(request)}", 10):
+        raise HTTPException(status_code=429, detail="Probeer het later opnieuw")
+    customer = Customer(email=email, name=name, password_hash=hash_password(password), email_verified=False)
     db.add(customer)
     db.commit()
     db.refresh(customer)
-    return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
+    await _send_verification_email(customer, db)
+    return {"verification_required": True, "email": customer.email}
+
+@app.post("/api/auth/verify-email")
+def verify_email(body: dict, db: Session = Depends(get_session)):
+    email = (body.get("email") or "").strip().lower()
+    code  = (body.get("code") or "").strip()
+    if _rate_limited(f"verify-try:{email}", 10):
+        raise HTTPException(status_code=429, detail="Te veel pogingen, probeer het later opnieuw")
+    customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    if (not customer or not customer.verify_code_hash or not customer.verify_expires
+            or datetime.utcnow() > customer.verify_expires
+            or not hmac.compare_digest(customer.verify_code_hash, _hash_verify_code(code))):
+        raise HTTPException(status_code=400, detail="Ongeldige of verlopen code")
+    customer.email_verified = True
+    customer.verify_code_hash = None
+    customer.verify_expires = None
+    customer.last_login = datetime.utcnow()
+    db.add(customer)
+    db.commit()
+    return _login_response(customer)
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification(body: dict, request: Request, db: Session = Depends(get_session)):
+    email = (body.get("email") or "").strip().lower()
+    if _rate_limited(f"resend-ip:{_client_ip(request)}", 10) or _rate_limited(f"verify-mail:{email}", 3):
+        raise HTTPException(status_code=429, detail="Probeer het later opnieuw")
+    customer = db.exec(select(Customer).where(Customer.email == email)).first()
+    if customer and not customer.email_verified:
+        await _send_verification_email(customer, db)
+    return {"ok": True}   # altijd hetzelfde antwoord: geen bevestiging of een adres bestaat
 
 @app.post("/api/auth/set-password")
 def set_password(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
@@ -1034,6 +1135,7 @@ def reset_password(body: dict, db: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail="Wachtwoord moet minimaal 8 tekens zijn")
 
     customer.password_hash = hash_password(new_pass)
+    customer.email_verified = True   # de resetcode kwam per e-mail aan: mailbezit is bewezen
     db.add(customer)
     db.commit()
     _password_reset_codes.pop(customer.id, None)
@@ -3120,7 +3222,7 @@ def admin_create_customer(body: dict, _=Depends(verify_admin), db: Session = Dep
     if db.exec(select(Customer).where(Customer.email == email)).first():
         raise HTTPException(status_code=409, detail="E-mailadres al in gebruik")
 
-    customer = Customer(email=email, name=name, password_hash=hash_password(password))
+    customer = Customer(email=email, name=name, password_hash=hash_password(password), email_verified=True)
     db.add(customer)
     db.commit()
     db.refresh(customer)
