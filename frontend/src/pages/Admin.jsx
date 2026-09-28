@@ -235,11 +235,176 @@ function VerificatieGate({ machine: m, onVerified }) {
   )
 }
 
+function AdminPumpsModal({ machine: m, onClose }) {
+  const base = `/api/admin/machines/${m.machine_id}`
+  const [pumps, setPumps]             = useState(null)
+  const [ingredients, setIngredients] = useState([])
+  const [limited, setLimited]         = useState(false)
+  const [err, setErr]                 = useState(null)
+  const [busyId, setBusyId]           = useState(null)
+  const [savedId, setSavedId]         = useState(null)
+  const [adding, setAdding]           = useState(false)
+  const [form, setForm]               = useState({ slot: '1', gpio_pin: '', pump_type: 'peristaltic', ml_per_second: '1', ingredient_id: '' })
+
+  async function load() {
+    setErr(null)
+    try {
+      const [p, i] = await Promise.all([api.adminRaw('GET', `${base}/pumps-full`), api.adminRaw('GET', `${base}/ingredients`)])
+      const list = (p.items || []).slice().sort((a, b) => a.slot - b.slot)
+      setPumps(list); setLimited(!!p.limited); setIngredients(i.items || [])
+      setForm(f => ({ ...f, slot: String((list.length ? Math.max(...list.map(x => x.slot)) : 0) + 1) }))
+    } catch (e) { setErr(e.message); setPumps([]) }
+  }
+  useEffect(() => { load() }, [])
+
+  async function patch(pump, changes) {
+    setBusyId(pump.id); setErr(null)
+    try {
+      await api.adminRaw('PATCH', `${base}/pumps/${pump.id}`, changes)
+      setPumps(prev => prev.map(p => p.id === pump.id ? { ...p, ...changes } : p))
+      setSavedId(pump.id); setTimeout(() => setSavedId(x => (x === pump.id ? null : x)), 1500)
+    } catch (e) { setErr(e.message) }
+    setBusyId(null)
+  }
+
+  async function remove(pump) {
+    if (!confirm(`Pomp ${pump.slot} verwijderen? Recepten met het gekoppelde ingrediënt blijven bestaan.`)) return
+    setBusyId(pump.id); setErr(null)
+    try {
+      await api.adminRaw('DELETE', `${base}/pumps/${pump.id}`)
+      setPumps(prev => prev.filter(p => p.id !== pump.id))
+    } catch (e) { setErr(e.message) }
+    setBusyId(null)
+  }
+
+  async function add(e) {
+    e.preventDefault(); setAdding(true); setErr(null)
+    try {
+      await api.adminRaw('POST', `${base}/pumps`, {
+        slot: Number(form.slot), gpio_pin: Number(form.gpio_pin), pump_type: form.pump_type,
+        ml_per_second: Number(form.ml_per_second) || 1, enabled: true,
+        ingredient_id: form.ingredient_id ? Number(form.ingredient_id) : null,
+      })
+      setForm(f => ({ ...f, gpio_pin: '', ingredient_id: '' }))
+      await load()
+    } catch (e2) { setErr(e2.message) }
+    setAdding(false)
+  }
+
+  const optionsFor = (type, currentId) => {
+    const ok = ingredients.filter(i => type === 'valve' ? i.is_carbonated : !i.is_carbonated)
+    const cur = ingredients.find(i => i.id === currentId)
+    return cur && !ok.includes(cur) ? [cur, ...ok] : ok
+  }
+  const field = { border: '1px solid #e5e5ea', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }
+  const lbl = { fontSize: 10.5, fontWeight: 700, color: '#8a8a90', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 3 }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: '#f2f2f7', borderRadius: 22, width: '100%', maxWidth: 760, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,.25)', overflow: 'hidden' }}>
+
+        <div style={{ background: '#fff', padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e5e5ea' }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -.3 }}>Pompen</div>
+            <div style={{ fontSize: 13, color: '#8a8a90', marginTop: 2 }}>{m.name}{pumps ? ` · ${pumps.length} pomp${pumps.length === 1 ? '' : 'en'}` : ''}</div>
+          </div>
+          <button onClick={onClose} aria-label="Sluiten" style={{ background: '#f2f2f7', border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 18, cursor: 'pointer', color: '#6e6e73' }}>×</button>
+        </div>
+
+        <div style={{ padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {err && <div style={{ background: '#fff1f0', border: '1px solid #ffd6d3', color: '#d70015', borderRadius: 12, padding: '10px 14px', fontSize: 13 }}>{err}</div>}
+          {limited && <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 12, padding: '10px 14px', fontSize: 13 }}>Deze machine draait oudere software: pin en snelheid zijn niet zichtbaar. Werk de machine bij (versie 6.2.31) voor het volledige overzicht.</div>}
+
+          {pumps === null ? (
+            <div style={{ textAlign: 'center', color: '#aeaeb2', padding: 32, fontSize: 14 }}>Laden…</div>
+          ) : pumps.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#aeaeb2', padding: 28, fontSize: 14, background: '#fff', borderRadius: 16 }}>Nog geen pompen. Voeg hieronder de eerste toe.</div>
+          ) : pumps.map(p => {
+            const valve = p.pump_type === 'valve'
+            const dis = busyId === p.id
+            return (
+              <div key={p.id} style={{ background: '#fff', borderRadius: 16, padding: 14, display: 'flex', gap: 14, alignItems: 'flex-start', opacity: dis ? .6 : 1 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 12, background: valve ? '#007aff' : '#1d1d1f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>{p.slot}</div>
+
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  <div style={{ flex: '1 1 220px', minWidth: 180 }}>
+                    <div style={lbl}>Ingrediënt</div>
+                    <select value={p.ingredient_id || ''} disabled={dis} style={{ ...field, width: '100%' }}
+                      onChange={e => patch(p, { ingredient_id: e.target.value ? Number(e.target.value) : null })}>
+                      <option value="">— Niet ingesteld —</option>
+                      {optionsFor(p.pump_type, p.ingredient_id).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={lbl}>Type</div>
+                    <select value={p.pump_type} disabled={dis} style={field}
+                      onChange={e => patch(p, { pump_type: e.target.value, ingredient_id: null })}>
+                      <option value="peristaltic">Peristaltisch</option>
+                      <option value="valve">Valve / CO₂</option>
+                    </select>
+                  </div>
+                  {!limited && (
+                    <>
+                      <div>
+                        <div style={lbl}>GPIO-pin</div>
+                        <input key={`pin-${p.id}-${p.gpio_pin}`} type="number" defaultValue={p.gpio_pin} disabled={dis} style={{ ...field, width: 80 }}
+                          onBlur={e => { const v = Number(e.target.value); if (e.target.value !== '' && v !== p.gpio_pin) patch(p, { gpio_pin: v }) }} />
+                      </div>
+                      <div>
+                        <div style={lbl}>ml / sec</div>
+                        <input key={`ml-${p.id}-${p.ml_per_second}`} type="number" step="0.1" defaultValue={p.ml_per_second} disabled={dis} style={{ ...field, width: 80 }}
+                          onBlur={e => { const v = Number(e.target.value); if (v > 0 && v !== p.ml_per_second) patch(p, { ml_per_second: v }) }} />
+                      </div>
+                    </>
+                  )}
+                  <div>
+                    <div style={lbl}>Actief</div>
+                    <button disabled={dis} onClick={() => patch(p, { enabled: !p.enabled })} style={{ ...field, cursor: 'pointer', fontWeight: 600, color: p.enabled ? '#16a34a' : '#8a8a90', background: p.enabled ? '#ecfdf3' : '#f5f5f7', border: 'none' }}>
+                      {p.enabled ? 'Aan' : 'Uit'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => remove(p)} disabled={dis} title="Pomp verwijderen" style={{ background: 'none', border: 'none', color: '#ff3b30', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}>Verwijder</button>
+                  {savedId === p.id && <span style={{ fontSize: 12, color: '#30d158' }}>Opgeslagen</span>}
+                </div>
+              </div>
+            )
+          })}
+
+          <form onSubmit={add} style={{ background: '#fff', borderRadius: 16, padding: 16, border: '1.5px dashed #d1d1d6' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Pomp toevoegen</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+              <div><div style={lbl}>Slot</div><input required type="number" min="1" value={form.slot} onChange={e => setForm({ ...form, slot: e.target.value })} style={{ ...field, width: 70 }} /></div>
+              <div><div style={lbl}>GPIO-pin</div><input required type="number" min="0" value={form.gpio_pin} onChange={e => setForm({ ...form, gpio_pin: e.target.value })} style={{ ...field, width: 80 }} placeholder="bijv. 17" /></div>
+              <div><div style={lbl}>Type</div>
+                <select value={form.pump_type} onChange={e => setForm({ ...form, pump_type: e.target.value, ingredient_id: '' })} style={field}>
+                  <option value="peristaltic">Peristaltisch</option><option value="valve">Valve / CO₂</option>
+                </select></div>
+              <div><div style={lbl}>ml / sec</div><input type="number" step="0.1" min="0.1" value={form.ml_per_second} onChange={e => setForm({ ...form, ml_per_second: e.target.value })} style={{ ...field, width: 80 }} /></div>
+              <div style={{ flex: '1 1 180px', minWidth: 160 }}><div style={lbl}>Ingrediënt</div>
+                <select value={form.ingredient_id} onChange={e => setForm({ ...form, ingredient_id: e.target.value })} style={{ ...field, width: '100%' }}>
+                  <option value="">— Later kiezen —</option>
+                  {optionsFor(form.pump_type, null).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select></div>
+              <button type="submit" disabled={adding} style={{ ...s.btn, opacity: adding ? .5 : 1 }}>{adding ? 'Toevoegen…' : 'Toevoegen'}</button>
+            </div>
+            <div style={{ fontSize: 12, color: '#8a8a90', marginTop: 10 }}>De GPIO-pin stuurt echte hardware aan. Vul alleen kloppende pinnummers in voor pompen die echt zijn aangesloten.</div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AdminMachineCard({ machine: m }) {
   const [expanded,   setExpanded]   = useState(false)
   // Geblokkeerde machines hoeven niet geverifieerd te worden — admin heeft al toegang
   const [verified, setVerified] = useState(!!m.blocked)
   const [busy, setBusy] = useState({})
+  const [pumpsOpen, setPumpsOpen] = useState(false)
   const [msg, setMsg] = useState(null)
   const [pinModal, setPinModal] = useState(null) // 'bartender' | 'admin' | 'remove-bartender'
   const [pinVal, setPinVal] = useState('')
@@ -280,6 +445,7 @@ function AdminMachineCard({ machine: m }) {
 
   return (
     <div style={{ ...s.card, overflow: 'hidden' }}>
+      {pumpsOpen && <AdminPumpsModal machine={m} onClose={() => setPumpsOpen(false)} />}
       {/* Pin modal */}
       {pinModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
@@ -370,7 +536,7 @@ function AdminMachineCard({ machine: m }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 10 }}>Inhoud</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[['Recepten', 'get_recipes'], ['Ingrediënten', 'get_ingredients'], ['Pompen', 'get_pumps']].map(([lbl, type]) => (
-                <button key={type} disabled={!m.online} onClick={() => act(lbl, async () => {
+                <button key={type} disabled={!m.online} onClick={() => lbl === 'Pompen' ? setPumpsOpen(true) : act(lbl, async () => {
                   const data = await get(`/api/admin/machines/${m.machine_id}/${type.replace('get_', '')}`)
                   alert(JSON.stringify(data, null, 2))
                 })} style={{ ...s.btnSm, opacity: !m.online ? .4 : 1, cursor: !m.online ? 'default' : 'pointer' }}>
@@ -378,7 +544,7 @@ function AdminMachineCard({ machine: m }) {
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 8 }}>Recepten/ingrediënten/pompen aanpassen → open het klantportaal van deze klant</div>
+            <div style={{ fontSize: 12, color: '#aeaeb2', marginTop: 8 }}>Recepten en ingrediënten aanpassen → open het klantportaal van deze klant. Pompen beheer je via Pompen bekijken.</div>
           </div>
 
           {/* Danger */}

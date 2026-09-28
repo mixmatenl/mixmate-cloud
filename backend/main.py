@@ -1768,6 +1768,51 @@ async def admin_get_recipes(machine_id: str, _: int = Depends(verify_admin_user)
 async def admin_get_pumps(machine_id: str, _: int = Depends(verify_admin_user)):
     return await _admin_conn(machine_id).request({"type": "get_pumps"})
 
+_PUMP_EDIT_KEYS = ("slot", "pump_type", "gpio_pin", "ml_per_second", "enabled", "ingredient_id")
+
+def _admin_machine_or_404(machine_id: str, db: Session) -> Machine:
+    m = db.exec(select(Machine).where(Machine.machine_id == machine_id)).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Machine niet gevonden")
+    return m
+
+@app.get("/api/admin/machines/{machine_id}/pumps-full")
+async def admin_get_pumps_full(machine_id: str, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    m = _admin_machine_or_404(machine_id, db)
+    conn = _admin_conn(machine_id)
+    if _machine_features(m.version).get("get_pumps_full", True):
+        return await conn.request({"type": "get_pumps_full"})
+    result = await conn.request({"type": "get_pumps"})   # oudere machine: geen pin/snelheid beschikbaar
+    result["limited"] = True
+    return result
+
+@app.patch("/api/admin/machines/{machine_id}/pumps/{pump_id}")
+async def admin_update_pump(machine_id: str, pump_id: int, body: dict, _: int = Depends(verify_admin_user)):
+    data = {k: body[k] for k in _PUMP_EDIT_KEYS if k in body}
+    return await _admin_conn(machine_id).request({"type": "update_pump", "id": pump_id, "data": data})
+
+@app.post("/api/admin/machines/{machine_id}/pumps")
+async def admin_create_pump(machine_id: str, body: dict, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    _admin_machine_or_404(machine_id, db)
+    _require_machine_feature(machine_id, "create_pump", db)
+    try:
+        data = {
+            "slot": int(body["slot"]), "gpio_pin": int(body["gpio_pin"]),
+            "pump_type": str(body.get("pump_type", "peristaltic")),
+            "ml_per_second": float(body.get("ml_per_second", 1.0)),
+            "enabled": bool(body.get("enabled", True)),
+            "ingredient_id": body.get("ingredient_id"),
+        }
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Slot en gpio-pin zijn verplicht (getallen)")
+    return await _admin_conn(machine_id).request({"type": "create_pump", "data": data})
+
+@app.delete("/api/admin/machines/{machine_id}/pumps/{pump_id}")
+async def admin_delete_pump(machine_id: str, pump_id: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    _admin_machine_or_404(machine_id, db)
+    _require_machine_feature(machine_id, "delete_pump", db)
+    return await _admin_conn(machine_id).request({"type": "delete_pump", "id": pump_id})
+
 @app.get("/api/admin/machines/{machine_id}/ingredients")
 async def admin_get_ingredients(machine_id: str, _: int = Depends(verify_admin_user)):
     return await _admin_conn(machine_id).request({"type": "get_ingredients"})
@@ -3854,6 +3899,7 @@ FEATURE_MIN_VERSION = {
     "restart_app": "6.2.27",
     "create_pump": "6.2.30",
     "delete_pump": "6.2.30",
+    "get_pumps_full": "6.2.31",
 }
 
 def _version_tuple(v: str) -> tuple:
