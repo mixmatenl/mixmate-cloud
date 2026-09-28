@@ -3744,6 +3744,36 @@ async def set_bartender_pin(machine_id: str, body: dict, customer_id: int = Depe
 
 # ── Pompen relay ──────────────────────────────────────────────────────────────
 
+# Pompen aanmaken/verwijderen is bewust beperkt tot beheerders (ADMIN_EMAILS) en accounts uit
+# PUMP_ADMIN_EMAILS: een pomp heeft een gpio_pin en stuurt echte hardware aan.
+PUMP_ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("PUMP_ADMIN_EMAILS", "").split(",") if e.strip()}
+
+def _require_pump_admin(customer_id: int, db: Session):
+    customer = db.get(Customer, customer_id)
+    if not customer or customer.email.lower() not in (ADMIN_EMAILS | PUMP_ADMIN_EMAILS):
+        raise HTTPException(status_code=403, detail="Alleen beheerders mogen pompen aanmaken of verwijderen")
+
+@app.post("/api/machines/{machine_id}/pumps")
+async def create_pump(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _require_pump_admin(customer_id, db)
+    try:
+        data = {
+            "slot": int(body["slot"]),
+            "gpio_pin": int(body["gpio_pin"]),
+            "pump_type": str(body.get("pump_type", "peristaltic")),
+            "ml_per_second": float(body.get("ml_per_second", 1.0)),
+            "enabled": bool(body.get("enabled", True)),
+            "ingredient_id": body.get("ingredient_id"),
+        }
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="slot en gpio_pin zijn verplicht (getallen)")
+    return await _get_conn(machine_id, customer_id, db).request({"type": "create_pump", "data": data})
+
+@app.delete("/api/machines/{machine_id}/pumps/{pump_id}")
+async def delete_pump(machine_id: str, pump_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _require_pump_admin(customer_id, db)
+    return await _get_conn(machine_id, customer_id, db).request({"type": "delete_pump", "id": pump_id})
+
 @app.patch("/api/machines/{machine_id}/pumps/{pump_id}")
 async def update_pump(machine_id: str, pump_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
     return await _get_conn(machine_id, customer_id, db).request({"type": "update_pump", "id": pump_id, "data": body})
