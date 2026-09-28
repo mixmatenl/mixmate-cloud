@@ -1728,6 +1728,7 @@ async def admin_restart_app(machine_id: str, _: int = Depends(verify_admin_user)
 
 @app.post("/api/machines/{machine_id}/restart-app")
 async def customer_restart_app(machine_id: str, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _require_machine_feature(machine_id, "restart_app", db)
     await _get_conn(machine_id, customer_id, db).request({"type": "restart_app"}, timeout=10)
     return {"ok": True}
 
@@ -3850,6 +3851,7 @@ async def set_bartender_pin(machine_id: str, body: dict, customer_id: int = Depe
 # berichttype niet en zou 30 seconden niet reageren; we geven liever meteen een duidelijke melding.
 # Voeg hier een regel toe bij elke nieuwe functie die ook in de machine-software (mixmate-repo) zit.
 FEATURE_MIN_VERSION = {
+    "restart_app": "6.2.27",
     "create_pump": "6.2.30",
     "delete_pump": "6.2.30",
 }
@@ -3859,6 +3861,11 @@ def _version_tuple(v: str) -> tuple:
         return tuple(int(x) for x in (v or "").strip().lstrip("v").split(".")[:3])
     except ValueError:
         return ()
+
+def _machine_features(version: str) -> dict:
+    """Welke gated functies deze machine-versie kent. Onbekende versie = alles toestaan (geen valse blokkades)."""
+    have = _version_tuple(version)
+    return {f: (not have or have >= _version_tuple(v)) for f, v in FEATURE_MIN_VERSION.items()}
 
 def _require_machine_feature(machine_id: str, feature: str, db: Session):
     needed = FEATURE_MIN_VERSION.get(feature)
@@ -3937,6 +3944,7 @@ def _machine_dict(m: Machine) -> dict:
         "blocked":                  m.blocked,
         "blocked_by":               m.blocked_by,
         "blocked_reason":           m.blocked_reason,
+        "features":                 _machine_features(m.version),
     }
 
 # ── Webshop ───────────────────────────────────────────────────────────────────

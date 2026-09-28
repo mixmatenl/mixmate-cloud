@@ -2166,6 +2166,7 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
       </Group>
 
       <Group label="Software">
+        {status?.features?.restart_app !== false && (
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #f2f2f7' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
@@ -2188,6 +2189,7 @@ function Instellingen({ machineId, status, onRename, onUnpair, demoActive, onDem
             </div>
           )}
         </div>
+        )}
         <div style={{ padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <div>
