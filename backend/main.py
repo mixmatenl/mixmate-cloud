@@ -3749,9 +3749,18 @@ async def set_bartender_pin(machine_id: str, body: dict, customer_id: int = Depe
 PUMP_ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("PUMP_ADMIN_EMAILS", "").split(",") if e.strip()}
 
 def _require_pump_admin(customer_id: int, db: Session):
+    """Toegestaan: beheerders (ADMIN_EMAILS), PUMP_ADMIN_EMAILS, of een uitgenodigde, actieve medewerker
+    met een @mixmate.nl-adres. Registratie verifieert e-mailadressen niet, dus alleen het domein
+    controleren zou onveilig zijn: het account moet aan een Employee-record gekoppeld zijn."""
     customer = db.get(Customer, customer_id)
-    if not customer or customer.email.lower() not in (ADMIN_EMAILS | PUMP_ADMIN_EMAILS):
-        raise HTTPException(status_code=403, detail="Alleen beheerders mogen pompen aanmaken of verwijderen")
+    email = (customer.email if customer else "").lower()
+    if email in ADMIN_EMAILS or email in PUMP_ADMIN_EMAILS:
+        return
+    if email.endswith("@mixmate.nl"):
+        emp = db.exec(select(Employee).where(Employee.customer_id == customer_id)).first()
+        if emp and emp.active:
+            return
+    raise HTTPException(status_code=403, detail="Alleen beheerders en medewerkers mogen pompen aanmaken of verwijderen")
 
 @app.post("/api/machines/{machine_id}/pumps")
 async def create_pump(machine_id: str, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
