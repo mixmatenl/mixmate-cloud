@@ -139,6 +139,7 @@ export const api = {
   financeCreate:  (d)       => req('POST',   '/api/finance/entries', d),
   financeUpdate:  (id, d)   => req('PATCH',  `/api/finance/entries/${id}`, d),
   financeDelete:  (id)      => req('DELETE', `/api/finance/entries/${id}`),
+  financeVatPayout: (entry_ids, paid_at) => req('POST', '/api/finance/vat-payout', { entry_ids, paid_at }),
   financeRemoveAttachment: (id) => req('DELETE', `/api/finance/entries/${id}/attachment`),
   financeUpload: async (id, file) => {
     const token = localStorage.getItem('mm_token')

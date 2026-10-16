@@ -3930,6 +3930,18 @@ def _cents(value, field: str) -> int:
         raise HTTPException(status_code=400, detail=f"{field}: ongeldig bedrag")
     return int((d * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
+def _paid_date(v) -> Optional[date]:
+    """Datum waarop de BTW is teruggegeven. Leeg = nog niet. Niet in de toekomst (1 dag marge: NL loopt voor op UTC)."""
+    if not v:
+        return None
+    try:
+        d = date.fromisoformat(str(v)[:10])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ongeldige datum voor uitbetaling")
+    if d > datetime.utcnow().date() + timedelta(days=1):
+        raise HTTPException(status_code=400, detail="De datum van teruggave kan niet in de toekomst liggen")
+    return d
+
 def _finance_fields(body: dict, partial: bool = False) -> dict:
     """Valideert en normaliseert de invoer. Bij partial=True alleen de meegestuurde velden."""
     out: dict = {}
@@ -3959,11 +3971,7 @@ def _finance_fields(body: dict, partial: bool = False) -> dict:
     for k in ("in_tax_return", "vat_to_person"):
         if has(k): out[k] = bool(body[k])
     if has("vat_paid_at"):
-        v = body.get("vat_paid_at")
-        try:
-            out["vat_paid_at"] = date.fromisoformat(str(v)[:10]) if v else None
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Ongeldige datum voor uitbetaling")
+        out["vat_paid_at"] = _paid_date(body.get("vat_paid_at"))
     # bedrag + BTW horen bij elkaar: bij wijziging van een van beide beide opnieuw bepalen
     if not partial or has("amount") or has("vat_rate") or has("vat_amount"):
         return out | {"_money": True}
@@ -4081,6 +4089,30 @@ def finance_update(entry_id: int, body: dict, customer_id: int = Depends(verify_
         setattr(e, k, v)
     db.add(e); db.commit(); db.refresh(e)
     return _finance_dict(e)
+
+@app.post("/api/finance/vat-payout")
+def finance_vat_payout(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    """Registreert in één keer dat de BTW van meerdere rekeningen is teruggegeven. Alles of niets."""
+    _finance_user(customer_id, db)
+    ids = body.get("entry_ids")
+    if not isinstance(ids, list) or not ids or len(ids) > 500 or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+        raise HTTPException(status_code=400, detail="Kies minstens één rekening")
+    paid_at = _paid_date(body.get("paid_at"))
+    if not paid_at:
+        raise HTTPException(status_code=400, detail="Kies de datum van teruggave")
+    ids = list(dict.fromkeys(ids))
+    entries = db.exec(select(FinanceEntry).where(FinanceEntry.id.in_(ids))).all()
+    if len(entries) != len(ids):
+        raise HTTPException(status_code=404, detail="Een of meer rekeningen bestaan niet meer. Ververs de pagina.")
+    if any(not e.vat_to_person for e in entries):
+        raise HTTPException(status_code=400, detail="Bij een of meer rekeningen gaat de BTW niet terug naar de persoon")
+    if any(e.vat_paid_at for e in entries):
+        raise HTTPException(status_code=409, detail="Bij een of meer rekeningen is de BTW al als teruggegeven geregistreerd. Ververs de pagina.")
+    for e in entries:
+        e.vat_paid_at = paid_at
+        db.add(e)
+    db.commit()
+    return {"updated": len(entries), "total_cents": sum(e.vat_cents for e in entries), "paid_at": paid_at.isoformat()}
 
 @app.delete("/api/finance/entries/{entry_id}")
 def finance_delete(entry_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):

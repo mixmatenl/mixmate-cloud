@@ -27,17 +27,18 @@ const S = {
   btnGhost: { background: '#f2f2f7', color: '#1d1d1f', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
 }
 
-function Metric({ label, value, sub, accent }) {
+function Metric({ label, value, sub, accent, children }) {
   return (
     <div style={{ padding: '14px 0', borderTop: '1px solid #f2f2f7' }}>
       <div style={{ fontSize: 12, color: '#6e6e73', fontWeight: 600 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -.5, color: accent || '#1d1d1f', marginTop: 2 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: '#8a8a90', marginTop: 2 }}>{sub}</div>}
+      {children}
     </div>
   )
 }
 
-function PersonCard({ person, sum }) {
+function PersonCard({ person, sum, onPayout }) {
   const initials = person.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
   return (
     <div style={{ ...S.card, padding: '18px 20px 6px', flex: '1 1 320px', minWidth: 0 }}>
@@ -51,7 +52,11 @@ function PersonCard({ person, sum }) {
       <Metric label="Inbreng (investeringen, excl. BTW)" value={money(sum.inbreng_excl_cents)}
         sub={`${money(sum.inbreng_incl_cents)} incl. BTW · BTW ${money(sum.inbreng_vat_cents)}`} />
       <Metric label="BTW nog terug te krijgen (privé)" value={money(sum.vat_refund_open_cents)} accent={sum.vat_refund_open_cents > 0 ? '#c2410c' : undefined}
-        sub={`Totaal ${money(sum.vat_refund_total_cents)} · al ontvangen ${money(sum.vat_refund_paid_cents)}`} />
+        sub={`Totaal ${money(sum.vat_refund_total_cents)} · al ontvangen ${money(sum.vat_refund_paid_cents)}`}>
+        {sum.vat_refund_open_cents > 0 && (
+          <button onClick={() => onPayout(person)} style={{ ...S.btn, marginTop: 10, padding: '8px 14px', fontSize: 13 }}>BTW teruggegeven registreren</button>
+        )}
+      </Metric>
       <Metric label="Privé gebruik (wel in aangifte, geen inbreng)" value={money(sum.prive_incl_cents)}
         sub={`BTW ${money(sum.prive_vat_cents)} · waarvan in aangifte ${money(sum.prive_in_aangifte_incl_cents)}`} />
     </div>
@@ -64,6 +69,88 @@ function Chip({ children, color, bg, onClick, title }) {
       style={{ border: 'none', borderRadius: 20, padding: '3px 10px', fontSize: 11.5, fontWeight: 700, color, background: bg, cursor: onClick ? 'pointer' : 'default', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
       {children}
     </button>
+  )
+}
+
+function PayoutModal({ person, onClose, onDone }) {
+  const [entries, setEntries] = useState(null)
+  const [picked, setPicked]   = useState(new Set())
+  const [date, setDate]       = useState(todayISO())
+  const [busy, setBusy]       = useState(false)
+  const [err, setErr]         = useState(null)
+
+  useEffect(() => {
+    // Altijd álle openstaande rekeningen van deze persoon, ook als de pagina gefilterd is.
+    api.financeOverview(`person=${encodeURIComponent(person.email)}`).then(d => {
+      const open = d.entries.filter(e => e.vat_to_person && !e.vat_paid_at && e.vat_cents > 0).sort((a, b) => a.entry_date.localeCompare(b.entry_date))
+      setEntries(open); setPicked(new Set(open.map(e => e.id)))
+    }).catch(e => { setErr(e.message); setEntries([]) })
+  }, [person.email])
+
+  const total = (entries || []).filter(e => picked.has(e.id)).reduce((a, e) => a + e.vat_cents, 0)
+  const toggle = id => setPicked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const allOn = entries && picked.size === entries.length
+
+  async function submit() {
+    setBusy(true); setErr(null)
+    try { await api.financeVatPayout([...picked], date); onDone() }
+    catch (e) { setErr(e.message); setBusy(false) }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      onClick={e => e.target === e.currentTarget && !busy && onClose()}>
+      <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 560, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,.25)', fontFamily: FONT, overflow: 'hidden' }}>
+        <div style={{ padding: '20px 24px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>BTW teruggegeven aan {person.name}</div>
+            <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 3 }}>Vink de rekeningen aan waarvan de BTW is overgemaakt.</div>
+          </div>
+          <button onClick={onClose} aria-label="Sluiten" style={{ background: '#f2f2f7', border: 'none', borderRadius: '50%', width: 30, height: 30, fontSize: 17, cursor: 'pointer', color: '#6e6e73', flexShrink: 0 }}>×</button>
+        </div>
+
+        <div style={{ padding: '0 24px', overflowY: 'auto', flex: 1 }}>
+          {entries === null ? <div style={{ padding: 30, textAlign: 'center', color: '#aeaeb2' }}>Laden…</div>
+          : entries.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: '#aeaeb2' }}>Geen openstaande BTW.</div>
+          : <>
+            <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13, fontWeight: 600, padding: '8px 0', cursor: 'pointer', borderBottom: '1px solid #f2f2f7' }}>
+              <input type="checkbox" checked={allOn} onChange={() => setPicked(allOn ? new Set() : new Set(entries.map(e => e.id)))} />
+              Alles selecteren ({entries.length})
+            </label>
+            {entries.map(e => (
+              <label key={e.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f2f2f7', cursor: 'pointer' }}>
+                <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggle(e.id)} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere' }}>{e.description}</div>
+                  <div style={{ fontSize: 12, color: '#8a8a90' }}>{fmtDate(e.entry_date)}{e.supplier ? ` · ${e.supplier}` : ''} · rekening {money(e.amount_cents)}</div>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{money(e.vat_cents)}</div>
+              </label>
+            ))}
+          </>}
+        </div>
+
+        <div style={{ padding: '14px 24px 20px', borderTop: '1px solid #e5e5ea', background: '#fafafa' }}>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 150px' }}>
+              <div style={S.label}>Datum teruggave</div>
+              <input type="date" value={date} max={todayISO()} onChange={e => setDate(e.target.value)} style={S.inp} />
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 12, color: '#6e6e73' }}>Over te maken</div>
+              <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -.5 }}>{money(total)}</div>
+            </div>
+          </div>
+          {err && <div style={{ marginTop: 12, background: '#fff1f0', border: '1px solid #ffd6d3', color: '#d70015', borderRadius: 10, padding: '8px 12px', fontSize: 13 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
+            <button onClick={onClose} disabled={busy} style={S.btnGhost}>Annuleren</button>
+            <button onClick={submit} disabled={busy || picked.size === 0 || !date} style={{ ...S.btn, opacity: (busy || picked.size === 0 || !date) ? .4 : 1 }}>
+              {busy ? 'Opslaan…' : `Registreren (${picked.size})`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -80,6 +167,8 @@ function EntryModal({ entry, people, onClose, onSaved }) {
   const [vatTouched, setVatTouched] = useState(false)
   const [inReturn, setInReturn] = useState(entry?.in_tax_return ?? true)
   const [toPerson, setToPerson] = useState(entry?.vat_to_person ?? true)
+  const [paidAt, setPaidAt]   = useState(entry?.vat_paid_at || '')
+  const [paidTouched, setPaidTouched] = useState(false)
   const [notes, setNotes]     = useState(entry?.notes || '')
   const [file, setFile]       = useState(null)
   const [removeFile, setRemoveFile] = useState(false)
@@ -105,6 +194,7 @@ function EntryModal({ entry, people, onClose, onSaved }) {
         amount: (cents / 100).toFixed(2), vat_rate: Number(rate), vat_amount: (vatCents / 100).toFixed(2),
         in_tax_return: inReturn, vat_to_person: toPerson,
       }
+      if (paidTouched) body.vat_paid_at = paidAt || null   // alleen meesturen als je het veld aanraakt
       let saved = editing ? await api.financeUpdate(entry.id, body) : await api.financeCreate(body)
       if (removeFile && editing && entry.has_attachment && !file) saved = await api.financeRemoveAttachment(saved.id)
       if (file) saved = await api.financeUpload(saved.id, file)
@@ -183,6 +273,18 @@ function EntryModal({ entry, people, onClose, onSaved }) {
           </label>
         </div>
 
+        {toPerson && (
+          <div style={{ marginTop: 14 }}>
+            <div style={S.label}>BTW teruggegeven op</div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input type="date" value={paidAt} max={todayISO()} onChange={e => { setPaidAt(e.target.value); setPaidTouched(true) }} style={{ ...S.inp, width: 190 }} />
+              {paidAt
+                ? <button type="button" onClick={() => { setPaidAt(''); setPaidTouched(true) }} style={{ background: 'none', border: 'none', color: '#ff3b30', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>Wissen</button>
+                : <span style={{ fontSize: 12.5, color: '#8a8a90' }}>Nog niet teruggegeven</span>}
+            </div>
+          </div>
+        )}
+
         <div style={{ marginTop: 16 }}><div style={S.label}>Bonnetje of factuur</div>
           {editing && entry.has_attachment && !removeFile && !file && (
             <div style={{ fontSize: 13, color: '#3a3a3c', marginBottom: 8 }}>
@@ -217,6 +319,7 @@ export default function Financien() {
   const [kind, setKind]       = useState('')
   const [modal, setModal]     = useState(null)   // null | 'new' | entry
   const [busyId, setBusyId]   = useState(null)
+  const [payoutFor, setPayoutFor] = useState(null)
 
   const qs = useMemo(() => {
     const p = new URLSearchParams()
@@ -297,7 +400,7 @@ export default function Financien() {
 
       {!data ? <div style={{ color: '#aeaeb2', padding: 40, textAlign: 'center' }}>Laden…</div> : <>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
-          {people.map(p => <PersonCard key={p.email} person={p} sum={data.summary[p.email]} />)}
+          {people.map(p => <PersonCard key={p.email} person={p} sum={data.summary[p.email]} onPayout={setPayoutFor} />)}
         </div>
         <div style={{ fontSize: 12.5, color: '#6e6e73', marginBottom: 24, padding: '0 4px' }}>
           Totaal BTW op rekeningen die in de aangifte staan: <b>{money(totalAangifteVat)}</b>
@@ -366,6 +469,8 @@ export default function Financien() {
           Dit overzicht is een administratie-hulpmiddel en geen fiscaal advies. Laat de verwerking van privé gebruik en de uitbetaling van BTW aan jezelf controleren door je boekhouder.
         </p>
       </>}
+
+      {payoutFor && <PayoutModal person={payoutFor} onClose={() => setPayoutFor(null)} onDone={() => { setPayoutFor(null); load() }} />}
 
       {modal && (
         <EntryModal entry={modal === 'new' ? null : modal} people={people} onClose={() => setModal(null)}
