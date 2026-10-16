@@ -9,6 +9,7 @@ import Rapporten from './pages/Rapporten.jsx'
 import Meldingen from './pages/Meldingen.jsx'
 import Garantie from './pages/Garantie.jsx'
 import Facturen from './pages/Facturen.jsx'
+import Financien from './pages/Financien.jsx'
 import Admin from './pages/Admin.jsx'
 import Webshop from './pages/Webshop.jsx'
 import Apps from './pages/Apps.jsx'
@@ -332,6 +333,7 @@ export default function App() {
         <Route path="/support" element={<Support user={user} />} />
         <Route path="/garantie" element={<Garantie />} />
         <Route path="/facturen" element={<Facturen />} />
+        <Route path="/financien" element={<Financien />} />
         <Route path="/account" element={<Account user={user} onLogout={onLogout} />} />
         <Route path="/admin"        element={<Admin />} />
         <Route path="/onderhoud"    element={<Onderhoud />} />

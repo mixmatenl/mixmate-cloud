@@ -159,9 +159,12 @@ function initials(name) {
 }
 
 const ADMIN_EMAILS = ['r.muller@mixmate.nl', 'info@mixmate.nl', 'h.louwrink@mixmate.nl']
+// Alleen om het menu-item te tonen; de server controleert de toegang zelf (FINANCE_EMAILS).
+const FINANCE_EMAILS = ['r.muller@mixmate.nl', 'h.louwrink@mixmate.nl']
 
 export default function Layout({ user, onLogout, children }) {
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
+  const isFinance = user?.email && FINANCE_EMAILS.includes(user.email.toLowerCase())
   const location   = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const path = location.pathname
@@ -290,6 +293,12 @@ export default function Layout({ user, onLogout, children }) {
               </>}
             </NavSection>
 
+
+            {isFinance && (
+              <NavSection label="Financieel">
+                <NavRow active={path === '/financien'} to="/financien" icon={Icons.invoice} label="Inbreng & BTW" />
+              </NavSection>
+            )}
 
             <NavSection label="Webshop">
               <NavRow active={inWebshop} to="/webshop" icon={Icons.webshop} label="Webshop" />

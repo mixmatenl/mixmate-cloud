@@ -133,6 +133,29 @@ export const api = {
   getMachinePours:     (mid, date) => req('GET', `/api/machines/${mid}/pours${date ? `?date=${date}` : ''}`),
   getMachinePourStats: (mid)       => req('GET', `/api/machines/${mid}/pour-stats`),
 
+  // Financieel (alleen vennoten)
+  financeAccess:  ()        => req('GET',    '/api/finance/access'),
+  financeOverview: (qs)     => req('GET',    `/api/finance/overview${qs ? `?${qs}` : ''}`),
+  financeCreate:  (d)       => req('POST',   '/api/finance/entries', d),
+  financeUpdate:  (id, d)   => req('PATCH',  `/api/finance/entries/${id}`, d),
+  financeDelete:  (id)      => req('DELETE', `/api/finance/entries/${id}`),
+  financeRemoveAttachment: (id) => req('DELETE', `/api/finance/entries/${id}/attachment`),
+  financeUpload: async (id, file) => {
+    const token = localStorage.getItem('mm_token')
+    const form  = new FormData(); form.append('file', file)
+    const res   = await fetch(`${BASE}/api/finance/entries/${id}/attachment`, {
+      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
+    })
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload mislukt') }
+    return res.json()
+  },
+  financeBlob: async (path) => {
+    const token = localStorage.getItem('mm_token')
+    const res   = await fetch(`${BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Downloaden mislukt') }
+    return res.blob()
+  },
+
   // Backup (recepten/ingrediënten/glazen/categorieën)
   createBackup:  (mid)              => req('POST',   `/api/machines/${mid}/backup`),
   listBackups:   ()                 => req('GET',    '/api/backups'),

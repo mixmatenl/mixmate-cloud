@@ -11,6 +11,9 @@ import os
 import secrets
 import hashlib
 import hmac
+import csv
+import io
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import base64
 import re
 import time
@@ -21,10 +24,10 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Field, Session, SQLModel, create_engine, select, delete, Relationship
-from sqlalchemy import text
+from sqlalchemy import text, Column, LargeBinary
 import httpx
 import jwt
 import boto3
@@ -124,6 +127,31 @@ class MachineBackup(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # JSON: {"ingredient_categories": [...], "ingredients": [...], "glasses": [...], "categories": [...], "recipes": [...]}
     data_json: str = "{}"
+
+class FinanceEntry(SQLModel, table=True):
+    """Rekening van een investering (inbreng) of privé-uitgave van een vennoot. Bedragen in centen."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entry_type: str = Field(default="investering", index=True)   # investering | prive
+    person_email: str = Field(index=True)
+    entry_date: date
+    description: str = ""
+    supplier: str = ""
+    amount_cents: int = 0            # totaalbedrag incl. BTW
+    vat_cents: int = 0               # BTW-bedrag
+    vat_rate: float = 21.0
+    in_tax_return: bool = True       # meenemen in de belastingaangifte
+    vat_to_person: bool = False      # BTW hiervan gaat terug naar de persoon (privé)
+    vat_paid_at: Optional[date] = None
+    notes: str = ""
+    attachment_name: str = ""
+    attachment_mime: str = ""
+    created_by: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class FinanceAttachment(SQLModel, table=True):
+    """Bonnetje/factuur bij een FinanceEntry. Bewust in de database (achter inlog) en niet in /uploads (publiek)."""
+    entry_id: int = Field(primary_key=True, foreign_key="financeentry.id")
+    data: bytes = Field(sa_column=Column(LargeBinary))
 
 class PartyTicket(SQLModel, table=True):
     id: str = Field(primary_key=True)                 # uuid4
@@ -3875,6 +3903,276 @@ def admin_purge_tickets(_: int = Depends(verify_admin_user), db: Session = Depen
     db.exec(delete(PartyTicket))
     db.commit()
     return {"deleted": n}
+
+# ── Financieel: inbreng & BTW van de vennoten ─────────────────────────────────
+# Alleen zichtbaar voor de twee vennoten (FINANCE_EMAILS). Toegang wordt hier op de server afgedwongen.
+
+FINANCE_EMAILS = [e.strip().lower() for e in os.getenv("FINANCE_EMAILS", "r.muller@mixmate.nl,h.louwrink@mixmate.nl").split(",") if e.strip()]
+FINANCE_TYPES = {"investering", "prive"}
+FINANCE_VAT_RATES = {0.0, 9.0, 21.0}
+FINANCE_MAX_FILE = 10 * 1024 * 1024
+
+def _finance_user(customer_id: int, db: Session) -> Customer:
+    c = db.get(Customer, customer_id)
+    if not c or c.email.lower() not in FINANCE_EMAILS or not c.email_verified:
+        raise HTTPException(status_code=403, detail="Geen toegang")
+    return c
+
+def _cents(value, field: str) -> int:
+    try:
+        raw = str(value).strip()
+        if "," in raw:                       # NL-notatie: 1.234,56
+            raw = raw.replace(".", "").replace(",", ".")
+        elif re.fullmatch(r"\d{1,3}(\.\d{3})+", raw):   # 1.210 of 12.500.000 = duizendtallen, geen decimalen
+            raw = raw.replace(".", "")
+        d = Decimal(raw)
+    except (InvalidOperation, AttributeError):
+        raise HTTPException(status_code=400, detail=f"{field}: ongeldig bedrag")
+    return int((d * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+def _finance_fields(body: dict, partial: bool = False) -> dict:
+    """Valideert en normaliseert de invoer. Bij partial=True alleen de meegestuurde velden."""
+    out: dict = {}
+    def has(k): return k in body
+    if not partial or has("entry_type"):
+        t = str(body.get("entry_type", "")).strip()
+        if t not in FINANCE_TYPES:
+            raise HTTPException(status_code=400, detail="Soort moet 'investering' of 'prive' zijn")
+        out["entry_type"] = t
+    if not partial or has("person_email"):
+        p = str(body.get("person_email", "")).strip().lower()
+        if p not in FINANCE_EMAILS:
+            raise HTTPException(status_code=400, detail="Onbekende persoon")
+        out["person_email"] = p
+    if not partial or has("entry_date"):
+        try:
+            out["entry_date"] = date.fromisoformat(str(body.get("entry_date", ""))[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Ongeldige datum")
+    if not partial or has("description"):
+        d = str(body.get("description", "")).strip()
+        if not d:
+            raise HTTPException(status_code=400, detail="Omschrijving is verplicht")
+        out["description"] = d[:200]
+    for k, n in (("supplier", 120), ("notes", 1000)):
+        if has(k): out[k] = str(body.get(k) or "").strip()[:n]
+    for k in ("in_tax_return", "vat_to_person"):
+        if has(k): out[k] = bool(body[k])
+    if has("vat_paid_at"):
+        v = body.get("vat_paid_at")
+        try:
+            out["vat_paid_at"] = date.fromisoformat(str(v)[:10]) if v else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Ongeldige datum voor uitbetaling")
+    # bedrag + BTW horen bij elkaar: bij wijziging van een van beide beide opnieuw bepalen
+    if not partial or has("amount") or has("vat_rate") or has("vat_amount"):
+        return out | {"_money": True}
+    return out
+
+def _apply_money(fields: dict, body: dict, current: Optional[FinanceEntry]) -> dict:
+    if not fields.pop("_money", False):
+        return fields
+    amount = _cents(body["amount"], "Bedrag") if "amount" in body else (current.amount_cents if current else None)
+    if amount is None or amount <= 0 or amount > 1_000_000_00:
+        raise HTTPException(status_code=400, detail="Bedrag (incl. BTW) moet groter dan 0 zijn")
+    try:
+        rate = float(body["vat_rate"]) if "vat_rate" in body else (current.vat_rate if current else 21.0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Ongeldig BTW-tarief")
+    if rate not in FINANCE_VAT_RATES:
+        raise HTTPException(status_code=400, detail="BTW-tarief moet 0, 9 of 21 zijn")
+    if body.get("vat_amount") not in (None, ""):
+        vat = _cents(body["vat_amount"], "BTW-bedrag")
+    else:
+        vat = int((Decimal(amount) * Decimal(str(rate)) / (Decimal(100) + Decimal(str(rate)))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if vat < 0 or vat > amount:
+        raise HTTPException(status_code=400, detail="BTW-bedrag klopt niet bij het totaalbedrag")
+    fields.update(amount_cents=amount, vat_cents=vat, vat_rate=rate)
+    return fields
+
+def _finance_dict(e: FinanceEntry) -> dict:
+    return {
+        "id": e.id, "entry_type": e.entry_type, "person_email": e.person_email,
+        "entry_date": e.entry_date.isoformat(), "description": e.description, "supplier": e.supplier,
+        "amount_cents": e.amount_cents, "vat_cents": e.vat_cents, "excl_cents": e.amount_cents - e.vat_cents,
+        "vat_rate": e.vat_rate, "in_tax_return": e.in_tax_return, "vat_to_person": e.vat_to_person,
+        "vat_paid_at": e.vat_paid_at.isoformat() if e.vat_paid_at else None, "notes": e.notes,
+        "attachment_name": e.attachment_name, "attachment_mime": e.attachment_mime, "has_attachment": bool(e.attachment_name),
+        "created_by": e.created_by, "created_at": e.created_at.isoformat() + "Z",
+    }
+
+def _finance_summary(entries: list) -> dict:
+    """Totalen per persoon. Inbreng = alleen 'investering'; privé telt nooit mee als inbreng."""
+    out = {}
+    for email in FINANCE_EMAILS:
+        mine = [e for e in entries if e.person_email == email]
+        inv = [e for e in mine if e.entry_type == "investering"]
+        prv = [e for e in mine if e.entry_type == "prive"]
+        refund = [e for e in mine if e.vat_to_person]
+        out[email] = {
+            "inbreng_incl_cents": sum(e.amount_cents for e in inv),
+            "inbreng_excl_cents": sum(e.amount_cents - e.vat_cents for e in inv),
+            "inbreng_vat_cents": sum(e.vat_cents for e in inv),
+            "prive_incl_cents": sum(e.amount_cents for e in prv),
+            "prive_vat_cents": sum(e.vat_cents for e in prv),
+            "prive_in_aangifte_incl_cents": sum(e.amount_cents for e in prv if e.in_tax_return),
+            "vat_refund_total_cents": sum(e.vat_cents for e in refund),
+            "vat_refund_paid_cents": sum(e.vat_cents for e in refund if e.vat_paid_at),
+            "vat_refund_open_cents": sum(e.vat_cents for e in refund if not e.vat_paid_at),
+            "aangifte_vat_cents": sum(e.vat_cents for e in mine if e.in_tax_return),
+            "count": len(mine),
+        }
+    return out
+
+def _finance_query(db: Session, year: Optional[int], person: str, kind: str):
+    q = select(FinanceEntry)
+    if year:
+        q = q.where(FinanceEntry.entry_date >= date(year, 1, 1), FinanceEntry.entry_date <= date(year, 12, 31))
+    if person in FINANCE_EMAILS:
+        q = q.where(FinanceEntry.person_email == person)
+    if kind in FINANCE_TYPES:
+        q = q.where(FinanceEntry.entry_type == kind)
+    return db.exec(q.order_by(FinanceEntry.entry_date.desc(), FinanceEntry.id.desc())).all()
+
+@app.get("/api/finance/access")
+def finance_access(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    c = db.get(Customer, customer_id)
+    return {"allowed": bool(c and c.email.lower() in FINANCE_EMAILS and c.email_verified)}
+
+@app.get("/api/finance/overview")
+def finance_overview(year: Optional[int] = None, person: str = "", kind: str = "",
+                     customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    entries = _finance_query(db, year, person.lower(), kind)
+    all_entries = db.exec(select(FinanceEntry)).all()
+    people = []
+    for email in FINANCE_EMAILS:
+        c = db.exec(select(Customer).where(Customer.email == email)).first()
+        people.append({"email": email, "name": (c.name if c and c.name else email.split("@")[0])})
+    return {
+        "people": people,
+        "years": sorted({e.entry_date.year for e in all_entries}, reverse=True),
+        "entries": [_finance_dict(e) for e in entries],
+        "summary": _finance_summary(entries),
+    }
+
+@app.post("/api/finance/entries")
+def finance_create(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    user = _finance_user(customer_id, db)
+    fields = _apply_money(_finance_fields(body), body, None)
+    if "vat_to_person" not in fields:
+        fields["vat_to_person"] = fields["entry_type"] == "investering"
+    e = FinanceEntry(**fields, created_by=user.email)
+    db.add(e); db.commit(); db.refresh(e)
+    return _finance_dict(e)
+
+@app.patch("/api/finance/entries/{entry_id}")
+def finance_update(entry_id: int, body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    e = db.get(FinanceEntry, entry_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    fields = _apply_money(_finance_fields(body, partial=True), body, e)
+    # Is de BTW al als ontvangen gemarkeerd en verandert het BTW-bedrag? Dan klopt de uitbetaling niet meer:
+    # zet 'm terug naar "te ontvangen", tenzij de aanvrager de uitbetaaldatum zelf meestuurt.
+    if e.vat_paid_at and "vat_paid_at" not in fields and fields.get("vat_cents", e.vat_cents) != e.vat_cents:
+        fields["vat_paid_at"] = None
+    for k, v in fields.items():
+        setattr(e, k, v)
+    db.add(e); db.commit(); db.refresh(e)
+    return _finance_dict(e)
+
+@app.delete("/api/finance/entries/{entry_id}")
+def finance_delete(entry_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    e = db.get(FinanceEntry, entry_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    att = db.get(FinanceAttachment, entry_id)
+    if att: db.delete(att)
+    db.delete(e); db.commit()
+    return {"ok": True}
+
+def _sniff_file(data: bytes) -> Optional[tuple]:
+    if data[:5] == b"%PDF-": return ("application/pdf", "pdf")
+    if data[:3] == b"\xff\xd8\xff": return ("image/jpeg", "jpg")
+    if data[:8] == b"\x89PNG\r\n\x1a\n": return ("image/png", "png")
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP": return ("image/webp", "webp")
+    return None
+
+@app.post("/api/finance/entries/{entry_id}/attachment")
+async def finance_upload(entry_id: int, file: UploadFile = File(...), customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    e = db.get(FinanceEntry, entry_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    data = await file.read(FINANCE_MAX_FILE + 1)
+    if len(data) > FINANCE_MAX_FILE:
+        raise HTTPException(status_code=413, detail="Bestand is te groot (max 10 MB)")
+    kind = _sniff_file(data)
+    if not kind:
+        raise HTTPException(status_code=415, detail="Alleen PDF, JPG, PNG of WEBP")
+    mime, ext = kind
+    raw_name = (file.filename or "rekening").replace("\\", "/").rsplit("/", 1)[-1]          # alleen de bestandsnaam, geen pad
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_name.rsplit(".", 1)[0]).strip("._-")[:60] or "rekening"
+    att = db.get(FinanceAttachment, entry_id)
+    if att: att.data = data
+    else: db.add(FinanceAttachment(entry_id=entry_id, data=data))
+    e.attachment_name, e.attachment_mime = f"{base}.{ext}", mime
+    db.add(e); db.commit()
+    return _finance_dict(e)
+
+@app.get("/api/finance/entries/{entry_id}/attachment")
+def finance_download(entry_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    e, att = db.get(FinanceEntry, entry_id), db.get(FinanceAttachment, entry_id)
+    if not e or not att:
+        raise HTTPException(status_code=404, detail="Geen bijlage")
+    return Response(content=att.data, media_type=e.attachment_mime or "application/octet-stream", headers={
+        "Content-Disposition": f'inline; filename="{e.attachment_name or "rekening"}"',
+        "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store",
+    })
+
+@app.delete("/api/finance/entries/{entry_id}/attachment")
+def finance_remove_attachment(entry_id: int, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    e = db.get(FinanceEntry, entry_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Niet gevonden")
+    att = db.get(FinanceAttachment, entry_id)
+    if att: db.delete(att)
+    e.attachment_name = e.attachment_mime = ""
+    db.add(e); db.commit()
+    return _finance_dict(e)
+
+def _csv_text(v: str) -> str:
+    v = str(v or "")
+    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v   # voorkomt formule-injectie in Excel
+
+def _eur(cents: int) -> str:
+    return f"{cents / 100:.2f}".replace(".", ",")
+
+@app.get("/api/finance/export")
+def finance_export(year: Optional[int] = None, person: str = "", kind: str = "",
+                   customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    names = {}
+    for email in FINANCE_EMAILS:
+        c = db.exec(select(Customer).where(Customer.email == email)).first()
+        names[email] = c.name if c and c.name else email
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Datum", "Soort", "Persoon", "Omschrijving", "Leverancier", "Bedrag incl. BTW", "BTW-tarief %",
+                "BTW-bedrag", "Bedrag excl. BTW", "In aangifte", "BTW terug naar persoon", "BTW uitbetaald op", "Notities"])
+    for e in reversed(_finance_query(db, year, person.lower(), kind)):
+        w.writerow([e.entry_date.isoformat(), "Investering (inbreng)" if e.entry_type == "investering" else "Privé uitgave",
+                    _csv_text(names.get(e.person_email, e.person_email)), _csv_text(e.description), _csv_text(e.supplier),
+                    _eur(e.amount_cents), f"{e.vat_rate:g}", _eur(e.vat_cents), _eur(e.amount_cents - e.vat_cents),
+                    "ja" if e.in_tax_return else "nee", "ja" if e.vat_to_person else "nee",
+                    e.vat_paid_at.isoformat() if e.vat_paid_at else "", _csv_text(e.notes)])
+    return Response(content="\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="inbreng-btw-{year or "alle-jaren"}.csv"', "Cache-Control": "private, no-store",
+    })
 
 # ── Bartender PIN relay ───────────────────────────────────────────────────────
 
