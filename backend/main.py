@@ -63,6 +63,11 @@ class Customer(SQLModel, table=True):
     email_verified: bool = Field(default=False)
     verify_code_hash: Optional[str] = None
     verify_expires: Optional[datetime] = None
+    twofa_method: str = Field(default="")             # "" = nog niet gekozen, "totp" of "email"
+    twofa_secret: Optional[str] = None                # base32 TOTP-geheim (alleen bij method=totp)
+    twofa_last_step: int = Field(default=0)           # laatst gebruikte 30s-stap: een code werkt maar één keer
+    twofa_code_hash: Optional[str] = None             # mailcode (method=email)
+    twofa_code_expires: Optional[datetime] = None
     machines: list["Machine"] = Relationship(back_populates="customer")
 
 class Machine(SQLModel, table=True):
@@ -147,6 +152,13 @@ class FinanceEntry(SQLModel, table=True):
     attachment_mime: str = ""
     created_by: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class FinanceVatDraft(SQLModel, table=True):
+    """Handmatig ingevulde bedragen (omzet e.d.) voor de BTW-aangifte van één periode, in centen."""
+    period_key: str = Field(primary_key=True)      # bijv. 2026-Q3 of 2026-M09
+    data_json: str = "{}"
+    updated_by: str = ""
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class FinanceAttachment(SQLModel, table=True):
     """Bonnetje/factuur bij een FinanceEntry. Bewust in de database (achter inlog) en niet in /uploads (publiek)."""
@@ -511,6 +523,11 @@ def create_tables():
     for sql in (
         "ALTER TABLE customer ADD COLUMN verify_code_hash VARCHAR",
         "ALTER TABLE customer ADD COLUMN verify_expires TIMESTAMP",
+        "ALTER TABLE customer ADD COLUMN twofa_method VARCHAR NOT NULL DEFAULT ''",
+        "ALTER TABLE customer ADD COLUMN twofa_secret VARCHAR",
+        "ALTER TABLE customer ADD COLUMN twofa_last_step BIGINT NOT NULL DEFAULT 0",
+        "ALTER TABLE customer ADD COLUMN twofa_code_hash VARCHAR",
+        "ALTER TABLE customer ADD COLUMN twofa_code_expires TIMESTAMP",
     ):
         try:
             with engine.connect() as conn:
@@ -867,6 +884,219 @@ def _login_response(customer: Customer) -> dict:
         "is_admin": customer.email in ADMIN_EMAILS,
     }
 
+# ── Tweestapsverificatie (2FA) ────────────────────────────────────────────────
+# Na een correct wachtwoord geeft de server nooit direct een sessietoken, maar een kort
+# geldig "challenge"- of "setup"-token (claim "tfa", geen "sub" → werkt niet als sessie).
+# Methode "totp": RFC 6238 (SHA-1, 6 cijfers, 30 s) — compatibel met Microsoft Authenticator.
+# Methode "email": 6-cijferige code per mail.
+
+TWOFA_TTL_MIN = 10
+
+def _tfa_token(customer_id: int, kind: str, minutes: int = TWOFA_TTL_MIN, **extra) -> str:
+    payload = {"tfa": kind, "cid": customer_id, "exp": datetime.utcnow() + timedelta(minutes=minutes), **extra}
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+def _tfa_decode(token: str, kind: str) -> dict:
+    try:
+        payload = jwt.decode(token or "", JWT_SECRET, algorithms=["HS256"])
+        if payload.get("tfa") != kind:
+            raise ValueError("verkeerd tokentype")
+        return payload
+    except Exception:
+        raise HTTPException(status_code=401, detail="Sessie verlopen — log opnieuw in")
+
+def _totp_code(secret: str, step: int) -> str:
+    import struct
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    mac = hmac.new(key, struct.pack(">Q", step), hashlib.sha1).digest()
+    o = mac[-1] & 0x0F
+    return f"{(struct.unpack('>I', mac[o:o + 4])[0] & 0x7FFFFFFF) % 1000000:06d}"
+
+def _totp_match(secret: str, code: str, last_step: int = 0) -> Optional[int]:
+    """Geeft de gebruikte tijdstap terug als de code klopt (±30 s afwijking toegestaan en nog niet gebruikt)."""
+    code = re.sub(r"\s", "", code or "")
+    if not re.fullmatch(r"\d{6}", code):
+        return None
+    now = int(time.time() // 30)
+    for step in (now - 1, now, now + 1):
+        if step > last_step and hmac.compare_digest(_totp_code(secret, step), code):
+            return step
+    return None
+
+def _hash_twofa_code(code: str) -> str:
+    return hashlib.sha256(f"2fa:{code}".encode()).hexdigest()
+
+async def _send_twofa_email(customer: Customer, db: Session) -> None:
+    code = f"{secrets.randbelow(1000000):06d}"
+    customer.twofa_code_hash = _hash_twofa_code(code)
+    customer.twofa_code_expires = datetime.utcnow() + timedelta(minutes=TWOFA_TTL_MIN)
+    db.add(customer)
+    db.commit()
+    if not RESEND_API_KEY:
+        print(f"[2FA] geen RESEND_API_KEY; code voor {customer.email}: {code}", flush=True)
+    body = (
+        "<h2 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#1d1d1f;"
+        "letter-spacing:-0.5px;'>Je inlogcode</h2>"
+        f"<p style='margin:0 0 24px;font-size:14px;color:#6e6e73;line-height:1.6;'>"
+        f"Hallo {customer.name or customer.email}, gebruik deze code om in te loggen bij het MIXMATE-portaal.</p>"
+        "<table width='100%' cellpadding='0' cellspacing='0' role='presentation'"
+        " style='background:#f5f5f7;border-radius:16px;margin-bottom:24px;'><tr>"
+        "<td style='padding:24px;text-align:center;'>"
+        f"<p style='margin:0 0 10px;font-size:40px;font-weight:800;letter-spacing:14px;"
+        f"color:#1d1d1f;font-family:Courier New,Courier,monospace;'>{code}</p>"
+        f"<p style='margin:0;font-size:12px;color:#aeaeb2;'>Geldig voor {TWOFA_TTL_MIN} minuten</p>"
+        "</td></tr></table>"
+        "<p style='margin:16px 0 0;font-size:13px;color:#aeaeb2;line-height:1.6;'>"
+        "Was jij dit niet? Wijzig dan direct je wachtwoord en geef deze code aan niemand.</p>"
+    )
+    await _resend(customer.email, "Je inlogcode — MIXMATE", _email_html(body))
+
+def _challenge_response(customer: Customer) -> dict:
+    return {
+        "twofa_required": True,
+        "method": customer.twofa_method,
+        "challenge": _tfa_token(customer.id, "challenge"),
+    }
+
+async def _auth_gate(customer: Customer, db: Session) -> dict:
+    """Wachtwoord (of resetcode) is geaccepteerd: bepaal of er nog een tweede stap nodig is."""
+    if customer.twofa_method == "totp" and customer.twofa_secret:
+        return _challenge_response(customer)
+    if customer.twofa_method == "email":
+        if not _rate_limited(f"2fa-mail:{customer.id}", 5):
+            await _send_twofa_email(customer, db)
+        return _challenge_response(customer)
+    return {"twofa_setup_required": True, "setup_token": _tfa_token(customer.id, "setup", 15), "email": customer.email}
+
+def _finish_login(customer: Customer, db: Session) -> dict:
+    customer.last_login = datetime.utcnow()
+    db.add(customer)
+    db.commit()
+    return _login_response(customer)
+
+def _twofa_try_limit(customer_id: int) -> None:
+    if _rate_limited(f"2fa-try:{customer_id}", 8, 900):
+        raise HTTPException(status_code=429, detail="Te veel pogingen, probeer het over een kwartier opnieuw")
+
+@app.post("/api/auth/2fa/setup")
+def twofa_setup(body: dict, db: Session = Depends(get_session)):
+    """Eerste keer: toont geheim + QR voor de authenticator-app."""
+    cid = _tfa_decode(body.get("setup_token"), "setup")["cid"]
+    customer = db.get(Customer, cid)
+    if not customer:
+        raise HTTPException(status_code=401, detail="Sessie verlopen — log opnieuw in")
+    secret = base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+    from urllib.parse import quote
+    uri = (f"otpauth://totp/{quote('MIXMATE')}:{quote(customer.email)}"
+           f"?secret={secret}&issuer=MIXMATE&algorithm=SHA1&digits=6&period=30")
+    import segno
+    qr = segno.make(uri, error="m").svg_data_uri(scale=6, border=2)
+    return {
+        "secret": secret,
+        "manual_key": " ".join(secret[i:i + 4] for i in range(0, len(secret), 4)),
+        "otpauth": uri,
+        "qr": qr,
+        "enroll_token": _tfa_token(cid, "enroll", 15, secret=secret),
+    }
+
+@app.post("/api/auth/2fa/enable")
+def twofa_enable(body: dict, db: Session = Depends(get_session)):
+    payload = _tfa_decode(body.get("enroll_token"), "enroll")
+    customer = db.get(Customer, payload["cid"])
+    if not customer:
+        raise HTTPException(status_code=401, detail="Sessie verlopen — log opnieuw in")
+    _twofa_try_limit(customer.id)
+    step = _totp_match(payload["secret"], body.get("code"))
+    if step is None:
+        raise HTTPException(status_code=400, detail="Code klopt niet. Controleer de code in je app (en de tijd op je telefoon).")
+    customer.twofa_method = "totp"
+    customer.twofa_secret = payload["secret"]
+    customer.twofa_last_step = step
+    customer.twofa_code_hash = None
+    customer.twofa_code_expires = None
+    return _finish_login(customer, db)
+
+@app.post("/api/auth/2fa/use-email")
+async def twofa_use_email(body: dict, db: Session = Depends(get_session)):
+    """Overslaan: 2FA via e-mailcode. Pas ingelogd zodra de eerste code is ingevoerd."""
+    cid = _tfa_decode(body.get("setup_token"), "setup")["cid"]
+    customer = db.get(Customer, cid)
+    if not customer:
+        raise HTTPException(status_code=401, detail="Sessie verlopen — log opnieuw in")
+    customer.twofa_method = "email"
+    customer.twofa_secret = None
+    customer.twofa_last_step = 0
+    db.add(customer)
+    db.commit()
+    return await _auth_gate(customer, db)
+
+@app.post("/api/auth/2fa/verify")
+def twofa_verify(body: dict, db: Session = Depends(get_session)):
+    cid = _tfa_decode(body.get("challenge"), "challenge")["cid"]
+    customer = db.get(Customer, cid)
+    if not customer:
+        raise HTTPException(status_code=401, detail="Sessie verlopen — log opnieuw in")
+    _twofa_try_limit(cid)
+    code = re.sub(r"\s", "", body.get("code") or "")
+    if customer.twofa_method == "totp" and customer.twofa_secret:
+        step = _totp_match(customer.twofa_secret, code, customer.twofa_last_step)
+        if step is None:
+            raise HTTPException(status_code=400, detail="Ongeldige of al gebruikte code")
+        customer.twofa_last_step = step
+    elif customer.twofa_method == "email":
+        if (not customer.twofa_code_hash or not customer.twofa_code_expires
+                or datetime.utcnow() > customer.twofa_code_expires
+                or not hmac.compare_digest(customer.twofa_code_hash, _hash_twofa_code(code))):
+            raise HTTPException(status_code=400, detail="Ongeldige of verlopen code")
+        customer.twofa_code_hash = None
+        customer.twofa_code_expires = None
+    else:
+        raise HTTPException(status_code=401, detail="Sessie verlopen — log opnieuw in")
+    return _finish_login(customer, db)
+
+@app.post("/api/auth/2fa/resend")
+async def twofa_resend(body: dict, db: Session = Depends(get_session)):
+    cid = _tfa_decode(body.get("challenge"), "challenge")["cid"]
+    customer = db.get(Customer, cid)
+    if not customer or customer.twofa_method != "email":
+        raise HTTPException(status_code=400, detail="Niet beschikbaar")
+    if _rate_limited(f"2fa-mail:{cid}", 5):
+        raise HTTPException(status_code=429, detail="Probeer het later opnieuw")
+    await _send_twofa_email(customer, db)
+    return {"ok": True}
+
+@app.get("/api/account/2fa")
+def account_twofa_status(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    c = db.get(Customer, customer_id)
+    return {"method": c.twofa_method or ""}
+
+@app.post("/api/account/2fa/begin")
+def account_twofa_begin(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    """Methode wijzigen vanuit Account: wachtwoord (en bij een app ook de huidige code) opnieuw bevestigen."""
+    c = db.get(Customer, customer_id)
+    _twofa_try_limit(customer_id)
+    if not verify_password(body.get("password") or "", c.password_hash):
+        raise HTTPException(status_code=401, detail="Wachtwoord klopt niet")
+    if c.twofa_method == "totp" and c.twofa_secret:
+        if _totp_match(c.twofa_secret, body.get("code"), c.twofa_last_step) is None:
+            raise HTTPException(status_code=400, detail="Vul ook de huidige code uit je authenticator-app in")
+    return {"setup_token": _tfa_token(customer_id, "setup", 15)}
+
+@app.post("/api/admin/customers/{cid}/reset-2fa")
+def admin_reset_twofa(cid: int, _: int = Depends(verify_admin_user), db: Session = Depends(get_session)):
+    """Telefoon kwijt: wist de 2FA-instelling; bij de volgende login moet de klant opnieuw kiezen."""
+    customer = db.get(Customer, cid)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Klant niet gevonden")
+    customer.twofa_method = ""
+    customer.twofa_secret = None
+    customer.twofa_last_step = 0
+    customer.twofa_code_hash = None
+    customer.twofa_code_expires = None
+    db.add(customer)
+    db.commit()
+    return {"ok": True}
+
 @app.post("/api/auth/login")
 async def login(body: dict, db: Session = Depends(get_session)):
     email    = (body.get("email") or "").strip().lower()
@@ -882,10 +1112,7 @@ async def login(body: dict, db: Session = Depends(get_session)):
             await _send_verification_email(customer, db)
         raise HTTPException(status_code=403, detail="E-mailadres nog niet geverifieerd. We hebben een code gestuurd.")
 
-    customer.last_login = datetime.utcnow()
-    db.add(customer)
-    db.commit()
-    return _login_response(customer)
+    return await _auth_gate(customer, db)
 
 @app.post("/api/auth/register")
 async def register(body: dict, request: Request, db: Session = Depends(get_session)):
@@ -908,7 +1135,7 @@ async def register(body: dict, request: Request, db: Session = Depends(get_sessi
     return {"verification_required": True, "email": customer.email}
 
 @app.post("/api/auth/verify-email")
-def verify_email(body: dict, db: Session = Depends(get_session)):
+async def verify_email(body: dict, db: Session = Depends(get_session)):
     email = (body.get("email") or "").strip().lower()
     code  = (body.get("code") or "").strip()
     if _rate_limited(f"verify-try:{email}", 10):
@@ -921,10 +1148,9 @@ def verify_email(body: dict, db: Session = Depends(get_session)):
     customer.email_verified = True
     customer.verify_code_hash = None
     customer.verify_expires = None
-    customer.last_login = datetime.utcnow()
     db.add(customer)
     db.commit()
-    return _login_response(customer)
+    return await _auth_gate(customer, db)
 
 @app.post("/api/auth/resend-verification")
 async def resend_verification(body: dict, request: Request, db: Session = Depends(get_session)):
@@ -1146,7 +1372,7 @@ async def forgot_password(body: dict, db: Session = Depends(get_session)):
 
 
 @app.post("/api/auth/reset-password")
-def reset_password(body: dict, db: Session = Depends(get_session)):
+async def reset_password(body: dict, db: Session = Depends(get_session)):
     email    = (body.get("email") or "").strip().lower()
     code     = (body.get("code") or "").strip()
     new_pass = body.get("password") or ""
@@ -1167,7 +1393,7 @@ def reset_password(body: dict, db: Session = Depends(get_session)):
     db.add(customer)
     db.commit()
     _password_reset_codes.pop(customer.id, None)
-    return {"token": create_token(customer.id), "name": customer.name, "email": customer.email}
+    return await _auth_gate(customer, db)
 
 
 def _ticket_dict(t: SupportTicket) -> dict:
@@ -4041,6 +4267,77 @@ def _finance_query(db: Session, year: Optional[int], person: str, kind: str):
     if kind in FINANCE_TYPES:
         q = q.where(FinanceEntry.entry_type == kind)
     return db.exec(q.order_by(FinanceEntry.entry_date.desc(), FinanceEntry.id.desc())).all()
+
+# ── BTW-aangifte voorbereiden (rubrieken uit Mijn Belastingdienst Zakelijk) ───
+# Het portaal dient niets in: het zet de bedragen klaar. Voorbelasting (5b) komt uit de rekeningen hier;
+# omzet e.d. vult de gebruiker zelf in (het portaal kent niet alle verkoop en inkoop).
+
+VAT_DRAFT_KEYS = ("r1a_base", "r1b_base", "r1c_base", "r1c_vat", "r1d_base", "r1d_vat", "r1e_base", "other_vat", "r5b_adjust")
+VAT_DRAFT_SIGNED = {"r5b_adjust", "other_vat"}
+
+def _vat_period(year: int, kind: str, n: int) -> dict:
+    if not (2000 <= year <= 2100):
+        raise HTTPException(status_code=400, detail="Ongeldig jaar")
+    if kind == "kwartaal" and 1 <= n <= 4:
+        m1, m2 = 3 * (n - 1) + 1, 3 * n
+        key, label_n = f"{year}-Q{n}", f"Kwartaal {n} {year}"
+    elif kind == "maand" and 1 <= n <= 12:
+        m1 = m2 = n
+        key, label_n = f"{year}-M{n:02d}", f"{['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'][n-1]} {year}"
+    else:
+        raise HTTPException(status_code=400, detail="Ongeldige periode")
+    start = date(year, m1, 1)
+    end = (date(year + (m2 == 12), (m2 % 12) + 1, 1) - timedelta(days=1))
+    return {"key": key, "label": f"{label_n}", "start": start, "end": end}
+
+@app.get("/api/finance/vat-return")
+def finance_vat_return(year: int, kind: str = "kwartaal", n: int = 1,
+                       customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    _finance_user(customer_id, db)
+    per = _vat_period(year, kind, n)
+    in_period = db.exec(select(FinanceEntry).where(
+        FinanceEntry.entry_date >= per["start"], FinanceEntry.entry_date <= per["end"]
+    ).order_by(FinanceEntry.entry_date, FinanceEntry.id)).all()
+    included = [e for e in in_period if e.in_tax_return]
+    draft = db.get(FinanceVatDraft, per["key"])
+    return {
+        "period": {"key": per["key"], "label": per["label"], "start": per["start"].isoformat(), "end": per["end"].isoformat()},
+        "voorbelasting": {
+            "total_cents": sum(e.vat_cents for e in included),
+            "investering_cents": sum(e.vat_cents for e in included if e.entry_type == "investering"),
+            "prive_cents": sum(e.vat_cents for e in included if e.entry_type == "prive"),
+            "count": len(included),
+        },
+        "entries": [_finance_dict(e) for e in included],
+        "excluded_count": len(in_period) - len(included),
+        "draft": json.loads(draft.data_json) if draft else {},
+        "draft_updated_at": (draft.updated_at.isoformat() + "Z") if draft else None,
+    }
+
+@app.put("/api/finance/vat-return/draft")
+def finance_vat_draft(body: dict, customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):
+    user = _finance_user(customer_id, db)
+    key = str(body.get("period_key", ""))
+    m = re.fullmatch(r"(\d{4})-(?:Q([1-4])|M(0[1-9]|1[0-2]))", key)
+    if not m:
+        raise HTTPException(status_code=400, detail="Ongeldige periode")
+    data = body.get("data")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Ongeldige invoer")
+    clean = {}
+    for k, v in data.items():
+        if k not in VAT_DRAFT_KEYS:
+            raise HTTPException(status_code=400, detail=f"Onbekend veld: {k}")
+        if v in (None, ""):
+            continue
+        cents = _cents(v, k)
+        if abs(cents) > 1_000_000_000_00 or (cents < 0 and k not in VAT_DRAFT_SIGNED):
+            raise HTTPException(status_code=400, detail=f"{k}: bedrag niet toegestaan")
+        clean[k] = cents
+    row = db.get(FinanceVatDraft, key) or FinanceVatDraft(period_key=key)
+    row.data_json, row.updated_by, row.updated_at = json.dumps(clean), user.email, datetime.utcnow()
+    db.add(row); db.commit()
+    return {"ok": True, "draft": clean}
 
 @app.get("/api/finance/access")
 def finance_access(customer_id: int = Depends(verify_token), db: Session = Depends(get_session)):

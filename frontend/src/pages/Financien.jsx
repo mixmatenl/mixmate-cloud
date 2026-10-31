@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
+import FinancienAangifte from './FinancienAangifte.jsx'
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 const eur = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' })
@@ -17,6 +19,15 @@ function parseMoney(input) {
   if (!/^\d+(\.\d+)?$/.test(raw)) return null
   return Math.round(parseFloat(raw) * 100)
 }
+const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+const MAX_FILE = 10 * 1024 * 1024
+function fileProblem(f) {
+  const okType = ALLOWED_TYPES.includes(f.type) || (!f.type && /\.(pdf|jpe?g|png|webp)$/i.test(f.name))
+  if (!okType) return `"${f.name}" is geen PDF, JPG, PNG of WEBP`
+  if (f.size > MAX_FILE) return `"${f.name}" is groter dan 10 MB`
+  return null
+}
+const hasFiles = e => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')
 const vatFrom = (cents, rate) => Math.round(cents * rate / (100 + rate))
 
 const S = {
@@ -38,10 +49,20 @@ function Metric({ label, value, sub, accent, children }) {
   )
 }
 
-function PersonCard({ person, sum, onPayout }) {
+function PersonCard({ person, sum, onPayout, dragActive, onDropEntry }) {
+  const [over, setOver] = useState(false)
+  useEffect(() => { if (!dragActive) setOver(false) }, [dragActive])
   const initials = person.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
   return (
-    <div style={{ ...S.card, padding: '18px 20px 6px', flex: '1 1 320px', minWidth: 0 }}>
+    <div
+      onDragOver={dragActive ? e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (!over) setOver(true) } : undefined}
+      onDragLeave={dragActive ? e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false) } : undefined}
+      onDrop={dragActive ? e => { e.preventDefault(); setOver(false); onDropEntry(person) } : undefined}
+      style={{ ...S.card, padding: '18px 20px 6px', flex: '1 1 320px', minWidth: 0, position: 'relative', transition: 'box-shadow .15s, border-color .15s, background .15s',
+        ...(dragActive ? { borderColor: over ? '#FF751F' : '#ffd2b3', boxShadow: over ? '0 0 0 3px rgba(255,117,31,.25)' : 'none', background: over ? '#fff8f3' : '#fff' } : {}) }}>
+      {dragActive && over && (
+        <div style={{ position: 'absolute', top: 12, right: 14, fontSize: 12, fontWeight: 700, color: '#c2410c', background: '#ffedd5', borderRadius: 20, padding: '3px 10px', pointerEvents: 'none' }}>Zet bij {person.name}</div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#FF751F', color: '#fff', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initials}</div>
         <div>
@@ -59,6 +80,21 @@ function PersonCard({ person, sum, onPayout }) {
       </Metric>
       <Metric label="Privé gebruik (wel in aangifte, geen inbreng)" value={money(sum.prive_incl_cents)}
         sub={`BTW ${money(sum.prive_vat_cents)} · waarvan in aangifte ${money(sum.prive_in_aangifte_incl_cents)}`} />
+    </div>
+  )
+}
+
+function DockTarget({ label, current, onDrop }) {
+  const [over, setOver] = useState(false)
+  return (
+    <div
+      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = current ? 'none' : 'move'; setOver(true) }}
+      onDragLeave={() => setOver(false)}
+      onDrop={e => { e.preventDefault(); setOver(false); if (!current) onDrop() }}
+      style={{ padding: '10px 16px', borderRadius: 12, fontSize: 13.5, fontWeight: 700, minWidth: 112, textAlign: 'center', transition: 'background .12s',
+        background: current ? 'rgba(255,255,255,.07)' : over ? '#FF751F' : 'rgba(255,255,255,.16)', color: current ? 'rgba(255,255,255,.4)' : '#fff' }}>
+      {label}
+      {current && <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 1 }}>staat hier</div>}
     </div>
   )
 }
@@ -154,7 +190,7 @@ function PayoutModal({ person, onClose, onDone }) {
   )
 }
 
-function EntryModal({ entry, people, onClose, onSaved }) {
+function EntryModal({ entry, people, initialFile, queueLabel, onClose, onSaved }) {
   const editing = !!entry
   const [type, setType]       = useState(entry?.entry_type || 'investering')
   const [person, setPerson]   = useState(entry?.person_email || people[0]?.email || '')
@@ -170,7 +206,8 @@ function EntryModal({ entry, people, onClose, onSaved }) {
   const [paidAt, setPaidAt]   = useState(entry?.vat_paid_at || '')
   const [paidTouched, setPaidTouched] = useState(false)
   const [notes, setNotes]     = useState(entry?.notes || '')
-  const [file, setFile]       = useState(null)
+  const [file, setFile]       = useState(initialFile || null)
+  const [zoneOver, setZoneOver] = useState(false)
   const [removeFile, setRemoveFile] = useState(false)
   const [busy, setBusy]       = useState(false)
   const [err, setErr]         = useState(null)
@@ -179,6 +216,13 @@ function EntryModal({ entry, people, onClose, onSaved }) {
   const autoVat = cents != null ? vatFrom(cents, Number(rate)) : null
   const vatCents = vatTouched ? parseMoney(vatText) : autoVat
   const personName = people.find(p => p.email === person)?.name || ''
+
+  function pickFile(f) {
+    if (!f) return
+    const problem = fileProblem(f)
+    if (problem) return setErr(problem)
+    setErr(null); setFile(f); setRemoveFile(false)
+  }
 
   function changeType(t) { setType(t); if (!editing) setToPerson(t === 'investering') }
 
@@ -210,7 +254,10 @@ function EntryModal({ entry, people, onClose, onSaved }) {
       onClick={e => e.target === e.currentTarget && !busy && onClose()}>
       <form onSubmit={submit} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 560, maxHeight: '92vh', overflowY: 'auto', padding: 24, boxShadow: '0 24px 64px rgba(0,0,0,.25)', fontFamily: FONT }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>{editing ? 'Rekening bewerken' : 'Rekening toevoegen'}</div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>{editing ? 'Rekening bewerken' : 'Rekening toevoegen'}</div>
+            {queueLabel && <div style={{ fontSize: 12, color: '#8a8a90', marginTop: 2 }}>{queueLabel}</div>}
+          </div>
           <button type="button" onClick={onClose} aria-label="Sluiten" style={{ background: '#f2f2f7', border: 'none', borderRadius: '50%', width: 30, height: 30, fontSize: 17, cursor: 'pointer', color: '#6e6e73' }}>×</button>
         </div>
 
@@ -292,8 +339,15 @@ function EntryModal({ entry, people, onClose, onSaved }) {
               <button type="button" onClick={() => setRemoveFile(true)} style={{ background: 'none', border: 'none', color: '#ff3b30', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>Verwijderen</button>
             </div>
           )}
-          <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={e => { setFile(e.target.files?.[0] || null); setRemoveFile(false) }} style={{ fontSize: 13 }} />
-          <div style={{ fontSize: 12, color: '#8a8a90', marginTop: 4 }}>PDF, JPG, PNG of WEBP, maximaal 10 MB.</div>
+          <div
+            onDragOver={e => { if (hasFiles(e)) { e.preventDefault(); e.stopPropagation(); setZoneOver(true) } }}
+            onDragLeave={() => setZoneOver(false)}
+            onDrop={e => { if (!hasFiles(e)) return; e.preventDefault(); e.stopPropagation(); setZoneOver(false); pickFile(e.dataTransfer.files[0]) }}
+            style={{ border: `2px dashed ${zoneOver ? '#FF751F' : '#d1d1d6'}`, background: zoneOver ? '#fff8f3' : '#fafafa', borderRadius: 12, padding: 12, transition: 'all .12s' }}>
+            <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={e => pickFile(e.target.files?.[0])} style={{ fontSize: 13 }} />
+            <div style={{ fontSize: 12, color: '#8a8a90', marginTop: 6 }}>Sleep een PDF of foto hierheen, of kies een bestand. Maximaal 10 MB.</div>
+            {file && <div style={{ fontSize: 13, marginTop: 6 }}>Gekozen: <b>{file.name}</b></div>}
+          </div>
         </div>
 
         <div style={{ marginTop: 14 }}><div style={S.label}>Notities (optioneel)</div>
@@ -320,6 +374,16 @@ export default function Financien() {
   const [modal, setModal]     = useState(null)   // null | 'new' | entry
   const [busyId, setBusyId]   = useState(null)
   const [payoutFor, setPayoutFor] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'aangifte' ? 'aangifte' : 'rekeningen'
+  const [dragEntry, setDragEntry]   = useState(null)
+  const [fileOver, setFileOver]     = useState(false)
+  const [rowFileOver, setRowFileOver] = useState(null)
+  const [dropQueue, setDropQueue]   = useState([])
+  const [dropTotal, setDropTotal]   = useState(0)
+  const [notice, setNotice]         = useState(null)
+  const noticeTimer  = useRef(null)
+  const filesHandler = useRef(null)
 
   const qs = useMemo(() => {
     const p = new URLSearchParams()
@@ -335,6 +399,75 @@ export default function Financien() {
     catch (e) { if (e.status === 403) setDenied(true); else setErr(e.message) }
   }, [qs])
   useEffect(() => { load() }, [load])
+
+  function notify(text, ok = true) {
+    setNotice({ text, ok })
+    clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setNotice(null), 6000)
+  }
+
+  function startNewFromFiles(fileList) {
+    const good = [], bad = []
+    Array.from(fileList || []).forEach(f => { const p = fileProblem(f); p ? bad.push(p) : good.push(f) })
+    if (bad.length) notify(bad[0] + (bad.length > 1 ? ` (en ${bad.length - 1} andere)` : ''), false)
+    if (good.length) {
+      setDropQueue(good.map((file, i) => ({ file, id: `${Date.now()}-${i}` })))
+      setDropTotal(good.length)
+      setModal('new')
+    }
+  }
+
+  async function attachToEntry(entry, fileList) {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
+    const problem = fileProblem(files[0])
+    if (problem) return notify(problem, false)
+    if (entry.has_attachment && !confirm(`"${entry.description}" heeft al een bijlage (${entry.attachment_name}). Vervangen door "${files[0].name}"?`)) return
+    setBusyId(entry.id)
+    try {
+      await api.financeUpload(entry.id, files[0])
+      await load()
+      notify(`Bijlage toegevoegd aan "${entry.description}"` + (files.length > 1 ? ' (alleen het eerste bestand is gebruikt)' : ''))
+    } catch (e) { notify(e.message, false) }
+    setBusyId(null)
+  }
+
+  async function moveEntry(entry, changes, label) {
+    setDragEntry(null)
+    setBusyId(entry.id)
+    try {
+      await api.financeUpdate(entry.id, changes)
+      await load()
+      const oddFlag = 'entry_type' in changes && entry.vat_to_person !== (changes.entry_type === 'investering')
+      notify(`"${entry.description}" staat nu bij ${label}` + (oddFlag ? `. Let op: "BTW terug naar persoon" staat nog ${entry.vat_to_person ? 'aan' : 'uit'}; pas dat zo nodig aan via Bewerk.` : ''))
+    } catch (e) { notify(e.message, false) }
+    setBusyId(null)
+  }
+
+  filesHandler.current = { startNewFromFiles, modalOpen: !!modal || !!payoutFor }
+  useEffect(() => {
+    // Bestanden die ergens op de pagina worden losgelaten: de browser mag er nooit mee wegnavigeren.
+    let depth = 0
+    const isFiles = e => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')
+    const enter = e => { if (isFiles(e)) { depth++; setFileOver(true) } }
+    const over  = e => { if (isFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } }
+    const leave = e => { if (isFiles(e)) { depth = Math.max(0, depth - 1); if (!depth) { setFileOver(false); setRowFileOver(null) } } }
+    const reset = e => { if (isFiles(e)) { depth = 0; setFileOver(false); setRowFileOver(null) } }   // capture: draait altijd, ook als een rij de drop afhandelt
+    const drop  = e => {
+      if (!isFiles(e)) return
+      e.preventDefault()
+      const h = filesHandler.current
+      if (!h.modalOpen) h.startNewFromFiles(e.dataTransfer.files)
+    }
+    window.addEventListener('dragenter', enter); window.addEventListener('dragover', over)
+    window.addEventListener('dragleave', leave); window.addEventListener('drop', reset, true)
+    window.addEventListener('drop', drop)
+    return () => {
+      window.removeEventListener('dragenter', enter); window.removeEventListener('dragover', over)
+      window.removeEventListener('dragleave', leave); window.removeEventListener('drop', reset, true)
+      window.removeEventListener('drop', drop)
+    }
+  }, [])
 
   async function togglePaid(entry) {
     setBusyId(entry.id)
@@ -392,15 +525,30 @@ export default function Financien() {
         <h1 style={{ fontSize: 26, fontWeight: 800, color: '#1d1d1f', letterSpacing: -.5, margin: 0 }}>Inbreng &amp; BTW</h1>
         <span style={{ fontSize: 11, fontWeight: 700, color: '#6e6e73', background: '#f2f2f7', borderRadius: 20, padding: '3px 10px' }}>🔒 Alleen vennoten</span>
       </div>
-      <p style={{ fontSize: 14, color: '#6e6e73', margin: '0 0 24px' }}>
-        Rekeningen van investeringen en privé gebruik, met de BTW die per persoon terugkomt.
+      <p style={{ fontSize: 14, color: '#6e6e73', margin: '0 0 18px' }}>
+        {tab === 'aangifte'
+          ? 'Bereid je BTW-aangifte voor: de bedragen per rubriek, klaar om over te nemen in Mijn Belastingdienst Zakelijk.'
+          : 'Rekeningen van investeringen en privé gebruik, met de BTW die per persoon terugkomt.'}
       </p>
+
+      <div style={{ display: 'inline-flex', gap: 3, background: '#f2f2f7', borderRadius: 12, padding: 4, marginBottom: 22 }}>
+        {[['rekeningen', 'Rekeningen'], ['aangifte', 'BTW-aangifte']].map(([id, label]) => (
+          <button key={id} onClick={() => setSearchParams(id === 'aangifte' ? { tab: 'aangifte' } : {}, { replace: true })}
+            style={{ padding: '9px 20px', border: 'none', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
+              background: tab === id ? '#fff' : 'transparent', color: tab === id ? '#1d1d1f' : '#6e6e73', boxShadow: tab === id ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>
+            {label}
+          </button>
+        ))}
+      </div>
 
       {err && <div style={{ background: '#fff1f0', border: '1px solid #ffd6d3', color: '#d70015', borderRadius: 12, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{err}</div>}
 
-      {!data ? <div style={{ color: '#aeaeb2', padding: 40, textAlign: 'center' }}>Laden…</div> : <>
+      {!data ? <div style={{ color: '#aeaeb2', padding: 40, textAlign: 'center' }}>Laden…</div>
+      : tab === 'aangifte' ? <FinancienAangifte people={people} />
+      : <>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
-          {people.map(p => <PersonCard key={p.email} person={p} sum={data.summary[p.email]} onPayout={setPayoutFor} />)}
+          {people.map(p => <PersonCard key={p.email} person={p} sum={data.summary[p.email]} onPayout={setPayoutFor} dragActive={!!dragEntry}
+            onDropEntry={p => dragEntry && dragEntry.person_email !== p.email && moveEntry(dragEntry, { person_email: p.email }, p.name)} />)}
         </div>
         <div style={{ fontSize: 12.5, color: '#6e6e73', marginBottom: 24, padding: '0 4px' }}>
           Totaal BTW op rekeningen die in de aangifte staan: <b>{money(totalAangifteVat)}</b>
@@ -425,13 +573,35 @@ export default function Financien() {
           <button onClick={() => setModal('new')} style={S.btn}>+ Rekening toevoegen</button>
         </div>
 
+        <div style={{ fontSize: 12, color: '#8a8a90', margin: '0 4px 8px', lineHeight: 1.5 }}>
+          Tip: sleep een factuur (PDF of foto) op een rekening om hem als bijlage toe te voegen, of ergens op de pagina voor een nieuwe rekening.
+          Sleep het ⠿-icoon van een rekening naar een persoon of soort om hem te verplaatsen. (Slepen werkt met de muis; op een telefoon gebruik je Bewerk.)
+        </div>
         <div style={{ ...S.card, overflow: 'hidden' }}>
           {data.entries.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aeaeb2', fontSize: 14 }}>
               Nog geen rekeningen{(year || person || kind) ? ' met deze filters' : ''}. Voeg de eerste toe.
             </div>
           ) : data.entries.map((e, i) => (
-            <div key={e.id} style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', padding: '14px 18px', borderTop: i ? '1px solid #f2f2f7' : 'none', opacity: busyId === e.id ? .5 : 1 }}>
+            <div key={e.id} data-row={e.id}
+              onDragOver={ev => { if (hasFiles(ev)) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; if (rowFileOver !== e.id) setRowFileOver(e.id) } }}
+              onDragLeave={ev => { if (hasFiles(ev) && !ev.currentTarget.contains(ev.relatedTarget)) setRowFileOver(v => (v === e.id ? null : v)) }}
+              onDrop={ev => { if (!hasFiles(ev)) return; ev.preventDefault(); ev.stopPropagation(); setRowFileOver(null); attachToEntry(e, ev.dataTransfer.files) }}
+              style={{ position: 'relative', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', padding: '14px 18px 14px 10px', borderTop: i ? '1px solid #f2f2f7' : 'none',
+                opacity: busyId === e.id || dragEntry?.id === e.id ? .45 : 1, background: rowFileOver === e.id ? '#fff8f3' : 'transparent',
+                boxShadow: rowFileOver === e.id ? 'inset 0 0 0 2px #FF751F' : 'none', transition: 'background .12s' }}>
+              {rowFileOver === e.id && (
+                <div style={{ position: 'absolute', top: 6, right: 12, fontSize: 12, fontWeight: 700, color: '#c2410c', background: '#ffedd5', borderRadius: 20, padding: '3px 10px', pointerEvents: 'none' }}>Laat los om als bijlage toe te voegen</div>
+              )}
+              <div draggable title="Sleep naar een persoon of soort"
+                onDragStart={ev => {
+                  ev.dataTransfer.effectAllowed = 'move'
+                  ev.dataTransfer.setData('text/plain', String(e.id))
+                  try { const row = ev.currentTarget.closest('[data-row]'); if (row) ev.dataTransfer.setDragImage(row, 24, 24) } catch { /* niet kritisch */ }
+                  setDragEntry(e)
+                }}
+                onDragEnd={() => setDragEntry(null)}
+                style={{ cursor: 'grab', color: '#c7c7cc', fontSize: 18, lineHeight: 1, padding: '4px 2px', userSelect: 'none', flexShrink: 0 }}>⠿</div>
               <div style={{ width: 92, flexShrink: 0, fontSize: 13, color: '#6e6e73' }}>{fmtDate(e.entry_date)}</div>
               <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                 <div style={{ fontSize: 14.5, fontWeight: 600, overflowWrap: 'anywhere' }}>{e.description}</div>
@@ -470,11 +640,50 @@ export default function Financien() {
         </p>
       </>}
 
+      {fileOver && !modal && !payoutFor && (
+        <div style={{ position: 'fixed', inset: 8, border: '3px dashed #FF751F', borderRadius: 22, background: 'rgba(255,117,31,.05)', zIndex: 240, pointerEvents: 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+          <div style={{ marginTop: 18, background: '#1d1d1f', color: '#fff', borderRadius: 14, padding: '10px 18px', fontSize: 14, fontWeight: 700, boxShadow: '0 8px 24px rgba(0,0,0,.25)' }}>
+            Laat los voor een nieuwe rekening, of op een rekening om hem als bijlage toe te voegen
+          </div>
+        </div>
+      )}
+
+      {dragEntry && (
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 16, display: 'flex', justifyContent: 'center', zIndex: 250, pointerEvents: 'none', padding: '0 12px' }}>
+          <div style={{ pointerEvents: 'auto', background: '#1d1d1f', borderRadius: 20, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', boxShadow: '0 12px 40px rgba(0,0,0,.35)' }}>
+            {people.map(p => (
+              <DockTarget key={p.email} label={p.name} current={dragEntry.person_email === p.email}
+                onDrop={() => moveEntry(dragEntry, { person_email: p.email }, p.name)} />
+            ))}
+            <style>{`@media (max-width: 640px) { .fin-dock-divider { display: none !important; } }`}</style>
+            <div className="fin-dock-divider" style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,.18)', margin: '0 4px' }} />
+            <DockTarget label="Investering" current={dragEntry.entry_type === 'investering'}
+              onDrop={() => moveEntry(dragEntry, { entry_type: 'investering' }, 'Investering')} />
+            <DockTarget label="Privé gebruik" current={dragEntry.entry_type === 'prive'}
+              onDrop={() => moveEntry(dragEntry, { entry_type: 'prive' }, 'Privé gebruik')} />
+          </div>
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" onClick={() => setNotice(null)} style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 24, zIndex: 260, maxWidth: 'min(560px, calc(100vw - 32px))', cursor: 'pointer',
+          background: notice.ok ? '#1d1d1f' : '#d70015', color: '#fff', borderRadius: 14, padding: '12px 18px', fontSize: 13.5, fontWeight: 600, lineHeight: 1.4, boxShadow: '0 8px 24px rgba(0,0,0,.3)' }}>
+          {notice.text}
+        </div>
+      )}
+
       {payoutFor && <PayoutModal person={payoutFor} onClose={() => setPayoutFor(null)} onDone={() => { setPayoutFor(null); load() }} />}
 
       {modal && (
-        <EntryModal entry={modal === 'new' ? null : modal} people={people} onClose={() => setModal(null)}
-          onSaved={() => { setModal(null); load() }} />
+        <EntryModal key={modal === 'new' ? `new-${dropQueue[0]?.id || 'x'}` : `edit-${modal.id}`}
+          entry={modal === 'new' ? null : modal} people={people}
+          initialFile={modal === 'new' ? dropQueue[0]?.file : undefined}
+          queueLabel={modal === 'new' && dropTotal > 1 ? `Bestand ${dropTotal - dropQueue.length + 1} van ${dropTotal}` : undefined}
+          onClose={() => { setModal(null); setDropQueue([]); setDropTotal(0) }}
+          onSaved={() => {
+            if (modal === 'new' && dropQueue.length > 1) { setDropQueue(q => q.slice(1)); load() }
+            else { setModal(null); setDropQueue([]); setDropTotal(0); load() }
+          }} />
       )}
     </div>
   )

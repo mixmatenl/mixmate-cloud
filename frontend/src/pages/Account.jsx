@@ -21,6 +21,94 @@ function InfoRow({ label, value, noBorder }) {
   )
 }
 
+
+const tfaInput = { width: '100%', boxSizing: 'border-box', border: '1px solid #e5e5ea', borderRadius: 10, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit', marginTop: 6 }
+const tfaBtn = (primary) => ({ border: primary ? 'none' : '1px solid #e5e5ea', background: primary ? '#1d1d1f' : '#fff', color: primary ? '#fff' : '#1d1d1f', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' })
+
+function TwoFactorRow() {
+  const [method, setMethod] = useState(null)       // '' | 'totp' | 'email'
+  const [step, setStep]     = useState('idle')      // idle | auth | choose | app
+  const [password, setPassword] = useState('')
+  const [code, setCode]     = useState('')
+  const [setupToken, setSetupToken] = useState('')
+  const [enroll, setEnroll] = useState(null)
+  const [busy, setBusy]     = useState(false)
+  const [err, setErr]       = useState(null)
+
+  useEffect(() => { api.twofaStatus().then(r => setMethod(r.method)).catch(() => setMethod('')) }, [])
+
+  function reset() { setStep('idle'); setPassword(''); setCode(''); setEnroll(null); setErr(null) }
+  async function run(fn) { setBusy(true); setErr(null); try { await fn() } catch (e) { setErr(e.message) } finally { setBusy(false) } }
+
+  const label = method === 'totp' ? 'Authenticator-app' : method === 'email' ? 'Code per e-mail' : method === null ? '…' : 'Niet ingesteld'
+
+  return (
+    <div style={{ padding: '14px 16px', borderTop: '1px solid #f2f2f7' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: 15, color: '#1d1d1f' }}>Tweestapsverificatie</div>
+          <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>{label}</div>
+        </div>
+        {step === 'idle' && method !== null && (
+          <button style={tfaBtn(false)} onClick={() => setStep('auth')}>{method ? 'Wijzigen' : 'Instellen'}</button>
+        )}
+      </div>
+
+      {step === 'auth' && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 13, color: '#6e6e73' }}>Bevestig eerst dat jij het bent.</div>
+          <input type="password" placeholder="Wachtwoord" value={password} onChange={e => setPassword(e.target.value)} style={tfaInput} autoComplete="current-password" />
+          {method === 'totp' && (
+            <input inputMode="numeric" maxLength={6} placeholder="Huidige code uit je app" value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} style={tfaInput} autoComplete="one-time-code" />
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button style={tfaBtn(true)} disabled={busy || !password}
+              onClick={() => run(async () => { const r = await api.twofaBegin(password, code); setSetupToken(r.setup_token); setStep('choose') })}>Doorgaan</button>
+            <button style={tfaBtn(false)} onClick={reset}>Annuleren</button>
+          </div>
+        </div>
+      )}
+
+      {step === 'choose' && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button style={tfaBtn(true)} disabled={busy}
+            onClick={() => run(async () => { setEnroll(await api.twofaSetup(setupToken)); setCode(''); setStep('app') })}>
+            Authenticator-app (Microsoft Authenticator)
+          </button>
+          <button style={tfaBtn(false)} disabled={busy}
+            onClick={() => run(async () => { await api.twofaUseEmail(setupToken); setMethod('email'); reset() })}>
+            Code per e-mail
+          </button>
+          <button style={{ ...tfaBtn(false), border: 'none', color: '#6e6e73' }} onClick={reset}>Annuleren</button>
+        </div>
+      )}
+
+      {step === 'app' && enroll && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 13, color: '#6e6e73', lineHeight: 1.5 }}>
+            Open Microsoft Authenticator, tik op <b>+</b> → <b>Ander account</b> en scan de QR-code. Vul daarna de code uit de app in.
+          </div>
+          <img src={enroll.qr} alt="QR-code" width={180} height={180} style={{ display: 'block', margin: '12px auto', borderRadius: 8, border: '1px solid #e5e5ea' }} />
+          <details style={{ fontSize: 12, color: '#6e6e73' }}>
+            <summary style={{ cursor: 'pointer' }}>Handmatig invoeren</summary>
+            <div style={{ fontFamily: 'monospace', fontSize: 14, margin: '8px 0', wordBreak: 'break-all', userSelect: 'all' }}>{enroll.manual_key}</div>
+          </details>
+          <input inputMode="numeric" maxLength={6} placeholder="6-cijferige code" value={code}
+            onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} style={{ ...tfaInput, textAlign: 'center', letterSpacing: 4 }} autoComplete="one-time-code" />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button style={tfaBtn(true)} disabled={busy || code.length !== 6}
+              onClick={() => run(async () => { await api.twofaEnable(enroll.enroll_token, code); setMethod('totp'); reset() })}>Koppelen</button>
+            <button style={tfaBtn(false)} onClick={reset}>Annuleren</button>
+          </div>
+        </div>
+      )}
+
+      {err && <div style={{ fontSize: 13, color: '#ff3b30', marginTop: 8 }}>{err}</div>}
+    </div>
+  )
+}
+
 function Toggle({ checked, onChange, disabled }) {
   return (
     <button
@@ -186,6 +274,7 @@ export default function Account({ user, onLogout }) {
 
       <SettingGroup label="Beveiliging">
         <InfoRow label="Wachtwoord" value="••••••••" noBorder />
+        <TwoFactorRow />
       </SettingGroup>
 
       <SettingGroup label="Communicatie">
